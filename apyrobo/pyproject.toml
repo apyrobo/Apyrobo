@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apyrobo"
+version = "0.1.0-dev"
+description = "Open-source AI orchestration layer for robotics, built on ROS 2"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "APYROBO Contributors" }]
+keywords = ["robotics", "ros2", "ai", "llm", "swarm", "orchestration"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "litellm>=1.0",        # Model-agnostic LLM interface
+    "networkx>=3.0",        # Skill graph engine
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+ros = [
+    # ROS 2 deps are installed system-wide via apt in Docker
+    # This is a placeholder for any pip-installable ROS bridges
+]
+
+[project.urls]
+Homepage = "https://github.com/apyrobo/apyrobo"
+Documentation = "https://github.com/apyrobo/apyrobo/tree/main/docs"
+Repository = "https://github.com/apyrobo/apyrobo"
+Issues = "https://github.com/apyrobo/apyrobo/issues"
+
+[tool.setuptools.packages.find]
+include = ["apyrobo*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=apyrobo --cov-report=term-missing -v"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

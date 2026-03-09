@@ -1,0 +1,38 @@
+# =============================================================================
+# APYROBO Docker Compose — Development Environment
+#
+# Usage:
+#   docker compose build          Build the container
+#   docker compose up -d          Start in background
+#   docker compose exec apyrobo bash    Open a shell
+#   docker compose down           Stop everything
+#
+# GUI (Gazebo):
+#   On macOS: install XQuartz, enable "Allow connections from network clients"
+#   Then: xhost +localhost  (before running compose)
+# =============================================================================
+
+services:
+  apyrobo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: apyrobo-dev
+    stdin_open: true
+    tty: true
+
+    # Mount source code for live editing
+    volumes:
+      - ..:/workspace
+
+    # GUI forwarding (for Gazebo on macOS via XQuartz)
+    environment:
+      - DISPLAY=host.docker.internal:0
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=0
+
+    # Network mode for ROS 2 DDS discovery
+    network_mode: host
+
+    # Keep container running
+    command: bash
