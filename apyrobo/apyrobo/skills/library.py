@@ -1,14 +1,20 @@
 """
-Skill Library — manages a collection of skills from JSON files.
+Skill Library — manages a collection of skills from JSON files and packages.
 
-Loads skills from a directory, validates them, and makes them available
-for the agent to plan with. Supports hot-reloading.
+Loads skills from a directory and/or the SkillRegistry, validates them,
+and makes them available for the agent to plan with. Supports hot-reloading.
 
 Usage:
     library = SkillLibrary("/workspace/skills")
     library.load_all()
     skill = library.get("custom_patrol")
-    all_skills = library.all_skills()  # built-in + custom
+    all_skills = library.all_skills()  # built-in + custom + registry
+
+    # With registry integration:
+    from apyrobo.skills.registry import SkillRegistry
+    registry = SkillRegistry()
+    library = SkillLibrary("/workspace/skills", registry=registry)
+    # Now all_skills() includes skills from installed packages
 """
 
 from __future__ import annotations
@@ -26,16 +32,19 @@ logger = logging.getLogger(__name__)
 
 class SkillLibrary:
     """
-    Manages built-in and custom skills.
+    Manages built-in, custom, and registry-installed skills.
 
     Custom skills are loaded from JSON files in a directory.
+    Registry skills come from installed packages.
     Built-in skills are always available.
     """
 
-    def __init__(self, skills_dir: str | Path | None = None) -> None:
+    def __init__(self, skills_dir: str | Path | None = None,
+                 registry: Any | None = None) -> None:
         self._custom_skills: dict[str, Skill] = {}
         self._skills_dir = Path(skills_dir) if skills_dir else None
         self._load_errors: list[dict[str, Any]] = []
+        self._registry = registry  # SkillRegistry or None
 
         if self._skills_dir and self._skills_dir.exists():
             self.load_all()
@@ -94,12 +103,20 @@ class SkillLibrary:
         return path
 
     def get(self, skill_id: str) -> Skill | None:
-        """Get a skill by ID (checks custom first, then built-in)."""
-        return self._custom_skills.get(skill_id) or BUILTIN_SKILLS.get(skill_id)
+        """Get a skill by ID (checks custom first, then registry, then built-in)."""
+        if skill_id in self._custom_skills:
+            return self._custom_skills[skill_id]
+        if self._registry is not None:
+            skill, _pkg = self._registry.get_skill(skill_id)
+            if skill is not None:
+                return skill
+        return BUILTIN_SKILLS.get(skill_id)
 
     def all_skills(self) -> dict[str, Skill]:
-        """All available skills (built-in + custom). Custom overrides built-in."""
+        """All available skills (built-in + registry + custom). Custom overrides registry overrides built-in."""
         merged = dict(BUILTIN_SKILLS)
+        if self._registry is not None:
+            merged.update(self._registry.all_skills())
         merged.update(self._custom_skills)
         return merged
 

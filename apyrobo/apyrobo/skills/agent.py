@@ -16,7 +16,7 @@ from typing import Any
 from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import TaskResult
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
-from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent, SkillStatus
+from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent, ExecutionState, SkillStatus
 
 logger = logging.getLogger(__name__)
 
@@ -263,11 +263,18 @@ class Agent:
         agent = Agent(provider="llm", model="gpt-4o")  # requires litellm
         agent = Agent(provider="routed", router=router) # edge/cloud routing
 
+        # With a skill library for custom skills:
+        from apyrobo.skills.library import SkillLibrary
+        lib = SkillLibrary("/workspace/skills")
+        agent = Agent(provider="rule", library=lib)
+
         result = agent.execute(task="deliver package to room 3", robot=robot)
         result = agent.execute(task="obstacle! reroute", robot=robot, urgency="high")
     """
 
     def __init__(self, provider: str = "auto", **kwargs: Any) -> None:
+        self._library = kwargs.pop("library", None)
+
         if provider == "routed":
             # Use the inference router
             router = kwargs.pop("router", None)
@@ -288,6 +295,13 @@ class Agent:
             self._provider = get_provider(provider, **kwargs)
 
         self._last_events: list[ExecutionEvent] = []
+        self._last_state: ExecutionState | None = None
+
+    def _get_skill_catalog(self) -> dict[str, Skill]:
+        """Get the merged skill catalog (built-in + library custom skills)."""
+        if self._library is not None:
+            return self._library.all_skills()
+        return dict(BUILTIN_SKILLS)
 
     def plan(self, task: str, robot: Robot) -> SkillGraph:
         """
@@ -296,10 +310,11 @@ class Agent:
         Returns a SkillGraph ready for execution.
         """
         caps = robot.capabilities()
+        catalog = self._get_skill_catalog()
 
         # Build skill catalog for the planner
         available_skills = []
-        for skill in BUILTIN_SKILLS.values():
+        for skill in catalog.values():
             available_skills.append({
                 "skill_id": skill.skill_id,
                 "name": skill.name,
@@ -321,9 +336,9 @@ class Agent:
             skill_id = step.get("skill_id", "")
             params = step.get("parameters", {})
 
-            # Look up the skill
-            if skill_id in BUILTIN_SKILLS:
-                skill = BUILTIN_SKILLS[skill_id]
+            # Look up the skill in the full catalog
+            if skill_id in catalog:
+                skill = catalog[skill_id]
             else:
                 logger.warning("Unknown skill %r in plan, creating custom", skill_id)
                 skill = Skill(
@@ -354,7 +369,7 @@ class Agent:
         return graph
 
     def execute(self, task: str, robot: Robot,
-                on_event: Any = None) -> TaskResult:
+                on_event: Any = None, parallel: bool = False) -> TaskResult:
         """
         Plan and execute a task end-to-end.
 
@@ -362,6 +377,7 @@ class Agent:
             task: Natural language task description
             robot: Robot to execute on
             on_event: Optional callback for execution events
+            parallel: If True, run independent skills concurrently
 
         Returns:
             TaskResult with outcome summary
@@ -376,8 +392,9 @@ class Agent:
                 error="Agent could not create a plan for this task",
             )
 
-        # Execute
-        executor = SkillExecutor(robot)
+        # Execute with shared state
+        state = ExecutionState()
+        executor = SkillExecutor(robot, state=state)
         if on_event:
             executor.on_event(on_event)
 
@@ -385,12 +402,18 @@ class Agent:
         self._last_events = []
         executor.on_event(lambda e: self._last_events.append(e))
 
-        result = executor.execute_graph(graph)
+        result = executor.execute_graph(graph, parallel=parallel)
         # Override the generic task name with the actual task
         result.task_name = task
+        self._last_state = state
         return result
 
     @property
     def last_events(self) -> list[ExecutionEvent]:
         """Events from the most recent execution."""
         return list(self._last_events)
+
+    @property
+    def last_state(self) -> ExecutionState | None:
+        """Execution state from the most recent execution."""
+        return self._last_state

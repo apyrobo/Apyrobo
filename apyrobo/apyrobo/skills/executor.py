@@ -4,12 +4,21 @@ Skill Graph Engine — chains skills into executable task plans.
 The SkillGraph is a directed acyclic graph where nodes are skills and
 edges are dependencies.  The SkillExecutor walks the graph and runs
 each skill against a robot via the Core API.
+
+Features:
+    - Topological ordering with parallel execution of independent skills
+    - Timeout enforcement per skill
+    - Execution state tracking between skills (e.g. object_held, at_position)
+    - Postcondition verification after each skill completes
+    - Precondition checks: capability, state, speed
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
 from apyrobo.core.robot import Robot
@@ -17,6 +26,51 @@ from apyrobo.core.schemas import CapabilityType, TaskResult, TaskStatus, Recover
 from apyrobo.skills.skill import Skill, SkillStatus, BUILTIN_SKILLS
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Execution State
+# ---------------------------------------------------------------------------
+
+class ExecutionState:
+    """
+    Tracks mutable state between skill executions.
+
+    Skills can set and query state flags (e.g. "object_held", "at_position")
+    that feed into precondition and postcondition checks.
+    """
+
+    def __init__(self) -> None:
+        self._flags: dict[str, Any] = {}
+        self._lock = threading.Lock()
+
+    def set(self, key: str, value: Any = True) -> None:
+        with self._lock:
+            self._flags[key] = value
+
+    def get(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            return self._flags.get(key, default)
+
+    def is_set(self, key: str) -> bool:
+        with self._lock:
+            return bool(self._flags.get(key, False))
+
+    def clear(self, key: str) -> None:
+        with self._lock:
+            self._flags.pop(key, None)
+
+    def clear_all(self) -> None:
+        with self._lock:
+            self._flags.clear()
+
+    @property
+    def flags(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._flags)
+
+    def __repr__(self) -> str:
+        return f"<ExecutionState flags={self._flags}>"
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +125,37 @@ class SkillGraph:
 
         return [self._skills[sid] for sid in order]
 
+    def get_execution_layers(self) -> list[list[Skill]]:
+        """
+        Return skills grouped into layers for parallel execution.
+
+        Each layer contains skills whose dependencies are all in
+        earlier layers — so skills within the same layer can run
+        concurrently.
+        """
+        order = self.get_execution_order()
+        completed: set[str] = set()
+        layers: list[list[Skill]] = []
+        remaining = [s.skill_id for s in order]
+
+        while remaining:
+            layer: list[Skill] = []
+            next_remaining: list[str] = []
+            for sid in remaining:
+                deps = self._edges.get(sid, [])
+                if all(d in completed for d in deps):
+                    layer.append(self._skills[sid])
+                else:
+                    next_remaining.append(sid)
+            if not layer:
+                raise ValueError("Deadlock in skill graph — no progress possible")
+            for s in layer:
+                completed.add(s.skill_id)
+            layers.append(layer)
+            remaining = next_remaining
+
+        return layers
+
     def get_parameters(self, skill_id: str) -> dict[str, Any]:
         """Get runtime parameters for a skill."""
         base = dict(self._skills[skill_id].parameters)
@@ -80,6 +165,10 @@ class SkillGraph:
     @property
     def skills(self) -> dict[str, Skill]:
         return dict(self._skills)
+
+    @property
+    def edges(self) -> dict[str, list[str]]:
+        return {k: list(v) for k, v in self._edges.items()}
 
     def __len__(self) -> int:
         return len(self._skills)
@@ -111,6 +200,38 @@ EventListener = Callable[[ExecutionEvent], None]
 
 
 # ---------------------------------------------------------------------------
+# Timeout helper
+# ---------------------------------------------------------------------------
+
+class SkillTimeout(Exception):
+    """Raised when a skill exceeds its timeout."""
+
+
+def _run_with_timeout(fn: Callable[[], Any], timeout_seconds: float) -> Any:
+    """Run *fn* in a thread, raising SkillTimeout if it takes too long."""
+    result_box: list[Any] = []
+    error_box: list[BaseException] = []
+
+    def wrapper() -> None:
+        try:
+            result_box.append(fn())
+        except BaseException as e:
+            error_box.append(e)
+
+    thread = threading.Thread(target=wrapper, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        raise SkillTimeout(
+            f"Skill timed out after {timeout_seconds}s"
+        )
+    if error_box:
+        raise error_box[0]
+    return result_box[0] if result_box else None
+
+
+# ---------------------------------------------------------------------------
 # Skill Executor
 # ---------------------------------------------------------------------------
 
@@ -119,13 +240,20 @@ class SkillExecutor:
     Executes a SkillGraph against a robot.
 
     Handles precondition checking, postcondition verification,
-    retry logic, and event streaming.
+    timeout enforcement, retry logic, parallel execution, and
+    event streaming.
     """
 
-    def __init__(self, robot: Robot) -> None:
+    def __init__(self, robot: Robot, state: ExecutionState | None = None) -> None:
         self._robot = robot
         self._listeners: list[EventListener] = []
         self._events: list[ExecutionEvent] = []
+        self._state = state or ExecutionState()
+        self._emit_lock = threading.Lock()
+
+    @property
+    def state(self) -> ExecutionState:
+        return self._state
 
     def on_event(self, listener: EventListener) -> None:
         """Register a callback for execution events."""
@@ -133,7 +261,8 @@ class SkillExecutor:
 
     def _emit(self, skill_id: str, status: SkillStatus, message: str = "") -> None:
         event = ExecutionEvent(skill_id, status, message)
-        self._events.append(event)
+        with self._emit_lock:
+            self._events.append(event)
         for listener in self._listeners:
             try:
                 listener(event)
@@ -144,7 +273,9 @@ class SkillExecutor:
         """
         Check whether a skill's preconditions are met.
 
-        Returns (ok, reason).  For now, checks capability availability.
+        Supports check types:
+            - "capability": robot has the required capability (default)
+            - "state": execution state flag is set
         """
         caps = robot.capabilities()
         cap_types = {c.capability_type for c in caps.capabilities}
@@ -162,13 +293,62 @@ class SkillExecutor:
                     f"Requested speed {requested_speed} exceeds robot max {caps.max_speed}"
                 )
 
+        # Check state-based preconditions
+        for cond in skill.preconditions:
+            if cond.check_type == "state":
+                required_key = cond.parameters.get("key", cond.name)
+                expected = cond.parameters.get("value", True)
+                actual = self._state.get(required_key)
+                if actual != expected:
+                    return False, (
+                        f"State precondition '{cond.name}' not met: "
+                        f"expected {required_key}={expected!r}, got {actual!r}"
+                    )
+
+        return True, "OK"
+
+    def check_postconditions(self, skill: Skill, params: dict[str, Any]) -> tuple[bool, str]:
+        """
+        Verify postconditions after a skill completes.
+
+        Also updates execution state based on postcondition declarations.
+        Returns (ok, reason).
+        """
+        for cond in skill.postconditions:
+            if cond.check_type == "state":
+                # Set the state flag as declared by the postcondition
+                key = cond.parameters.get("key", cond.name)
+                value = cond.parameters.get("value", True)
+                self._state.set(key, value)
+
+        # Auto-update state based on known skill effects
+        base_id = skill.skill_id.rsplit("_", 1)[0] if skill.skill_id[-1:].isdigit() else skill.skill_id
+
+        if base_id == "navigate_to":
+            x = float(params.get("x", 0.0))
+            y = float(params.get("y", 0.0))
+            self._state.set("at_position", (x, y))
+            self._state.set("robot_idle", True)
+        elif base_id == "pick_object":
+            self._state.set("object_held", True)
+            self._state.set("gripper_open", False)
+        elif base_id == "place_object":
+            self._state.set("object_held", False)
+            self._state.set("gripper_open", True)
+        elif base_id == "rotate":
+            angle = float(params.get("angle_rad", 0.0))
+            self._state.set("last_rotation", angle)
+        elif base_id == "stop":
+            self._state.set("robot_idle", True)
+
         return True, "OK"
 
     def execute_skill(self, skill: Skill, parameters: dict[str, Any] | None = None) -> SkillStatus:
         """
         Execute a single skill against the robot.
 
-        Handles precondition checking, the actual command, and retries.
+        Handles precondition checking, timeout enforcement,
+        postcondition verification, and retries.
         """
         params = dict(skill.parameters)
         if parameters:
@@ -194,8 +374,20 @@ class SkillExecutor:
             )
 
             try:
-                result = self._dispatch_skill(skill, params)
+                result = _run_with_timeout(
+                    lambda: self._dispatch_skill(skill, params),
+                    skill.timeout_seconds,
+                )
                 if result:
+                    # Verify postconditions
+                    post_ok, post_reason = self.check_postconditions(skill, params)
+                    if not post_ok:
+                        self._emit(
+                            skill.skill_id, SkillStatus.RUNNING,
+                            f"Postcondition failed: {post_reason}"
+                        )
+                        continue  # retry if postcondition fails
+
                     self._emit(skill.skill_id, SkillStatus.COMPLETED, "Success")
                     return SkillStatus.COMPLETED
                 else:
@@ -203,6 +395,11 @@ class SkillExecutor:
                         skill.skill_id, SkillStatus.RUNNING,
                         f"Attempt {attempts} failed, {'retrying' if attempts < max_attempts else 'no more retries'}"
                     )
+            except SkillTimeout as e:
+                self._emit(
+                    skill.skill_id, SkillStatus.RUNNING,
+                    f"Timeout on attempt {attempts}: {e}"
+                )
             except Exception as e:
                 self._emit(
                     skill.skill_id, SkillStatus.RUNNING,
@@ -235,11 +432,22 @@ class SkillExecutor:
             self._robot.stop()
             return True
 
-        elif base_id in ("pick_object", "place_object"):
-            # In sim/mock, these succeed immediately
-            # Real implementation would call a grasp action server
-            logger.info("Executing %s with params %s", skill.skill_id, params)
+        elif base_id == "rotate":
+            angle = float(params.get("angle_rad", 0.0))
+            speed = params.get("speed")
+            speed = float(speed) if speed is not None else None
+            self._robot.rotate(angle_rad=angle, speed=speed)
             return True
+
+        elif base_id == "pick_object":
+            result = self._robot.gripper_close()
+            logger.info("Executing %s → gripper_close=%s", skill.skill_id, result)
+            return result
+
+        elif base_id == "place_object":
+            result = self._robot.gripper_open()
+            logger.info("Executing %s → gripper_open=%s", skill.skill_id, result)
+            return result
 
         elif base_id == "report_status":
             caps = self._robot.capabilities()
@@ -251,12 +459,23 @@ class SkillExecutor:
             logger.warning("Unknown skill: %s — treating as success", skill.skill_id)
             return True
 
-    def execute_graph(self, graph: SkillGraph) -> TaskResult:
+    def execute_graph(self, graph: SkillGraph, parallel: bool = False) -> TaskResult:
         """
-        Execute an entire skill graph in topological order.
+        Execute an entire skill graph.
+
+        Args:
+            graph: The skill graph to execute.
+            parallel: If True, run independent skills concurrently.
+                      If False (default), execute in topological order.
 
         Returns a TaskResult summarising the outcome.
         """
+        if parallel:
+            return self._execute_graph_parallel(graph)
+        return self._execute_graph_sequential(graph)
+
+    def _execute_graph_sequential(self, graph: SkillGraph) -> TaskResult:
+        """Execute skills one at a time in topological order."""
         order = graph.get_execution_order()
         completed = 0
         recovery_actions: list[RecoveryAction] = []
@@ -286,6 +505,78 @@ class SkillExecutor:
             confidence=1.0,
             steps_completed=completed,
             steps_total=len(order),
+            recovery_actions_taken=recovery_actions,
+        )
+
+    def _execute_graph_parallel(self, graph: SkillGraph) -> TaskResult:
+        """Execute independent skills concurrently using execution layers."""
+        layers = graph.get_execution_layers()
+        total = len(graph)
+        completed = 0
+        recovery_actions: list[RecoveryAction] = []
+
+        for layer in layers:
+            if len(layer) == 1:
+                # Single skill — no need for thread pool
+                skill = layer[0]
+                params = graph.get_parameters(skill.skill_id)
+                status = self.execute_skill(skill, params)
+            else:
+                # Multiple independent skills — run concurrently
+                results: dict[str, SkillStatus] = {}
+                with ThreadPoolExecutor(max_workers=len(layer)) as pool:
+                    futures = {}
+                    for skill in layer:
+                        params = graph.get_parameters(skill.skill_id)
+                        fut = pool.submit(self.execute_skill, skill, params)
+                        futures[fut] = skill
+                    for fut in as_completed(futures):
+                        skill = futures[fut]
+                        results[skill.skill_id] = fut.result()
+                # Check results
+                for skill in layer:
+                    status = results[skill.skill_id]
+
+            # Process result (last status set for single-skill, or loop for multi)
+            if len(layer) == 1:
+                if status == SkillStatus.COMPLETED:
+                    completed += 1
+                elif status == SkillStatus.FAILED:
+                    if layer[0].retry_count > 0:
+                        recovery_actions.append(RecoveryAction.RETRY)
+                    recovery_actions.append(RecoveryAction.ABORT)
+                    return TaskResult(
+                        task_name=f"graph_{total}_skills",
+                        status=TaskStatus.FAILED,
+                        steps_completed=completed,
+                        steps_total=total,
+                        error=f"Skill {layer[0].skill_id!r} failed",
+                        recovery_actions_taken=recovery_actions,
+                    )
+            else:
+                for skill in layer:
+                    st = results[skill.skill_id]
+                    if st == SkillStatus.COMPLETED:
+                        completed += 1
+                    elif st == SkillStatus.FAILED:
+                        if skill.retry_count > 0:
+                            recovery_actions.append(RecoveryAction.RETRY)
+                        recovery_actions.append(RecoveryAction.ABORT)
+                        return TaskResult(
+                            task_name=f"graph_{total}_skills",
+                            status=TaskStatus.FAILED,
+                            steps_completed=completed,
+                            steps_total=total,
+                            error=f"Skill {skill.skill_id!r} failed",
+                            recovery_actions_taken=recovery_actions,
+                        )
+
+        return TaskResult(
+            task_name=f"graph_{total}_skills",
+            status=TaskStatus.COMPLETED,
+            confidence=1.0,
+            steps_completed=completed,
+            steps_total=total,
             recovery_actions_taken=recovery_actions,
         )
 

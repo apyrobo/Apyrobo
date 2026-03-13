@@ -13,10 +13,14 @@ Built on ROS 2. Model-agnostic. Hardware-agnostic.
 __version__ = "0.1.0-dev"
 
 from apyrobo.core.robot import Robot
-from apyrobo.core.schemas import RobotCapability, TaskRequest, TaskResult
+from apyrobo.core.adapters import (
+    CapabilityAdapter, MockAdapter, GazeboAdapter, MQTTAdapter, HTTPAdapter,
+    list_adapters, register_adapter,
+)
+from apyrobo.core.schemas import RobotCapability, TaskRequest, TaskResult, AdapterState
 from apyrobo.skills.agent import Agent
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
-from apyrobo.skills.executor import SkillGraph, SkillExecutor
+from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionState, SkillTimeout
 from apyrobo.safety.enforcer import SafetyEnforcer, SafetyPolicy, SafetyViolation
 from apyrobo.safety.confidence import ConfidenceEstimator, ConfidenceReport
 from apyrobo.swarm.bus import SwarmBus, SwarmMessage
@@ -24,6 +28,8 @@ from apyrobo.swarm.coordinator import SwarmCoordinator
 from apyrobo.swarm.safety import SwarmSafety, ProximityViolation, DeadlockDetected
 from apyrobo.sensors.pipeline import SensorPipeline, WorldState, SensorReading
 from apyrobo.skills.library import SkillLibrary
+from apyrobo.skills.package import SkillPackage
+from apyrobo.skills.registry import SkillRegistry, PackageConflict, DependencyError
 from apyrobo.config import ApyroboConfig
 from apyrobo.inference.router import InferenceRouter, Urgency
 from apyrobo.observability import get_logger, trace_context, configure_logging
@@ -45,6 +51,14 @@ __all__ = [
     "RobotCapability",
     "TaskRequest",
     "TaskResult",
+    "AdapterState",
+    "CapabilityAdapter",
+    "MockAdapter",
+    "GazeboAdapter",
+    "MQTTAdapter",
+    "HTTPAdapter",
+    "list_adapters",
+    "register_adapter",
     "Skill",
     "BUILTIN_SKILLS",
     "SkillGraph",

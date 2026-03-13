@@ -18,7 +18,7 @@ import logging
 from typing import Any
 
 from apyrobo.core.adapters import CapabilityAdapter, get_adapter
-from apyrobo.core.schemas import RobotCapability
+from apyrobo.core.schemas import AdapterState, RobotCapability
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,64 @@ class Robot:
     def stop(self) -> None:
         """Immediately halt all motion — always works regardless of task state."""
         self._adapter.stop()
+
+    def rotate(self, angle_rad: float, speed: float | None = None) -> None:
+        """Rotate the robot in place by *angle_rad* radians."""
+        self._adapter.rotate(angle_rad=angle_rad, speed=speed)
+
+    def cancel(self) -> None:
+        """Cancel the current navigation goal."""
+        self._adapter.cancel()
+
+    # ------------------------------------------------------------------
+    # Gripper
+    # ------------------------------------------------------------------
+
+    def gripper_open(self) -> bool:
+        """Open the gripper. Returns True on success."""
+        return self._adapter.gripper_open()
+
+    def gripper_close(self) -> bool:
+        """Close the gripper. Returns True on success."""
+        return self._adapter.gripper_close()
+
+    # ------------------------------------------------------------------
+    # State queries
+    # ------------------------------------------------------------------
+
+    def get_position(self) -> tuple[float, float]:
+        """Return the robot's current (x, y) position."""
+        return self._adapter.get_position()
+
+    def get_orientation(self) -> float:
+        """Return the robot's current heading in radians."""
+        return self._adapter.get_orientation()
+
+    def get_health(self) -> dict[str, Any]:
+        """Return a health/status dict."""
+        return self._adapter.get_health()
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def connect(self) -> None:
+        """Establish connection to the robot/platform."""
+        self._adapter.connect()
+
+    def disconnect(self) -> None:
+        """Cleanly disconnect from the robot/platform."""
+        self._adapter.disconnect()
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the adapter has an active connection."""
+        return self._adapter.is_connected
+
+    @property
+    def state(self) -> AdapterState:
+        """Current adapter state."""
+        return self._adapter.state
 
     # ------------------------------------------------------------------
     # Dunder helpers

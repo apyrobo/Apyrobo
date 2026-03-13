@@ -24,8 +24,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import TaskStatus
 from apyrobo.skills.agent import Agent
-from apyrobo.skills.skill import BUILTIN_SKILLS
+from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
 from apyrobo.skills.executor import SkillStatus
+from apyrobo.skills.package import SkillPackage
+from apyrobo.skills.registry import SkillRegistry, PackageConflict
 from apyrobo.safety.enforcer import SafetyEnforcer, SafetyPolicy
 from apyrobo.safety.confidence import ConfidenceEstimator
 from apyrobo.config import ApyroboConfig
@@ -186,6 +188,187 @@ def cmd_config(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Package management commands
+# ---------------------------------------------------------------------------
+
+def _get_registry(args: argparse.Namespace) -> SkillRegistry:
+    """Get or create a SkillRegistry, respecting --registry-dir."""
+    registry_dir = getattr(args, "registry_dir", None)
+    return SkillRegistry(registry_dir)
+
+
+def cmd_pkg_init(args: argparse.Namespace) -> None:
+    """Initialise a new skill package in a directory."""
+    pkg = SkillPackage.init(
+        name=args.name,
+        version=args.version or "0.1.0",
+        description=args.description or "",
+        author=args.author or "",
+        directory=args.directory or f"./{args.name}",
+    )
+    out_dir = args.directory or f"./{args.name}"
+    print(f"Initialised package: {pkg.name}@{pkg.version}")
+    print(f"  Directory: {out_dir}")
+    print(f"  Manifest:  {out_dir}/skill-package.json")
+    print(f"  Skills:    {out_dir}/skills/")
+    print()
+    print("Next steps:")
+    print(f"  1. Add skill JSON files to {out_dir}/skills/")
+    print(f"  2. Edit {out_dir}/skill-package.json to list them")
+    print(f"  3. Run: apyrobo pkg pack {out_dir}")
+
+
+def cmd_pkg_pack(args: argparse.Namespace) -> None:
+    """Pack a package directory into a .skillpkg archive."""
+    pkg = SkillPackage.load(args.directory)
+    errors = pkg.validate()
+    if errors:
+        print(f"Validation errors in {args.directory}:")
+        for e in errors:
+            print(f"  - {e}")
+        sys.exit(1)
+
+    output = args.output  # may be None
+    archive_path = pkg.pack(args.directory, output)
+    print(f"Packed: {pkg.name}@{pkg.version}")
+    print(f"  Skills: {', '.join(pkg.skill_ids)}")
+    print(f"  Archive: {archive_path}")
+
+
+def cmd_pkg_install(args: argparse.Namespace) -> None:
+    """Install a skill package from an archive or directory."""
+    registry = _get_registry(args)
+    try:
+        pkg = registry.install(args.source, force=args.force)
+        print(f"Installed: {pkg.name}@{pkg.version}")
+        print(f"  Skills: {', '.join(pkg.skill_ids)}")
+
+        unmet = registry.check_dependencies(pkg)
+        if unmet:
+            print()
+            print("Unmet dependencies:")
+            for dep in unmet:
+                print(f"  - {dep}")
+    except PackageConflict as e:
+        print(f"Conflict: {e}")
+        print("Use --force to overwrite.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Install failed: {e}")
+        sys.exit(1)
+
+
+def cmd_pkg_remove(args: argparse.Namespace) -> None:
+    """Remove an installed skill package."""
+    registry = _get_registry(args)
+    if registry.remove(args.name):
+        print(f"Removed: {args.name}")
+    else:
+        print(f"Package not installed: {args.name}")
+        sys.exit(1)
+
+
+def cmd_pkg_list(args: argparse.Namespace) -> None:
+    """List installed skill packages."""
+    registry = _get_registry(args)
+    packages = registry.list_packages()
+
+    if not packages:
+        print("No packages installed.")
+        print("Install with: apyrobo pkg install <path>")
+        return
+
+    for pkg_info in packages:
+        name = pkg_info["name"]
+        version = pkg_info.get("version", "?")
+        desc = pkg_info.get("description", "")
+        skills = pkg_info.get("skills", [])
+        print(f"  {name}@{version}  ({len(skills)} skills)")
+        if desc:
+            print(f"    {desc}")
+        if args.verbose_list:
+            print(f"    Skills: {', '.join(skills)}")
+            tags = pkg_info.get("tags", [])
+            if tags:
+                print(f"    Tags: {', '.join(tags)}")
+            deps = pkg_info.get("dependencies", {})
+            if deps:
+                dep_strs = [f"{k} {v}" for k, v in deps.items()]
+                print(f"    Dependencies: {', '.join(dep_strs)}")
+
+
+def cmd_pkg_info(args: argparse.Namespace) -> None:
+    """Show detailed info about an installed package."""
+    registry = _get_registry(args)
+    pkg = registry.get(args.name)
+    if pkg is None:
+        print(f"Package not installed: {args.name}")
+        sys.exit(1)
+
+    print(f"Package: {pkg.name}")
+    print(f"  Version:      {pkg.version}")
+    print(f"  Description:  {pkg.description or '(none)'}")
+    print(f"  Author:       {pkg.author or '(none)'}")
+    print(f"  License:      {pkg.license}")
+    print(f"  Homepage:     {pkg.homepage or '(none)'}")
+    print(f"  Capabilities: {', '.join(pkg.required_capabilities) or '(none)'}")
+    print(f"  Min APYROBO:  {pkg.min_apyrobo_version}")
+    print(f"  Tags:         {', '.join(pkg.tags) or '(none)'}")
+    print()
+    print(f"Skills ({len(pkg.skills)}):")
+    for skill in pkg.skills:
+        print(f"  - {skill.skill_id}: {skill.name}")
+        if skill.description:
+            print(f"    {skill.description}")
+    if pkg.dependencies:
+        print()
+        print("Dependencies:")
+        for dep_name, constraint in pkg.dependencies.items():
+            installed = registry.is_installed(dep_name)
+            status = "installed" if installed else "MISSING"
+            print(f"  - {dep_name} {constraint} ({status})")
+
+
+def cmd_pkg_search(args: argparse.Namespace) -> None:
+    """Search installed packages."""
+    registry = _get_registry(args)
+    results = registry.search(args.query)
+    if not results:
+        print(f"No packages match: {args.query!r}")
+        return
+
+    print(f"Results for {args.query!r}:")
+    for r in results:
+        name = r["name"]
+        version = r.get("version", "?")
+        desc = r.get("description", "")
+        print(f"  {name}@{version}")
+        if desc:
+            print(f"    {desc}")
+
+
+def cmd_pkg_validate(args: argparse.Namespace) -> None:
+    """Validate a skill package directory."""
+    try:
+        pkg = SkillPackage.load(args.directory)
+    except Exception as e:
+        print(f"Failed to load package from {args.directory}: {e}")
+        sys.exit(1)
+
+    errors = pkg.validate()
+    if errors:
+        print(f"Package {pkg.name}@{pkg.version} has errors:")
+        for e in errors:
+            print(f"  - {e}")
+        sys.exit(1)
+
+    print(f"Package {pkg.name}@{pkg.version} is valid.")
+    print(f"  Skills: {', '.join(pkg.skill_ids)}")
+    print(f"  Dependencies: {len(pkg.dependencies)}")
+    print(f"  Tags: {', '.join(pkg.tags) or '(none)'}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -225,6 +408,53 @@ def main() -> None:
     p_config.add_argument("--generate", action="store_true", help="Generate default config")
     p_config.add_argument("--file", type=str, help="Load and display a config file")
 
+    # pkg — skill package management
+    p_pkg = sub.add_parser("pkg", help="Skill package management")
+    p_pkg.add_argument("--registry-dir", type=str, default=None,
+                       help="Override registry directory")
+    pkg_sub = p_pkg.add_subparsers(dest="pkg_command")
+
+    # pkg init
+    p_pkg_init = pkg_sub.add_parser("init", help="Create a new skill package")
+    p_pkg_init.add_argument("name", help="Package name (lowercase, hyphenated)")
+    p_pkg_init.add_argument("--version", default="0.1.0")
+    p_pkg_init.add_argument("--description", default="")
+    p_pkg_init.add_argument("--author", default="")
+    p_pkg_init.add_argument("--directory", default=None,
+                            help="Output directory (default: ./<name>)")
+
+    # pkg pack
+    p_pkg_pack = pkg_sub.add_parser("pack", help="Pack a package into .skillpkg")
+    p_pkg_pack.add_argument("directory", help="Package directory")
+    p_pkg_pack.add_argument("--output", default=None, help="Output .skillpkg path")
+
+    # pkg install
+    p_pkg_install = pkg_sub.add_parser("install", help="Install a package")
+    p_pkg_install.add_argument("source", help="Path to .skillpkg or package directory")
+    p_pkg_install.add_argument("--force", action="store_true",
+                               help="Overwrite existing package")
+
+    # pkg remove
+    p_pkg_remove = pkg_sub.add_parser("remove", help="Remove an installed package")
+    p_pkg_remove.add_argument("name", help="Package name")
+
+    # pkg list
+    p_pkg_list = pkg_sub.add_parser("list", help="List installed packages")
+    p_pkg_list.add_argument("-v", "--verbose-list", action="store_true",
+                            help="Show skills and tags")
+
+    # pkg info
+    p_pkg_info = pkg_sub.add_parser("info", help="Show package details")
+    p_pkg_info.add_argument("name", help="Package name")
+
+    # pkg search
+    p_pkg_search = pkg_sub.add_parser("search", help="Search packages")
+    p_pkg_search.add_argument("query", help="Search query")
+
+    # pkg validate
+    p_pkg_validate = pkg_sub.add_parser("validate", help="Validate a package directory")
+    p_pkg_validate.add_argument("directory", help="Package directory")
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -234,6 +464,24 @@ def main() -> None:
 
     if args.command is None:
         parser.print_help()
+        return
+
+    # Dispatch pkg subcommands
+    if args.command == "pkg":
+        pkg_commands = {
+            "init": cmd_pkg_init,
+            "pack": cmd_pkg_pack,
+            "install": cmd_pkg_install,
+            "remove": cmd_pkg_remove,
+            "list": cmd_pkg_list,
+            "info": cmd_pkg_info,
+            "search": cmd_pkg_search,
+            "validate": cmd_pkg_validate,
+        }
+        if args.pkg_command is None:
+            p_pkg.print_help()
+            return
+        pkg_commands[args.pkg_command](args)
         return
 
     commands = {

@@ -124,6 +124,18 @@ navigate_to = _register_builtin(Skill(
     parameters={"x": 0.0, "y": 0.0, "speed": 0.5},
 ))
 
+rotate = _register_builtin(Skill(
+    skill_id="rotate",
+    name="Rotate",
+    description="Rotate the robot in place by a given angle (radians)",
+    required_capability=CapabilityType.ROTATE,
+    preconditions=[
+        Condition(name="robot_idle", description="Robot is not currently executing another skill"),
+    ],
+    parameters={"angle_rad": 0.0, "speed": None},
+    timeout_seconds=30.0,
+))
+
 stop = _register_builtin(Skill(
     skill_id="stop",
     name="Stop",
