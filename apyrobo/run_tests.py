@@ -1483,6 +1483,431 @@ test("Webhooks: event log", test_webhook_event_log)
 
 
 # =====================================================================
+section("Skill Execution Engine — Execution State")
+# =====================================================================
+
+from apyrobo.skills.executor import ExecutionState
+
+def test_execution_state_basic():
+    state = ExecutionState()
+    assert state.get("key") is None
+    assert state.is_set("key") is False
+    state.set("key", "value")
+    assert state.get("key") == "value"
+    assert state.is_set("key") is True
+
+def test_execution_state_flags():
+    state = ExecutionState()
+    state.set("object_held", True)
+    state.set("at_position", (1.0, 2.0))
+    assert state.flags == {"object_held": True, "at_position": (1.0, 2.0)}
+
+def test_execution_state_clear():
+    state = ExecutionState()
+    state.set("a", 1)
+    state.set("b", 2)
+    state.clear("a")
+    assert state.get("a") is None
+    assert state.get("b") == 2
+    state.clear_all()
+    assert state.flags == {}
+
+test("ExecutionState: basic get/set", test_execution_state_basic)
+test("ExecutionState: flags property", test_execution_state_flags)
+test("ExecutionState: clear/clear_all", test_execution_state_clear)
+
+
+# =====================================================================
+section("Skill Execution Engine — Timeout Enforcement")
+# =====================================================================
+
+from apyrobo.skills.executor import SkillTimeout, _run_with_timeout
+
+def test_timeout_fast_fn():
+    """Fast function completes before timeout."""
+    result = _run_with_timeout(lambda: 42, timeout_seconds=5.0)
+    assert result == 42
+
+def test_timeout_slow_fn():
+    """Slow function triggers SkillTimeout."""
+    def slow():
+        time.sleep(10)
+        return "should not reach"
+    try:
+        _run_with_timeout(slow, timeout_seconds=0.2)
+        assert False, "Should have raised SkillTimeout"
+    except SkillTimeout:
+        pass
+
+def test_timeout_propagates_exception():
+    """Exception inside fn is propagated, not converted to timeout."""
+    def failing():
+        raise ValueError("deliberate")
+    try:
+        _run_with_timeout(failing, timeout_seconds=5.0)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "deliberate" in str(e)
+
+def test_executor_timeout_enforcement():
+    """Executor uses skill.timeout_seconds during dispatch."""
+    robot = Robot.discover("mock://tb4")
+    executor = SkillExecutor(robot)
+    # Create a skill with a very short timeout that will still succeed
+    # because mock dispatch is instant
+    fast_skill = Skill(
+        skill_id="navigate_to",
+        name="Navigate To",
+        required_capability=CapabilityType.NAVIGATE,
+        parameters={"x": 1.0, "y": 2.0},
+        timeout_seconds=5.0,
+    )
+    status = executor.execute_skill(fast_skill)
+    assert status == SkillStatus.COMPLETED
+
+test("Timeout: fast function succeeds", test_timeout_fast_fn)
+test("Timeout: slow function raises SkillTimeout", test_timeout_slow_fn)
+test("Timeout: exception propagation", test_timeout_propagates_exception)
+test("Timeout: executor enforcement", test_executor_timeout_enforcement)
+
+
+# =====================================================================
+section("Skill Execution Engine — Postcondition Verification")
+# =====================================================================
+
+def test_postcondition_state_update():
+    """Postcondition verification updates execution state."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+
+    nav_skill = Skill(
+        skill_id="navigate_to",
+        name="Navigate To",
+        required_capability=CapabilityType.NAVIGATE,
+        parameters={"x": 3.0, "y": 4.0},
+    )
+    status = executor.execute_skill(nav_skill)
+    assert status == SkillStatus.COMPLETED
+    assert state.get("at_position") == (3.0, 4.0)
+    assert state.is_set("robot_idle")
+
+def test_postcondition_pick_updates_state():
+    """Pick skill sets object_held and clears gripper_open."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+
+    pick = Skill(
+        skill_id="pick_object",
+        name="Pick Object",
+        required_capability=CapabilityType.PICK,
+        parameters={},
+    )
+    status = executor.execute_skill(pick)
+    assert status == SkillStatus.COMPLETED
+    assert state.is_set("object_held")
+    assert state.get("gripper_open") is False
+
+def test_postcondition_place_updates_state():
+    """Place skill clears object_held and sets gripper_open."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    state.set("object_held", True)
+    executor = SkillExecutor(robot, state=state)
+
+    place = Skill(
+        skill_id="place_object",
+        name="Place Object",
+        required_capability=CapabilityType.PLACE,
+        parameters={},
+    )
+    status = executor.execute_skill(place)
+    assert status == SkillStatus.COMPLETED
+    assert state.get("object_held") is False
+    assert state.is_set("gripper_open")
+
+def test_postcondition_custom_state():
+    """Postcondition with check_type='state' sets flag on completion."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+
+    skill = Skill(
+        skill_id="report_status",
+        name="Report",
+        required_capability=CapabilityType.CUSTOM,
+        postconditions=[
+            Condition(name="status_reported", check_type="state",
+                      parameters={"key": "status_reported", "value": True}),
+        ],
+    )
+    status = executor.execute_skill(skill)
+    assert status == SkillStatus.COMPLETED
+    assert state.is_set("status_reported")
+
+test("Postcondition: navigate updates position", test_postcondition_state_update)
+test("Postcondition: pick sets object_held", test_postcondition_pick_updates_state)
+test("Postcondition: place clears object_held", test_postcondition_place_updates_state)
+test("Postcondition: custom state flag", test_postcondition_custom_state)
+
+
+# =====================================================================
+section("Skill Execution Engine — State Preconditions")
+# =====================================================================
+
+def test_state_precondition_pass():
+    """State-based precondition passes when flag is set."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    state.set("object_held", True)
+    executor = SkillExecutor(robot, state=state)
+
+    skill = Skill(
+        skill_id="place_object",
+        name="Place Object",
+        required_capability=CapabilityType.PLACE,
+        preconditions=[
+            Condition(name="object_held", check_type="state",
+                      parameters={"key": "object_held", "value": True}),
+        ],
+    )
+    ok, reason = executor.check_preconditions(skill, robot)
+    assert ok is True
+
+def test_state_precondition_fail():
+    """State-based precondition fails when flag is not set."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+
+    skill = Skill(
+        skill_id="place_object",
+        name="Place Object",
+        required_capability=CapabilityType.PLACE,
+        preconditions=[
+            Condition(name="object_held", check_type="state",
+                      parameters={"key": "object_held", "value": True}),
+        ],
+    )
+    ok, reason = executor.check_preconditions(skill, robot)
+    assert ok is False
+    assert "object_held" in reason
+
+def test_state_precondition_execution_rejected():
+    """Skill execution fails if state precondition not met."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+
+    skill = Skill(
+        skill_id="place_object",
+        name="Place Object",
+        required_capability=CapabilityType.PLACE,
+        preconditions=[
+            Condition(name="object_held", check_type="state",
+                      parameters={"key": "object_held", "value": True}),
+        ],
+    )
+    status = executor.execute_skill(skill)
+    assert status == SkillStatus.FAILED
+
+test("State precondition: passes when set", test_state_precondition_pass)
+test("State precondition: fails when missing", test_state_precondition_fail)
+test("State precondition: execution rejected", test_state_precondition_execution_rejected)
+
+
+# =====================================================================
+section("Skill Execution Engine — Parallel Execution")
+# =====================================================================
+
+def test_execution_layers_linear():
+    """Linear graph has one skill per layer."""
+    graph = SkillGraph()
+    s1 = Skill(skill_id="a", name="A", parameters={})
+    s2 = Skill(skill_id="b", name="B", parameters={})
+    s3 = Skill(skill_id="c", name="C", parameters={})
+    graph.add_skill(s1)
+    graph.add_skill(s2, depends_on=["a"])
+    graph.add_skill(s3, depends_on=["b"])
+    layers = graph.get_execution_layers()
+    assert len(layers) == 3
+    assert [s.skill_id for s in layers[0]] == ["a"]
+    assert [s.skill_id for s in layers[1]] == ["b"]
+    assert [s.skill_id for s in layers[2]] == ["c"]
+
+def test_execution_layers_parallel():
+    """Skills with same dependencies land in the same layer."""
+    graph = SkillGraph()
+    root = Skill(skill_id="root", name="Root", parameters={})
+    a = Skill(skill_id="a", name="A", parameters={})
+    b = Skill(skill_id="b", name="B", parameters={})
+    final = Skill(skill_id="final", name="Final", parameters={})
+    graph.add_skill(root)
+    graph.add_skill(a, depends_on=["root"])
+    graph.add_skill(b, depends_on=["root"])
+    graph.add_skill(final, depends_on=["a", "b"])
+    layers = graph.get_execution_layers()
+    assert len(layers) == 3
+    layer1_ids = sorted([s.skill_id for s in layers[1]])
+    assert layer1_ids == ["a", "b"]  # a and b are parallel
+    assert [s.skill_id for s in layers[2]] == ["final"]
+
+def test_parallel_graph_execution():
+    """Parallel execution produces same result as sequential."""
+    robot = Robot.discover("mock://tb4")
+    graph = SkillGraph()
+    nav1 = Skill(skill_id="navigate_to_0", name="Nav1",
+                 required_capability=CapabilityType.NAVIGATE, parameters={"x": 1.0, "y": 1.0})
+    report = Skill(skill_id="report_status_1", name="Report",
+                   required_capability=CapabilityType.CUSTOM, parameters={})
+    graph.add_skill(nav1)
+    graph.add_skill(report)  # no dependency — can run in parallel with nav1
+
+    executor = SkillExecutor(robot)
+    result = executor.execute_graph(graph, parallel=True)
+    assert result.status == TaskStatus.COMPLETED
+    assert result.steps_completed == 2
+
+def test_parallel_vs_sequential_same_result():
+    """Both modes produce COMPLETED for a simple plan."""
+    robot = Robot.discover("mock://tb4")
+
+    def make_graph():
+        g = SkillGraph()
+        s1 = Skill(skill_id="navigate_to_0", name="Nav",
+                    required_capability=CapabilityType.NAVIGATE, parameters={"x": 1.0, "y": 1.0})
+        s2 = Skill(skill_id="stop_1", name="Stop",
+                    required_capability=CapabilityType.NAVIGATE, parameters={})
+        g.add_skill(s1)
+        g.add_skill(s2, depends_on=["navigate_to_0"])
+        return g
+
+    seq_result = SkillExecutor(robot).execute_graph(make_graph(), parallel=False)
+    par_result = SkillExecutor(robot).execute_graph(make_graph(), parallel=True)
+    assert seq_result.status == par_result.status == TaskStatus.COMPLETED
+    assert seq_result.steps_completed == par_result.steps_completed == 2
+
+test("Execution layers: linear graph", test_execution_layers_linear)
+test("Execution layers: parallel graph", test_execution_layers_parallel)
+test("Parallel execution: basic", test_parallel_graph_execution)
+test("Parallel vs sequential: same result", test_parallel_vs_sequential_same_result)
+
+
+# =====================================================================
+section("Skill Execution Engine — Library Integration")
+# =====================================================================
+
+def test_agent_with_library():
+    """Agent uses SkillLibrary for custom skills."""
+    lib = SkillLibrary()
+    lib.load_json(json.dumps({
+        "skill_id": "scan_area",
+        "name": "Scan Area",
+        "description": "Scan the surrounding area",
+        "required_capability": "custom",
+        "parameters": {"radius": 5.0},
+    }))
+    agent = Agent(provider="rule", library=lib)
+    catalog = agent._get_skill_catalog()
+    assert "scan_area" in catalog
+    assert "navigate_to" in catalog  # built-ins still present
+
+def test_agent_library_overrides_builtin():
+    """Custom skills in library override built-ins with same ID."""
+    lib = SkillLibrary()
+    lib.load_json(json.dumps({
+        "skill_id": "navigate_to",
+        "name": "Custom Navigate",
+        "required_capability": "navigate",
+        "parameters": {"x": 0.0, "y": 0.0, "speed": 1.0},
+        "timeout_seconds": 120.0,
+    }))
+    agent = Agent(provider="rule", library=lib)
+    catalog = agent._get_skill_catalog()
+    assert catalog["navigate_to"].name == "Custom Navigate"
+    assert catalog["navigate_to"].timeout_seconds == 120.0
+
+def test_agent_execute_tracks_state():
+    """Agent.execute exposes last_state after execution."""
+    agent = Agent(provider="rule")
+    robot = Robot.discover("mock://tb4")
+    result = agent.execute(task="deliver package from (1,2) to (5,5)", robot=robot)
+    assert result.status == TaskStatus.COMPLETED
+    state = agent.last_state
+    assert state is not None
+    # After delivery: navigate→pick→navigate→place
+    # State should show gripper_open (from place_object)
+    assert state.is_set("gripper_open")
+    assert state.get("object_held") is False
+
+def test_agent_execute_parallel_flag():
+    """Agent.execute with parallel=True works."""
+    agent = Agent(provider="rule")
+    robot = Robot.discover("mock://tb4")
+    result = agent.execute(task="go to (3, 4)", robot=robot, parallel=True)
+    assert result.status == TaskStatus.COMPLETED
+
+test("Agent + Library: custom skills available", test_agent_with_library)
+test("Agent + Library: override built-in", test_agent_library_overrides_builtin)
+test("Agent: execute tracks state", test_agent_execute_tracks_state)
+test("Agent: parallel execution flag", test_agent_execute_parallel_flag)
+
+
+# =====================================================================
+section("Skill Execution Engine — State Flow in Graph")
+# =====================================================================
+
+def test_state_flows_through_graph():
+    """Execution state flows correctly through a multi-skill graph."""
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+
+    graph = SkillGraph()
+    nav = Skill(skill_id="navigate_to_0", name="Nav",
+                required_capability=CapabilityType.NAVIGATE,
+                parameters={"x": 3.0, "y": 4.0})
+    pick = Skill(skill_id="pick_object_1", name="Pick",
+                 required_capability=CapabilityType.PICK,
+                 parameters={})
+    nav2 = Skill(skill_id="navigate_to_2", name="Nav2",
+                 required_capability=CapabilityType.NAVIGATE,
+                 parameters={"x": 7.0, "y": 8.0})
+    place = Skill(skill_id="place_object_3", name="Place",
+                  required_capability=CapabilityType.PLACE,
+                  parameters={})
+
+    graph.add_skill(nav)
+    graph.add_skill(pick, depends_on=["navigate_to_0"])
+    graph.add_skill(nav2, depends_on=["pick_object_1"])
+    graph.add_skill(place, depends_on=["navigate_to_2"])
+
+    result = executor.execute_graph(graph)
+    assert result.status == TaskStatus.COMPLETED
+    assert result.steps_completed == 4
+
+    # Verify final state
+    assert state.get("at_position") == (7.0, 8.0)  # last navigate
+    assert state.get("object_held") is False  # placed
+    assert state.is_set("gripper_open")  # placed
+
+def test_graph_edges_property():
+    """SkillGraph.edges returns a copy of the edge map."""
+    graph = SkillGraph()
+    s1 = Skill(skill_id="a", name="A", parameters={})
+    s2 = Skill(skill_id="b", name="B", parameters={})
+    graph.add_skill(s1)
+    graph.add_skill(s2, depends_on=["a"])
+    edges = graph.edges
+    assert edges["b"] == ["a"]
+    assert edges["a"] == []
+
+test("State flow: full delivery pipeline", test_state_flows_through_graph)
+test("SkillGraph: edges property", test_graph_edges_property)
+
+
+# =====================================================================
 # Summary
 # =====================================================================
 
