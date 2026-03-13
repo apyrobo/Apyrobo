@@ -1,0 +1,45 @@
+# =============================================================================
+# APYROBO Configuration
+# Copy this to apyrobo.yaml in the project root and customise.
+# =============================================================================
+
+robot:
+  uri: gazebo://turtlebot4      # mock://turtlebot4 for testing
+  config: {}
+
+agent:
+  provider: auto                # "auto", "rule", or "llm"
+  # model: gpt-4o-mini          # uncomment for LLM provider
+
+safety:
+  policy_name: warehouse
+  max_speed: 1.0                # m/s
+  human_proximity_limit: 0.5    # metres
+  collision_zones:
+    - { x_min: 8, x_max: 10, y_min: 8, y_max: 10 }  # restricted area
+
+swarm:
+  enabled: false
+  min_distance: 0.5
+  bus_type: memory              # "memory" or "ros2"
+
+sensors:
+  enabled: true
+  lidar_subsample: 4
+  lidar_max_range: 10.0
+  topics:
+    scan: /scan
+    camera: /oakd/rgb/preview/image_raw
+    imu: /imu
+    odom: /odom
+
+skills:
+  custom_dir: skills/           # directory for custom .json skills
+
+logging:
+  level: INFO
+
+simulation:
+  world: warehouse
+  headless: false
+  use_sim_time: true

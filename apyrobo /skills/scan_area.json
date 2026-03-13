@@ -1,0 +1,26 @@
+{
+  "skill_id": "scan_area",
+  "name": "Scan Area",
+  "description": "Rotate in place to scan the surrounding area with all sensors",
+  "required_capability": "scan",
+  "preconditions": [
+    {
+      "name": "robot_idle",
+      "description": "Robot is stationary",
+      "check_type": "state"
+    }
+  ],
+  "postconditions": [
+    {
+      "name": "scan_complete",
+      "description": "360-degree scan data captured",
+      "check_type": "sensor"
+    }
+  ],
+  "parameters": {
+    "rotation_speed": 0.3,
+    "full_rotations": 1
+  },
+  "timeout_seconds": 30,
+  "retry_count": 0
+}

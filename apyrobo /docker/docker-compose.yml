@@ -1,0 +1,68 @@
+# =============================================================================
+# APYROBO Docker Compose — Full MVP Environment
+#
+# Quick start:
+#   docker compose -f docker/docker-compose.yml build
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml exec apyrobo bash
+#
+# GUI (Gazebo) on macOS:
+#   1. Install XQuartz: brew install --cask xquartz
+#   2. Open XQuartz → Preferences → Security → "Allow network clients" ✓
+#   3. Restart XQuartz
+#   4. Run: xhost +localhost
+#   5. Then: docker compose up -d
+#
+# GUI on Linux:
+#   1. Run: xhost +local:docker
+#   2. Then: docker compose up -d
+#
+# =============================================================================
+
+services:
+  apyrobo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: apyrobo-dev
+    stdin_open: true
+    tty: true
+    privileged: true
+
+    # Mount source for live editing (code changes reflected immediately)
+    volumes:
+      - ..:/workspace
+      # Persist Gazebo models so they don't re-download every run
+      - gazebo_models:/root/.gazebo/models
+      # Recordings output
+      - ../recordings:/workspace/recordings
+
+    environment:
+      # GUI forwarding
+      - DISPLAY=${DISPLAY:-host.docker.internal:0}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=1
+      # ROS 2
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - RCUTILS_COLORIZED_OUTPUT=1
+      # Gazebo
+      - GAZEBO_MODEL_PATH=/opt/ros/humble/share/turtlebot4_gazebo/models
+      - IGN_PARTITION=apyrobo
+
+    # Network: host mode for ROS 2 DDS multicast discovery
+    network_mode: host
+
+    # GPU access (for Gazebo rendering — comment out if no NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+    command: bash
+
+volumes:
+  gazebo_models:

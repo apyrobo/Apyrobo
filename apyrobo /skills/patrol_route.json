@@ -1,0 +1,32 @@
+{
+  "skill_id": "patrol_route",
+  "name": "Patrol Route",
+  "description": "Navigate a fixed patrol route through waypoints",
+  "required_capability": "navigate",
+  "preconditions": [
+    {
+      "name": "robot_idle",
+      "description": "Robot is not currently executing another skill",
+      "check_type": "state"
+    }
+  ],
+  "postconditions": [
+    {
+      "name": "route_completed",
+      "description": "Robot has visited all waypoints",
+      "check_type": "state"
+    }
+  ],
+  "parameters": {
+    "waypoints": [
+      {"x": 1.0, "y": 0.0},
+      {"x": 3.0, "y": 2.0},
+      {"x": 1.0, "y": 4.0},
+      {"x": 0.0, "y": 2.0}
+    ],
+    "speed": 0.5,
+    "loops": 1
+  },
+  "timeout_seconds": 300,
+  "retry_count": 1
+}
