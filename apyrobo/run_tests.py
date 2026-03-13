@@ -1908,6 +1908,645 @@ test("SkillGraph: edges property", test_graph_edges_property)
 
 
 # =====================================================================
+section("Skill Package — Format & Validation")
+# =====================================================================
+
+from apyrobo.skills.package import (
+    SkillPackage, validate_version, validate_package_name,
+    parse_version_tuple, check_version_constraint, MANIFEST_FILE, ARCHIVE_EXT,
+)
+
+def test_validate_version():
+    assert validate_version("1.0.0") is True
+    assert validate_version("0.1.0") is True
+    assert validate_version("2.3.4-beta") is True
+    assert validate_version("1.0") is False
+    assert validate_version("abc") is False
+    assert validate_version("") is False
+
+def test_validate_package_name():
+    assert validate_package_name("warehouse-logistics") is True
+    assert validate_package_name("a") is True
+    assert validate_package_name("my-pkg") is True
+    assert validate_package_name("nav123") is True
+    assert validate_package_name("") is False
+    assert validate_package_name("UPPERCASE") is False
+    assert validate_package_name("-bad") is False
+    assert validate_package_name("bad-") is False
+
+def test_version_tuple_parsing():
+    assert parse_version_tuple("1.0.0") == (1, 0, 0, "")
+    assert parse_version_tuple("2.3.4-beta") == (2, 3, 4, "beta")
+    assert parse_version_tuple("0.1.0") < parse_version_tuple("1.0.0")
+    assert parse_version_tuple("1.2.3") > parse_version_tuple("1.2.2")
+
+def test_version_constraint_check():
+    assert check_version_constraint("1.5.0", ">=1.0.0") is True
+    assert check_version_constraint("0.5.0", ">=1.0.0") is False
+    assert check_version_constraint("1.0.0", "==1.0.0") is True
+    assert check_version_constraint("1.0.1", "==1.0.0") is False
+    assert check_version_constraint("1.5.0", ">=1.0.0,<2.0.0") is True
+    assert check_version_constraint("2.0.0", ">=1.0.0,<2.0.0") is False
+
+def test_package_create():
+    pkg = SkillPackage(
+        name="test-pkg",
+        version="1.0.0",
+        description="A test package",
+        author="Test Author",
+    )
+    assert pkg.name == "test-pkg"
+    assert pkg.version == "1.0.0"
+    assert pkg.skills == []
+
+def test_package_invalid_name():
+    try:
+        SkillPackage(name="BAD NAME", version="1.0.0")
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+def test_package_invalid_version():
+    try:
+        SkillPackage(name="good-name", version="bad")
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+def test_package_add_remove_skill():
+    pkg = SkillPackage(name="test-pkg", version="1.0.0")
+    skill = Skill(skill_id="test_skill", name="Test Skill", parameters={"x": 1.0})
+    pkg.add_skill(skill)
+    assert len(pkg.skills) == 1
+    assert pkg.skill_ids == ["test_skill"]
+    assert pkg.get_skill("test_skill") is not None
+    assert pkg.get_skill("nonexistent") is None
+    pkg.remove_skill("test_skill")
+    assert len(pkg.skills) == 0
+
+def test_package_manifest_roundtrip():
+    pkg = SkillPackage(
+        name="test-pkg",
+        version="1.2.3",
+        description="Test",
+        author="Author",
+        tags=["test", "demo"],
+        dependencies={"base-nav": ">=1.0.0"},
+        required_capabilities=["navigate"],
+    )
+    skill = Skill(skill_id="nav_test", name="Nav Test",
+                  required_capability=CapabilityType.NAVIGATE, parameters={"x": 0.0})
+    pkg.add_skill(skill)
+
+    manifest = pkg.to_manifest()
+    assert manifest["name"] == "test-pkg"
+    assert manifest["version"] == "1.2.3"
+    assert manifest["skills"] == ["nav_test"]
+    assert manifest["dependencies"] == {"base-nav": ">=1.0.0"}
+
+    # Reconstruct from manifest
+    pkg2 = SkillPackage.from_manifest(manifest, skills=[skill])
+    assert pkg2.name == pkg.name
+    assert pkg2.version == pkg.version
+    assert len(pkg2.skills) == 1
+
+def test_package_validate():
+    # Valid
+    pkg = SkillPackage(name="valid", version="1.0.0")
+    pkg.add_skill(Skill(skill_id="s1", name="S1"))
+    assert pkg.validate() == []
+
+    # Empty package
+    empty = SkillPackage(name="empty", version="1.0.0")
+    errors = empty.validate()
+    assert len(errors) > 0
+    assert any("at least one skill" in e for e in errors)
+
+test("Version validation", test_validate_version)
+test("Package name validation", test_validate_package_name)
+test("Version tuple parsing", test_version_tuple_parsing)
+test("Version constraint check", test_version_constraint_check)
+test("Package: create", test_package_create)
+test("Package: invalid name raises", test_package_invalid_name)
+test("Package: invalid version raises", test_package_invalid_version)
+test("Package: add/remove skills", test_package_add_remove_skill)
+test("Package: manifest roundtrip", test_package_manifest_roundtrip)
+test("Package: validation", test_package_validate)
+
+
+# =====================================================================
+section("Skill Package — Save, Load, Archive")
+# =====================================================================
+
+def test_package_save_and_load():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pkg = SkillPackage(name="save-test", version="1.0.0", description="Test save/load")
+        pkg.add_skill(Skill(skill_id="patrol", name="Patrol",
+                            required_capability=CapabilityType.NAVIGATE,
+                            parameters={"speed": 0.5}))
+        pkg.add_skill(Skill(skill_id="scan", name="Scan",
+                            required_capability=CapabilityType.CUSTOM))
+
+        pkg_dir = os.path.join(tmpdir, "save-test")
+        pkg.save(pkg_dir)
+
+        # Check files exist
+        assert os.path.exists(os.path.join(pkg_dir, MANIFEST_FILE))
+        assert os.path.exists(os.path.join(pkg_dir, "skills", "patrol.json"))
+        assert os.path.exists(os.path.join(pkg_dir, "skills", "scan.json"))
+
+        # Load
+        loaded = SkillPackage.load(pkg_dir)
+        assert loaded.name == "save-test"
+        assert loaded.version == "1.0.0"
+        assert len(loaded.skills) == 2
+        assert loaded.skill_ids == ["patrol", "scan"]
+
+def test_package_archive_roundtrip():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pkg = SkillPackage(name="archive-test", version="2.0.0")
+        pkg.add_skill(Skill(skill_id="my_skill", name="My Skill", parameters={"key": "val"}))
+
+        pkg_dir = os.path.join(tmpdir, "archive-test")
+        archive_path = os.path.join(tmpdir, "archive-test-2.0.0.skillpkg")
+        pkg.pack(pkg_dir, archive_path)
+        assert os.path.exists(archive_path)
+
+        # Unpack
+        extract_dir = os.path.join(tmpdir, "extracted")
+        loaded = SkillPackage.from_archive(archive_path, extract_to=extract_dir)
+        assert loaded.name == "archive-test"
+        assert loaded.version == "2.0.0"
+        assert len(loaded.skills) == 1
+        assert loaded.skills[0].skill_id == "my_skill"
+
+def test_package_init():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pkg_dir = os.path.join(tmpdir, "new-pkg")
+        pkg = SkillPackage.init("new-pkg", "0.1.0", description="Fresh", directory=pkg_dir)
+        assert pkg.name == "new-pkg"
+        assert os.path.exists(os.path.join(pkg_dir, MANIFEST_FILE))
+
+test("Package: save and load", test_package_save_and_load)
+test("Package: archive roundtrip", test_package_archive_roundtrip)
+test("Package: init helper", test_package_init)
+
+
+# =====================================================================
+section("Skill Registry — Install & Remove")
+# =====================================================================
+
+from apyrobo.skills.registry import SkillRegistry, PackageConflict
+
+def _make_test_pkg(name, version="1.0.0", skills=None):
+    """Helper to create a test package."""
+    pkg = SkillPackage(name=name, version=version, description=f"Test {name}")
+    for s in (skills or []):
+        pkg.add_skill(s)
+    if not pkg.skills:
+        pkg.add_skill(Skill(skill_id=f"{name}_skill", name=f"{name} Skill"))
+    return pkg
+
+def test_registry_install_from_dir():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+        assert registry.package_count == 0
+
+        # Create and save a package
+        pkg = _make_test_pkg("test-nav", skills=[
+            Skill(skill_id="patrol", name="Patrol", required_capability=CapabilityType.NAVIGATE),
+        ])
+        pkg_dir = os.path.join(tmpdir, "test-nav")
+        pkg.save(pkg_dir)
+
+        # Install
+        installed = registry.install(pkg_dir)
+        assert installed.name == "test-nav"
+        assert registry.package_count == 1
+        assert registry.is_installed("test-nav")
+
+def test_registry_install_archive():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("archive-pkg")
+        pkg_dir = os.path.join(tmpdir, "archive-pkg")
+        archive = pkg.pack(pkg_dir, os.path.join(tmpdir, "archive-pkg-1.0.0.skillpkg"))
+
+        installed = registry.install(archive)
+        assert installed.name == "archive-pkg"
+        assert registry.package_count == 1
+
+def test_registry_conflict():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("conflict-test")
+        pkg_dir = os.path.join(tmpdir, "conflict-test")
+        pkg.save(pkg_dir)
+
+        registry.install(pkg_dir)
+        try:
+            registry.install(pkg_dir)
+            assert False, "Should have raised PackageConflict"
+        except PackageConflict:
+            pass
+
+        # Force overwrite
+        registry.install(pkg_dir, force=True)
+        assert registry.package_count == 1
+
+def test_registry_remove():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("removable")
+        pkg_dir = os.path.join(tmpdir, "removable")
+        pkg.save(pkg_dir)
+        registry.install(pkg_dir)
+
+        assert registry.remove("removable") is True
+        assert registry.package_count == 0
+        assert registry.remove("nonexistent") is False
+
+def test_registry_get():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("gettest", skills=[
+            Skill(skill_id="get_skill", name="Get Skill"),
+        ])
+        pkg_dir = os.path.join(tmpdir, "gettest")
+        pkg.save(pkg_dir)
+        registry.install(pkg_dir)
+
+        loaded = registry.get("gettest")
+        assert loaded is not None
+        assert loaded.name == "gettest"
+        assert loaded.skill_ids == ["get_skill"]
+        assert registry.get("nonexistent") is None
+
+test("Registry: install from directory", test_registry_install_from_dir)
+test("Registry: install from archive", test_registry_install_archive)
+test("Registry: conflict detection", test_registry_conflict)
+test("Registry: remove package", test_registry_remove)
+test("Registry: get package", test_registry_get)
+
+
+# =====================================================================
+section("Skill Registry — Query & Search")
+# =====================================================================
+
+def test_registry_list():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        for name in ["alpha-pkg", "beta-pkg", "gamma-pkg"]:
+            pkg = _make_test_pkg(name)
+            d = os.path.join(tmpdir, name)
+            pkg.save(d)
+            registry.install(d)
+
+        packages = registry.list_packages()
+        assert len(packages) == 3
+        names = [p["name"] for p in packages]
+        assert "alpha-pkg" in names
+        assert "beta-pkg" in names
+        assert "gamma-pkg" in names
+
+def test_registry_search():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg1 = SkillPackage(name="warehouse-nav", version="1.0.0",
+                            description="Warehouse navigation skills",
+                            tags=["warehouse", "logistics"])
+        pkg1.add_skill(Skill(skill_id="forklift_nav", name="Forklift Nav"))
+        d1 = os.path.join(tmpdir, "warehouse-nav")
+        pkg1.save(d1)
+        registry.install(d1)
+
+        pkg2 = SkillPackage(name="outdoor-patrol", version="1.0.0",
+                            description="Outdoor patrol routines",
+                            tags=["outdoor", "security"])
+        pkg2.add_skill(Skill(skill_id="perimeter_scan", name="Perimeter Scan"))
+        d2 = os.path.join(tmpdir, "outdoor-patrol")
+        pkg2.save(d2)
+        registry.install(d2)
+
+        # Search by name
+        results = registry.search("warehouse")
+        assert len(results) >= 1
+        assert results[0]["name"] == "warehouse-nav"
+
+        # Search by tag
+        results = registry.search("security")
+        assert len(results) >= 1
+        assert results[0]["name"] == "outdoor-patrol"
+
+        # Search by skill
+        results = registry.search("forklift")
+        assert len(results) >= 1
+
+        # No results
+        results = registry.search("nonexistent_xyz")
+        assert len(results) == 0
+
+def test_registry_all_skills():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg1 = _make_test_pkg("pkg-a", skills=[
+            Skill(skill_id="skill_a1", name="A1"),
+            Skill(skill_id="skill_a2", name="A2"),
+        ])
+        pkg2 = _make_test_pkg("pkg-b", skills=[
+            Skill(skill_id="skill_b1", name="B1"),
+        ])
+        d1 = os.path.join(tmpdir, "pkg-a")
+        d2 = os.path.join(tmpdir, "pkg-b")
+        pkg1.save(d1)
+        pkg2.save(d2)
+        registry.install(d1)
+        registry.install(d2)
+
+        all_skills = registry.all_skills()
+        assert "skill_a1" in all_skills
+        assert "skill_a2" in all_skills
+        assert "skill_b1" in all_skills
+
+def test_registry_get_skill():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("find-me", skills=[
+            Skill(skill_id="findable", name="Findable Skill"),
+        ])
+        d = os.path.join(tmpdir, "find-me")
+        pkg.save(d)
+        registry.install(d)
+
+        skill, pkg_name = registry.get_skill("findable")
+        assert skill is not None
+        assert skill.skill_id == "findable"
+        assert pkg_name == "find-me"
+
+        skill2, pkg2 = registry.get_skill("nonexistent")
+        assert skill2 is None
+        assert pkg2 is None
+
+def test_registry_info():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("info-test")
+        d = os.path.join(tmpdir, "info-test")
+        pkg.save(d)
+        registry.install(d)
+
+        info = registry.get_info("info-test")
+        assert info is not None
+        assert info["version"] == "1.0.0"
+        assert "skills" in info
+
+        assert registry.get_info("nonexistent") is None
+
+test("Registry: list packages", test_registry_list)
+test("Registry: search by name/tag/skill", test_registry_search)
+test("Registry: all_skills across packages", test_registry_all_skills)
+test("Registry: get_skill with package name", test_registry_get_skill)
+test("Registry: get_info metadata", test_registry_info)
+
+
+# =====================================================================
+section("Skill Registry — Dependencies")
+# =====================================================================
+
+def test_registry_deps_satisfied():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        base = _make_test_pkg("base-nav")
+        d = os.path.join(tmpdir, "base-nav")
+        base.save(d)
+        registry.install(d)
+
+        dependent = SkillPackage(
+            name="advanced-nav", version="1.0.0",
+            dependencies={"base-nav": ">=1.0.0"},
+        )
+        dependent.add_skill(Skill(skill_id="adv_nav", name="Advanced Nav"))
+        unmet = registry.check_dependencies(dependent)
+        assert len(unmet) == 0
+
+def test_registry_deps_missing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        dependent = SkillPackage(
+            name="needs-base", version="1.0.0",
+            dependencies={"missing-pkg": ">=1.0.0"},
+        )
+        dependent.add_skill(Skill(skill_id="dep_skill", name="Dep"))
+        unmet = registry.check_dependencies(dependent)
+        assert len(unmet) == 1
+        assert "missing-pkg" in unmet[0]
+
+def test_registry_deps_version_mismatch():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        old = _make_test_pkg("old-pkg", version="0.5.0")
+        d = os.path.join(tmpdir, "old-pkg")
+        old.save(d)
+        registry.install(d)
+
+        needs_new = SkillPackage(
+            name="needs-new", version="1.0.0",
+            dependencies={"old-pkg": ">=1.0.0"},
+        )
+        needs_new.add_skill(Skill(skill_id="nn", name="NN"))
+        unmet = registry.check_dependencies(needs_new)
+        assert len(unmet) == 1
+        assert "0.5.0" in unmet[0]
+
+def test_registry_clear():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        for name in ["a", "b", "c"]:
+            pkg = _make_test_pkg(name)
+            d = os.path.join(tmpdir, name)
+            pkg.save(d)
+            registry.install(d)
+
+        assert registry.package_count == 3
+        removed = registry.clear()
+        assert removed == 3
+        assert registry.package_count == 0
+
+test("Registry deps: satisfied", test_registry_deps_satisfied)
+test("Registry deps: missing package", test_registry_deps_missing)
+test("Registry deps: version mismatch", test_registry_deps_version_mismatch)
+test("Registry: clear all", test_registry_clear)
+
+
+# =====================================================================
+section("Skill Registry — Library Integration")
+# =====================================================================
+
+def test_library_with_registry():
+    """SkillLibrary merges registry skills with built-in + custom."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("lib-test", skills=[
+            Skill(skill_id="registry_skill", name="From Registry"),
+        ])
+        d = os.path.join(tmpdir, "lib-test")
+        pkg.save(d)
+        registry.install(d)
+
+        lib = SkillLibrary(registry=registry)
+        all_sk = lib.all_skills()
+        assert "registry_skill" in all_sk
+        assert "navigate_to" in all_sk  # built-in
+        assert lib.get("registry_skill") is not None
+
+def test_library_custom_overrides_registry():
+    """Custom skills loaded via load_json override registry skills."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        registry = SkillRegistry(os.path.join(tmpdir, "registry"))
+
+        pkg = _make_test_pkg("override-test", skills=[
+            Skill(skill_id="shared_id", name="Registry Version"),
+        ])
+        d = os.path.join(tmpdir, "override-test")
+        pkg.save(d)
+        registry.install(d)
+
+        lib = SkillLibrary(registry=registry)
+        lib.load_json(json.dumps({
+            "skill_id": "shared_id",
+            "name": "Custom Version",
+        }))
+        skill = lib.get("shared_id")
+        assert skill.name == "Custom Version"
+
+test("Library + Registry: skills merged", test_library_with_registry)
+test("Library + Registry: custom overrides registry", test_library_custom_overrides_registry)
+
+
+# =====================================================================
+section("Skill Package — CLI Commands")
+# =====================================================================
+
+import io, contextlib
+
+def test_cli_pkg_init():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from apyrobo.cli import cmd_pkg_init
+        import argparse as _ap
+        pkg_dir = os.path.join(tmpdir, "cli-test")
+        args = _ap.Namespace(
+            name="cli-test", version="0.1.0",
+            description="CLI test", author="tester",
+            directory=pkg_dir,
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_init(args)
+        text = output.getvalue()
+        assert "cli-test" in text
+        assert os.path.exists(os.path.join(pkg_dir, MANIFEST_FILE))
+
+def test_cli_pkg_validate():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from apyrobo.cli import cmd_pkg_validate
+        import argparse as _ap
+        # Create a valid package
+        pkg = SkillPackage(name="val-test", version="1.0.0")
+        pkg.add_skill(Skill(skill_id="vskill", name="V"))
+        pkg_dir = os.path.join(tmpdir, "val-test")
+        pkg.save(pkg_dir)
+
+        args = _ap.Namespace(directory=pkg_dir)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_validate(args)
+        text = output.getvalue()
+        assert "valid" in text.lower()
+
+def test_cli_pkg_install_and_list():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from apyrobo.cli import cmd_pkg_install, cmd_pkg_list, cmd_pkg_info, cmd_pkg_remove
+        import argparse as _ap
+        reg_dir = os.path.join(tmpdir, "registry")
+
+        # Create and install
+        pkg = SkillPackage(name="cli-install", version="1.0.0", description="CLI install test")
+        pkg.add_skill(Skill(skill_id="cli_skill", name="CLI Skill"))
+        pkg_dir = os.path.join(tmpdir, "cli-install")
+        pkg.save(pkg_dir)
+
+        args_install = _ap.Namespace(source=pkg_dir, force=False, registry_dir=reg_dir)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_install(args_install)
+        assert "Installed" in output.getvalue()
+
+        # List
+        args_list = _ap.Namespace(verbose_list=True, registry_dir=reg_dir)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_list(args_list)
+        text = output.getvalue()
+        assert "cli-install" in text
+        assert "cli_skill" in text
+
+        # Info
+        args_info = _ap.Namespace(name="cli-install", registry_dir=reg_dir)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_info(args_info)
+        text = output.getvalue()
+        assert "cli-install" in text
+        assert "1.0.0" in text
+
+        # Remove
+        args_remove = _ap.Namespace(name="cli-install", registry_dir=reg_dir)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_remove(args_remove)
+        assert "Removed" in output.getvalue()
+
+def test_cli_pkg_search():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from apyrobo.cli import cmd_pkg_search
+        import argparse as _ap
+        reg_dir = os.path.join(tmpdir, "registry")
+        registry = SkillRegistry(reg_dir)
+
+        pkg = SkillPackage(name="searchable", version="1.0.0",
+                           description="A searchable package", tags=["warehouse"])
+        pkg.add_skill(Skill(skill_id="s1", name="S1"))
+        d = os.path.join(tmpdir, "searchable")
+        pkg.save(d)
+        registry.install(d)
+
+        args = _ap.Namespace(query="warehouse", registry_dir=reg_dir)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            cmd_pkg_search(args)
+        assert "searchable" in output.getvalue()
+
+test("CLI: pkg init", test_cli_pkg_init)
+test("CLI: pkg validate", test_cli_pkg_validate)
+test("CLI: pkg install, list, info, remove", test_cli_pkg_install_and_list)
+test("CLI: pkg search", test_cli_pkg_search)
+
+
+# =====================================================================
 # Summary
 # =====================================================================
 

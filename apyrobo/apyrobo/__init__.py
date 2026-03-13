@@ -24,6 +24,8 @@ from apyrobo.swarm.coordinator import SwarmCoordinator
 from apyrobo.swarm.safety import SwarmSafety, ProximityViolation, DeadlockDetected
 from apyrobo.sensors.pipeline import SensorPipeline, WorldState, SensorReading
 from apyrobo.skills.library import SkillLibrary
+from apyrobo.skills.package import SkillPackage
+from apyrobo.skills.registry import SkillRegistry, PackageConflict, DependencyError
 from apyrobo.config import ApyroboConfig
 from apyrobo.inference.router import InferenceRouter, Urgency
 from apyrobo.observability import get_logger, trace_context, configure_logging

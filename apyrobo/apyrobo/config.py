@@ -82,6 +82,7 @@ DEFAULT_CONFIG = {
     },
     "skills": {
         "custom_dir": None,
+        "registry_dir": None,  # defaults to ~/.apyrobo/registry
     },
     "logging": {
         "level": "INFO",
@@ -207,6 +208,10 @@ class ApyroboConfig:
     @property
     def skills_custom_dir(self) -> str | None:
         return self._data["skills"].get("custom_dir")
+
+    @property
+    def skills_registry_dir(self) -> str | None:
+        return self._data["skills"].get("registry_dir")
 
     @property
     def log_level(self) -> str:
