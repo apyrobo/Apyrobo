@@ -29,6 +29,7 @@ class SafetyPolicy:
 
     Constraints:
         - max_speed: Hard cap on movement speed
+        - max_angular_speed: Hard cap on rotation speed (rad/s)
         - collision_zones: List of rectangular zones the robot cannot enter
         - human_proximity_limit: Minimum distance to maintain from humans
     """
@@ -37,11 +38,13 @@ class SafetyPolicy:
         self,
         name: str = "default",
         max_speed: float = 1.5,
+        max_angular_speed: float = 2.0,
         collision_zones: list[dict[str, float]] | None = None,
         human_proximity_limit: float = 0.5,
     ) -> None:
         self.name = name
         self.max_speed = max_speed
+        self.max_angular_speed = max_angular_speed
         self.collision_zones = collision_zones or []
         self.human_proximity_limit = human_proximity_limit
 
@@ -58,13 +61,14 @@ class SafetyPolicy:
     def __repr__(self) -> str:
         return (
             f"SafetyPolicy(name={self.name!r}, max_speed={self.max_speed}, "
+            f"max_angular_speed={self.max_angular_speed}, "
             f"zones={len(self.collision_zones)}, proximity={self.human_proximity_limit})"
         )
 
 
 # Default policies
-DEFAULT_POLICY = SafetyPolicy(name="default", max_speed=1.5, human_proximity_limit=0.5)
-STRICT_POLICY = SafetyPolicy(name="strict", max_speed=0.5, human_proximity_limit=1.0)
+DEFAULT_POLICY = SafetyPolicy(name="default", max_speed=1.5, max_angular_speed=2.0, human_proximity_limit=0.5)
+STRICT_POLICY = SafetyPolicy(name="strict", max_speed=0.5, max_angular_speed=1.0, human_proximity_limit=1.0)
 
 POLICY_REGISTRY: dict[str, SafetyPolicy] = {
     "default": DEFAULT_POLICY,
@@ -149,9 +153,62 @@ class SafetyEnforcer:
         # --- All checks passed — forward to robot ---
         self._robot.move(x=x, y=y, speed=speed)
 
+    def rotate(self, angle_rad: float, speed: float | None = None) -> None:
+        """
+        Rotate command with angular speed enforcement.
+
+        Speed is clamped to policy max_angular_speed.
+        """
+        original_speed = speed
+        if speed is not None and abs(speed) > self._policy.max_angular_speed:
+            speed = math.copysign(self._policy.max_angular_speed, speed)
+            self._interventions.append({
+                "type": "angular_speed_clamped",
+                "requested": original_speed,
+                "enforced": speed,
+                "max_allowed": self._policy.max_angular_speed,
+            })
+            logger.warning(
+                "SAFETY: Angular speed clamped from %.2f to %.2f rad/s (policy: %s)",
+                original_speed, speed, self._policy.name,
+            )
+        self._robot.rotate(angle_rad=angle_rad, speed=speed)
+
     def stop(self) -> None:
         """Stop is always allowed — safety never prevents stopping."""
         self._robot.stop()
+
+    def cancel(self) -> None:
+        """Cancel is always allowed."""
+        self._robot.cancel()
+
+    def gripper_open(self) -> bool:
+        """Pass-through — gripper open is always allowed."""
+        return self._robot.gripper_open()
+
+    def gripper_close(self) -> bool:
+        """Pass-through — gripper close is always allowed."""
+        return self._robot.gripper_close()
+
+    def get_position(self) -> tuple[float, float]:
+        """Pass-through state query."""
+        return self._robot.get_position()
+
+    def get_orientation(self) -> float:
+        """Pass-through state query."""
+        return self._robot.get_orientation()
+
+    def get_health(self) -> dict[str, Any]:
+        """Pass-through state query."""
+        return self._robot.get_health()
+
+    def connect(self) -> None:
+        """Pass-through lifecycle."""
+        self._robot.connect()
+
+    def disconnect(self) -> None:
+        """Pass-through lifecycle."""
+        self._robot.disconnect()
 
     @staticmethod
     def _point_in_zone(x: float, y: float, zone: dict[str, float]) -> bool:

@@ -13,7 +13,11 @@ Built on ROS 2. Model-agnostic. Hardware-agnostic.
 __version__ = "0.1.0-dev"
 
 from apyrobo.core.robot import Robot
-from apyrobo.core.schemas import RobotCapability, TaskRequest, TaskResult
+from apyrobo.core.adapters import (
+    CapabilityAdapter, MockAdapter, GazeboAdapter, MQTTAdapter, HTTPAdapter,
+    list_adapters, register_adapter,
+)
+from apyrobo.core.schemas import RobotCapability, TaskRequest, TaskResult, AdapterState
 from apyrobo.skills.agent import Agent
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
 from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionState, SkillTimeout
@@ -47,6 +51,14 @@ __all__ = [
     "RobotCapability",
     "TaskRequest",
     "TaskResult",
+    "AdapterState",
+    "CapabilityAdapter",
+    "MockAdapter",
+    "GazeboAdapter",
+    "MQTTAdapter",
+    "HTTPAdapter",
+    "list_adapters",
+    "register_adapter",
     "Skill",
     "BUILTIN_SKILLS",
     "SkillGraph",

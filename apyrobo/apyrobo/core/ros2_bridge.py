@@ -161,7 +161,6 @@ def _sensor_qos() -> Any:
 if _HAS_ROS2:
 
     @register_adapter("ros2")
-    @register_adapter("gazebo")
     class ROS2Adapter(CapabilityAdapter):
         """
         Production adapter for ROS 2 robots (real or Gazebo simulated).

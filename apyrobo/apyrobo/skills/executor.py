@@ -335,6 +335,9 @@ class SkillExecutor:
         elif base_id == "place_object":
             self._state.set("object_held", False)
             self._state.set("gripper_open", True)
+        elif base_id == "rotate":
+            angle = float(params.get("angle_rad", 0.0))
+            self._state.set("last_rotation", angle)
         elif base_id == "stop":
             self._state.set("robot_idle", True)
 
@@ -429,11 +432,22 @@ class SkillExecutor:
             self._robot.stop()
             return True
 
-        elif base_id in ("pick_object", "place_object"):
-            # In sim/mock, these succeed immediately
-            # Real implementation would call a grasp action server
-            logger.info("Executing %s with params %s", skill.skill_id, params)
+        elif base_id == "rotate":
+            angle = float(params.get("angle_rad", 0.0))
+            speed = params.get("speed")
+            speed = float(speed) if speed is not None else None
+            self._robot.rotate(angle_rad=angle, speed=speed)
             return True
+
+        elif base_id == "pick_object":
+            result = self._robot.gripper_close()
+            logger.info("Executing %s → gripper_close=%s", skill.skill_id, result)
+            return result
+
+        elif base_id == "place_object":
+            result = self._robot.gripper_open()
+            logger.info("Executing %s → gripper_open=%s", skill.skill_id, result)
+            return result
 
         elif base_id == "report_status":
             caps = self._robot.capabilities()

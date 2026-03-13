@@ -93,6 +93,7 @@ class CapabilityType(str, Enum):
     """High-level capabilities a robot can expose."""
 
     NAVIGATE = "navigate"
+    ROTATE = "rotate"
     PICK = "pick"
     PLACE = "place"
     SCAN = "scan"
@@ -100,6 +101,15 @@ class CapabilityType(str, Enum):
     MANIPULATE = "manipulate"
     DOCK = "dock"
     CUSTOM = "custom"
+
+
+class AdapterState(str, Enum):
+    """Connection/lifecycle state for a robot adapter."""
+
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    ERROR = "error"
 
 
 class TaskStatus(str, Enum):

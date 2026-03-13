@@ -19,7 +19,11 @@ from apyrobo.core.schemas import (
     JointInfo,
 )
 from apyrobo.core.robot import Robot
-from apyrobo.core.adapters import MockAdapter
+from apyrobo.core.adapters import (
+    MockAdapter, GazeboAdapter, MQTTAdapter, HTTPAdapter,
+    list_adapters, get_adapter,
+)
+from apyrobo.core.schemas import AdapterState
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS, SkillStatus, Condition
 from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent
 from apyrobo.skills.agent import Agent, RuleBasedProvider
@@ -142,9 +146,10 @@ def test_capabilities():
     robot = Robot.discover("mock://tb4")
     caps = robot.capabilities()
     assert caps.robot_id == "tb4"
-    assert len(caps.capabilities) == 3
+    assert len(caps.capabilities) == 4
     cap_types = {c.capability_type for c in caps.capabilities}
     assert CapabilityType.NAVIGATE in cap_types
+    assert CapabilityType.ROTATE in cap_types
     assert CapabilityType.PICK in cap_types
 
 def test_capabilities_cached():
@@ -2544,6 +2549,323 @@ test("CLI: pkg init", test_cli_pkg_init)
 test("CLI: pkg validate", test_cli_pkg_validate)
 test("CLI: pkg install, list, info, remove", test_cli_pkg_install_and_list)
 test("CLI: pkg search", test_cli_pkg_search)
+
+
+# =====================================================================
+# AD-01 to AD-05: Adapter Layer Tests
+# =====================================================================
+section("Adapter Layer (AD-01 through AD-05)")
+
+import math
+
+# --- Robot class new methods ---
+
+def test_robot_rotate():
+    robot = Robot.discover("mock://tb4")
+    robot.rotate(angle_rad=math.pi / 2)
+    assert abs(robot._adapter.orientation - math.pi / 2) < 0.01
+
+def test_robot_gripper():
+    robot = Robot.discover("mock://tb4")
+    assert robot.gripper_close() is True
+    assert robot._adapter.gripper_is_open is False
+    assert robot.gripper_open() is True
+    assert robot._adapter.gripper_is_open is True
+
+def test_robot_cancel():
+    robot = Robot.discover("mock://tb4")
+    robot.move(x=1.0, y=1.0)
+    robot.cancel()
+    assert robot._adapter.is_moving is False
+
+def test_robot_get_position():
+    robot = Robot.discover("mock://tb4")
+    robot.move(x=3.0, y=4.0)
+    pos = robot.get_position()
+    assert pos == (3.0, 4.0)
+
+def test_robot_get_orientation():
+    robot = Robot.discover("mock://tb4")
+    robot.rotate(angle_rad=1.5)
+    assert abs(robot.get_orientation() - 1.5) < 0.01
+
+def test_robot_get_health():
+    robot = Robot.discover("mock://tb4")
+    health = robot.get_health()
+    assert health["adapter"] == "MockAdapter"
+    assert health["battery_pct"] == 100.0
+
+def test_robot_lifecycle():
+    robot = Robot.discover("mock://tb4")
+    assert robot.is_connected is True
+    assert robot.state == AdapterState.CONNECTED
+    robot.disconnect()
+    assert robot.is_connected is False
+    assert robot.state == AdapterState.DISCONNECTED
+    robot.connect()
+    assert robot.is_connected is True
+
+test("Robot: rotate", test_robot_rotate)
+test("Robot: gripper open/close", test_robot_gripper)
+test("Robot: cancel", test_robot_cancel)
+test("Robot: get_position", test_robot_get_position)
+test("Robot: get_orientation", test_robot_get_orientation)
+test("Robot: get_health", test_robot_get_health)
+test("Robot: lifecycle connect/disconnect", test_robot_lifecycle)
+
+# --- MockAdapter detailed ---
+
+def test_mock_rotate_cumulative():
+    a = MockAdapter("t")
+    a.rotate(math.pi / 4)
+    a.rotate(math.pi / 4)
+    assert abs(a.orientation - math.pi / 2) < 0.01
+    assert len(a.rotate_history) == 2
+
+def test_mock_gripper_state():
+    a = MockAdapter("t")
+    assert a.gripper_is_open is True
+    a.gripper_close()
+    assert a.gripper_is_open is False
+    a.gripper_open()
+    assert a.gripper_is_open is True
+
+test("MockAdapter: cumulative rotation", test_mock_rotate_cumulative)
+test("MockAdapter: gripper state tracking", test_mock_gripper_state)
+
+# --- GazeboAdapter ---
+
+def test_gazebo_create():
+    a = GazeboAdapter("gz_bot")
+    assert a.robot_name == "gz_bot"
+    caps = a.get_capabilities()
+    assert len(caps.capabilities) == 5  # NAV, ROTATE, PICK, PLACE, SCAN
+    assert len(caps.sensors) == 4
+
+def test_gazebo_move_heading():
+    a = GazeboAdapter("gz_bot")
+    a.move(x=1.0, y=1.0)
+    assert abs(a.get_orientation() - math.pi / 4) < 0.01
+    assert a.get_position() == (1.0, 1.0)
+
+def test_gazebo_rotate():
+    a = GazeboAdapter("gz_bot")
+    a.rotate(math.pi)
+    assert abs(a.get_orientation() - math.pi) < 0.01
+
+def test_gazebo_gripper():
+    a = GazeboAdapter("gz_bot")
+    a.gripper_close()
+    assert a._gripper_open is False
+    a.gripper_open()
+    assert a._gripper_open is True
+
+def test_gazebo_lifecycle():
+    a = GazeboAdapter("gz_bot")
+    assert a.state == AdapterState.CONNECTED
+    a.disconnect()
+    assert a.state == AdapterState.DISCONNECTED
+    a.connect()
+    assert a.state == AdapterState.CONNECTED
+
+def test_gazebo_health():
+    a = GazeboAdapter("gz_bot")
+    h = a.get_health()
+    assert h["sim"] is True
+    assert h["adapter"] == "GazeboAdapter"
+
+test("GazeboAdapter: create and capabilities", test_gazebo_create)
+test("GazeboAdapter: move updates heading", test_gazebo_move_heading)
+test("GazeboAdapter: rotate", test_gazebo_rotate)
+test("GazeboAdapter: gripper", test_gazebo_gripper)
+test("GazeboAdapter: lifecycle", test_gazebo_lifecycle)
+test("GazeboAdapter: health", test_gazebo_health)
+
+# --- MQTTAdapter ---
+
+def test_mqtt_create():
+    a = MQTTAdapter("mqtt_bot", broker="test:1883")
+    caps = a.get_capabilities()
+    assert len(caps.capabilities) == 4
+    assert caps.metadata["broker"] == "test:1883"
+
+def test_mqtt_move_buffers():
+    a = MQTTAdapter("mqtt_bot")
+    a.move(x=1.0, y=2.0, speed=0.5)
+    assert len(a.cmd_buffer) == 1
+    assert a.cmd_buffer[0]["payload"]["x"] == 1.0
+    assert a.get_position() == (1.0, 2.0)
+
+def test_mqtt_rotate():
+    a = MQTTAdapter("mqtt_bot")
+    a.rotate(math.pi / 2)
+    assert len(a.cmd_buffer) == 1
+    assert abs(a.get_orientation() - math.pi / 2) < 0.01
+
+def test_mqtt_gripper():
+    a = MQTTAdapter("mqtt_bot")
+    a.gripper_close()
+    assert a._gripper_open is False
+    assert a.cmd_buffer[-1]["payload"]["action"] == "close"
+    a.gripper_open()
+    assert a._gripper_open is True
+    assert a.cmd_buffer[-1]["payload"]["action"] == "open"
+
+def test_mqtt_lifecycle():
+    a = MQTTAdapter("mqtt_bot")
+    a.connect()
+    assert a.is_connected is True
+    assert a.state == AdapterState.CONNECTED
+    a.disconnect()
+    assert a.is_connected is False
+
+def test_mqtt_health():
+    a = MQTTAdapter("mqtt_bot")
+    a.move(x=0.0, y=0.0)
+    h = a.get_health()
+    assert h["buffered_commands"] == 1
+
+test("MQTTAdapter: create and capabilities", test_mqtt_create)
+test("MQTTAdapter: move buffers commands", test_mqtt_move_buffers)
+test("MQTTAdapter: rotate", test_mqtt_rotate)
+test("MQTTAdapter: gripper", test_mqtt_gripper)
+test("MQTTAdapter: lifecycle", test_mqtt_lifecycle)
+test("MQTTAdapter: health", test_mqtt_health)
+
+# --- HTTPAdapter ---
+
+def test_http_create():
+    a = HTTPAdapter("http_bot", base_url="http://192.168.1.1:8080")
+    caps = a.get_capabilities()
+    assert len(caps.capabilities) == 2  # NAV, ROTATE
+    assert caps.metadata["base_url"] == "http://192.168.1.1:8080"
+
+def test_http_move_logs():
+    a = HTTPAdapter("http_bot")
+    a.move(x=5.0, y=6.0, speed=1.0)
+    assert len(a.request_log) == 1
+    assert a.request_log[0]["method"] == "POST"
+    assert a.get_position() == (5.0, 6.0)
+
+def test_http_rotate():
+    a = HTTPAdapter("http_bot")
+    a.rotate(math.pi / 3)
+    assert len(a.request_log) == 1
+    assert abs(a.get_orientation() - math.pi / 3) < 0.01
+
+def test_http_gripper():
+    a = HTTPAdapter("http_bot")
+    a.gripper_close()
+    assert a._gripper_open is False
+    assert a.request_log[-1]["payload"]["action"] == "close"
+
+def test_http_health():
+    a = HTTPAdapter("http_bot")
+    a.move(x=0.0, y=0.0)
+    h = a.get_health()
+    assert h["requests_sent"] == 1
+
+test("HTTPAdapter: create and capabilities", test_http_create)
+test("HTTPAdapter: move logs requests", test_http_move_logs)
+test("HTTPAdapter: rotate", test_http_rotate)
+test("HTTPAdapter: gripper", test_http_gripper)
+test("HTTPAdapter: health", test_http_health)
+
+# --- Adapter registry ---
+
+def test_list_adapters():
+    adapters = list_adapters()
+    assert "mock" in adapters
+    assert "gazebo" in adapters
+    assert "mqtt" in adapters
+    assert "http" in adapters
+
+def test_get_adapter_gazebo():
+    a = get_adapter("gazebo", "bot1")
+    assert isinstance(a, GazeboAdapter)
+
+test("Adapter registry: list_adapters", test_list_adapters)
+test("Adapter registry: gazebo resolves to GazeboAdapter", test_get_adapter_gazebo)
+
+# --- SafetyEnforcer: rotate ---
+
+def test_safety_rotate_clamped():
+    robot = Robot.discover("mock://tb4")
+    policy = SafetyPolicy(name="test", max_angular_speed=1.0)
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    enforcer.rotate(angle_rad=math.pi, speed=5.0)
+    assert len(enforcer.interventions) == 1
+    assert enforcer.interventions[0]["type"] == "angular_speed_clamped"
+    assert enforcer.interventions[0]["enforced"] == 1.0
+
+def test_safety_rotate_within_limit():
+    robot = Robot.discover("mock://tb4")
+    policy = SafetyPolicy(name="test", max_angular_speed=3.0)
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    enforcer.rotate(angle_rad=math.pi, speed=2.0)
+    assert len(enforcer.interventions) == 0
+
+def test_safety_gripper_passthrough():
+    robot = Robot.discover("mock://tb4")
+    enforcer = SafetyEnforcer(robot)
+    assert enforcer.gripper_close() is True
+    assert enforcer.gripper_open() is True
+
+def test_safety_state_queries():
+    robot = Robot.discover("mock://tb4")
+    enforcer = SafetyEnforcer(robot)
+    robot.move(x=2.0, y=3.0)
+    assert enforcer.get_position() == (2.0, 3.0)
+    assert isinstance(enforcer.get_health(), dict)
+
+test("SafetyEnforcer: rotate speed clamped", test_safety_rotate_clamped)
+test("SafetyEnforcer: rotate within limit", test_safety_rotate_within_limit)
+test("SafetyEnforcer: gripper passthrough", test_safety_gripper_passthrough)
+test("SafetyEnforcer: state query passthrough", test_safety_state_queries)
+
+# --- Executor: rotate and gripper dispatch ---
+
+def test_executor_rotate_skill():
+    from apyrobo.skills.executor import ExecutionState
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+    skill = Skill(skill_id="rotate", name="Rotate", required_capability=CapabilityType.ROTATE,
+                  parameters={"angle_rad": math.pi / 2})
+    status = executor.execute_skill(skill)
+    assert status == SkillStatus.COMPLETED
+    assert abs(robot._adapter.orientation - math.pi / 2) < 0.01
+
+def test_executor_pick_calls_gripper():
+    from apyrobo.skills.executor import ExecutionState
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+    skill = Skill(skill_id="pick_object", name="Pick", required_capability=CapabilityType.PICK,
+                  parameters={})
+    status = executor.execute_skill(skill)
+    assert status == SkillStatus.COMPLETED
+    assert robot._adapter.gripper_is_open is False  # gripper closed on pick
+
+def test_executor_place_calls_gripper():
+    from apyrobo.skills.executor import ExecutionState
+    robot = Robot.discover("mock://tb4")
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state)
+    skill = Skill(skill_id="place_object", name="Place", required_capability=CapabilityType.PLACE,
+                  parameters={})
+    status = executor.execute_skill(skill)
+    assert status == SkillStatus.COMPLETED
+    assert robot._adapter.gripper_is_open is True  # gripper opened on place
+
+def test_builtin_rotate_skill_exists():
+    assert "rotate" in BUILTIN_SKILLS
+    assert BUILTIN_SKILLS["rotate"].required_capability == CapabilityType.ROTATE
+
+test("Executor: rotate skill dispatch", test_executor_rotate_skill)
+test("Executor: pick_object calls gripper_close", test_executor_pick_calls_gripper)
+test("Executor: place_object calls gripper_open", test_executor_place_calls_gripper)
+test("Builtin: rotate skill registered", test_builtin_rotate_skill_exists)
 
 
 # =====================================================================
