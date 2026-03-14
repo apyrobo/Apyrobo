@@ -49,6 +49,10 @@ from apyrobo.observability import get_logger, trace_context, configure_logging
 from apyrobo.persistence import StateStore
 from apyrobo.auth import AuthManager, GuardedRobot, AuthError
 from apyrobo.task_queue import TaskQueue, QueuedTask
+from apyrobo.operations import (
+    BatteryMonitor, MapManager, TeleoperationBridge, WebhookEmitter,
+    ScheduledTaskRunner, OperationsApiServer, FleetDashboard,
+)
 from apyrobo.operations import BatteryMonitor, MapManager, TeleoperationBridge, WebhookEmitter
 from apyrobo.sim import (
     GazeboNativeAdapter, MuJoCoAdapter, IsaacSimAdapter,
@@ -87,4 +91,7 @@ __all__ = [
     "SafetyEnforcer",
     "SafetyPolicy",
     "SafetyViolation",
+    "ScheduledTaskRunner",
+    "OperationsApiServer",
+    "FleetDashboard",
 ]
