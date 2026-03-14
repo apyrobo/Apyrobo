@@ -50,6 +50,11 @@ from apyrobo.persistence import StateStore
 from apyrobo.auth import AuthManager, GuardedRobot, AuthError
 from apyrobo.task_queue import TaskQueue, QueuedTask
 from apyrobo.operations import BatteryMonitor, MapManager, TeleoperationBridge, WebhookEmitter
+from apyrobo.sim import (
+    GazeboNativeAdapter, MuJoCoAdapter, IsaacSimAdapter,
+    DomainRandomizationConfig, DomainRandomizer, RealityGapCalibrator,
+    SimToRealTransferPipeline,
+)
 
 # Ensure ROS 2 adapter is registered (import triggers @register_adapter)
 try:
@@ -70,6 +75,9 @@ __all__ = [
     "GazeboAdapter",
     "MQTTAdapter",
     "HTTPAdapter",
+    "GazeboNativeAdapter",
+    "MuJoCoAdapter",
+    "IsaacSimAdapter",
     "list_adapters",
     "register_adapter",
     "Skill",

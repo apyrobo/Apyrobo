@@ -1,11 +1,21 @@
-"""
-APYROBO Sim — Simulation Connectors.
+"""APYROBO Sim — simulation adapters and sim-to-real utilities."""
 
-Adapters that let APYROBO work with simulation environments.
-The same APYROBO API works in sim and on real hardware.
+from apyrobo.sim.adapters import (
+    GazeboNativeAdapter,
+    MuJoCoAdapter,
+    IsaacSimAdapter,
+    DomainRandomizationConfig,
+    DomainRandomizer,
+    RealityGapCalibrator,
+    SimToRealTransferPipeline,
+)
 
-Supported (planned):
-    - Gazebo (via ROS 2 bridge) — Phase 0-1
-    - NVIDIA Isaac Sim — future
-    - MuJoCo — future
-"""
+__all__ = [
+    "GazeboNativeAdapter",
+    "MuJoCoAdapter",
+    "IsaacSimAdapter",
+    "DomainRandomizationConfig",
+    "DomainRandomizer",
+    "RealityGapCalibrator",
+    "SimToRealTransferPipeline",
+]
