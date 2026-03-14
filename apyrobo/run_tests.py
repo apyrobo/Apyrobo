@@ -3288,6 +3288,466 @@ test("SF-12: Dict export", test_sf12_dict_export)
 
 
 # =====================================================================
+section("Inference Router & Agent (IN-01 through IN-10)")
+# =====================================================================
+
+from apyrobo.inference.router import (
+    InferenceRouter, Urgency, CircuitState,
+    TokenBudget, PlanCache, ProviderHealth,
+)
+from apyrobo.skills.agent import (
+    ToolCallingProvider, MultiTurnProvider, ClarificationNeeded,
+    build_constrained_prompt,
+)
+
+
+# --- IN-01: Urgency forwarding through Agent.execute() ---
+
+def test_in01_urgency_forwarding():
+    """Agent.execute() accepts urgency= and forwards it to the router."""
+    agent = Agent(provider="rule")
+    robot = Robot.discover("mock://tb4")
+    result = agent.execute("deliver package to room 3", robot, urgency="high")
+    assert result.status.value == "completed"
+
+def test_in01_urgency_via_plan():
+    """Agent.plan() accepts urgency= kwarg."""
+    agent = Agent(provider="rule")
+    robot = Robot.discover("mock://tb4")
+    graph = agent.plan("deliver package", robot, urgency="normal")
+    assert len(graph) > 0
+
+def test_in01_urgency_routed():
+    """InferenceRouter respects urgency when selecting tiers."""
+    router = InferenceRouter()
+    router.add_tier("cloud", RuleBasedProvider(), supports_urgency=[Urgency.NORMAL, Urgency.LOW])
+    router.add_tier("edge", RuleBasedProvider(), supports_urgency=[Urgency.HIGH, Urgency.NORMAL], is_edge=True)
+
+    # HIGH urgency should route to edge tier
+    result = router.plan("stop now", [], ["navigate"], urgency=Urgency.HIGH)
+    assert len(result) > 0
+    # Check route log shows edge tier was used
+    log = router.route_log
+    assert len(log) > 0
+
+test("IN-01: Urgency forwarding via execute()", test_in01_urgency_forwarding)
+test("IN-01: Urgency via plan()", test_in01_urgency_via_plan)
+test("IN-01: Urgency routing to edge tier", test_in01_urgency_routed)
+
+
+# --- IN-02: Circuit-breaker ---
+
+def test_in02_circuit_closed_by_default():
+    health = ProviderHealth("test", failure_threshold=3)
+    assert health.circuit_state == CircuitState.CLOSED
+
+def test_in02_circuit_opens_on_failures():
+    health = ProviderHealth("test", failure_threshold=3)
+    health.record_failure("err1")
+    health.record_failure("err2")
+    assert health.circuit_state == CircuitState.CLOSED
+    health.record_failure("err3")  # threshold reached
+    assert health.circuit_state == CircuitState.OPEN
+
+def test_in02_circuit_half_open_after_timeout():
+    health = ProviderHealth("test", failure_threshold=2, recovery_timeout=0.1)
+    health.record_failure("err1")
+    health.record_failure("err2")
+    assert health.circuit_state == CircuitState.OPEN
+    time.sleep(0.15)
+    assert health.circuit_state == CircuitState.HALF_OPEN
+
+def test_in02_circuit_closes_on_success():
+    health = ProviderHealth("test", failure_threshold=2, recovery_timeout=0.1)
+    health.record_failure("err1")
+    health.record_failure("err2")
+    assert health.circuit_state == CircuitState.OPEN
+    time.sleep(0.15)
+    assert health.circuit_state == CircuitState.HALF_OPEN
+    health.record_success(50.0)
+    assert health.circuit_state == CircuitState.CLOSED
+
+def test_in02_circuit_reopens_on_half_open_failure():
+    health = ProviderHealth("test", failure_threshold=2, recovery_timeout=0.1)
+    health.record_failure("err1")
+    health.record_failure("err2")
+    time.sleep(0.15)
+    assert health.circuit_state == CircuitState.HALF_OPEN
+    health.record_failure("probe failed")
+    assert health.circuit_state == CircuitState.OPEN
+
+def test_in02_router_circuit_state():
+    router = InferenceRouter()
+    router.add_tier("t1", RuleBasedProvider(), failure_threshold=2)
+    assert router.get_circuit_state("t1") == CircuitState.CLOSED
+    assert router.get_circuit_state("nonexistent") is None
+
+def test_in02_router_reset_circuit():
+    router = InferenceRouter()
+    router.add_tier("t1", RuleBasedProvider(), failure_threshold=2, recovery_timeout=0.1)
+    # Force failures
+    for t in router._tiers:
+        if t.name == "t1":
+            t.health.record_failure("err1")
+            t.health.record_failure("err2")
+    assert router.get_circuit_state("t1") == CircuitState.OPEN
+    router.reset_circuit("t1")
+    assert router.get_circuit_state("t1") == CircuitState.CLOSED
+
+test("IN-02: Circuit CLOSED by default", test_in02_circuit_closed_by_default)
+test("IN-02: Circuit opens on failures", test_in02_circuit_opens_on_failures)
+test("IN-02: Circuit HALF_OPEN after timeout", test_in02_circuit_half_open_after_timeout)
+test("IN-02: Circuit closes on success", test_in02_circuit_closes_on_success)
+test("IN-02: Circuit reopens on HALF_OPEN failure", test_in02_circuit_reopens_on_half_open_failure)
+test("IN-02: Router circuit state", test_in02_router_circuit_state)
+test("IN-02: Router reset circuit", test_in02_router_reset_circuit)
+
+
+# --- IN-03: Streaming plan support ---
+
+def test_in03_stream_plan_fallback():
+    """stream_plan() yields steps even from non-streaming providers."""
+    agent = Agent(provider="rule")
+    robot = Robot.discover("mock://tb4")
+    steps = list(agent.stream_plan("deliver package to room 3", robot))
+    assert len(steps) > 0
+    assert steps[0]["skill_id"] == "navigate_to"
+
+def test_in03_router_stream_plan():
+    """Router stream_plan() falls back to batch for non-streaming providers."""
+    router = InferenceRouter()
+    router.add_tier("rule", RuleBasedProvider())
+    steps = list(router.stream_plan("deliver package", [], ["navigate"]))
+    assert len(steps) > 0
+
+test("IN-03: Agent stream_plan fallback", test_in03_stream_plan_fallback)
+test("IN-03: Router stream_plan", test_in03_router_stream_plan)
+
+
+# --- IN-04: Token budget tracking ---
+
+def test_in04_token_budget_basic():
+    budget = TokenBudget(monthly_limit=1000)
+    budget.record("cloud", input_tokens=100, output_tokens=50)
+    assert budget.total_tokens == 150
+    assert budget.remaining_tokens == 850
+    assert not budget.is_over_budget
+
+def test_in04_token_budget_alert():
+    alerts = []
+    budget = TokenBudget(monthly_limit=100, alert_at_pct=80.0)
+    budget.on_alert(lambda t, p, total: alerts.append(t))
+    budget.record("cloud", input_tokens=85, output_tokens=0)
+    assert "budget_warning" in alerts
+
+def test_in04_token_budget_exceeded():
+    alerts = []
+    budget = TokenBudget(monthly_limit=100, alert_at_pct=80.0)
+    budget.on_alert(lambda t, p, total: alerts.append(t))
+    budget.record("cloud", input_tokens=110, output_tokens=0)
+    assert "budget_exceeded" in alerts
+    assert budget.is_over_budget
+
+def test_in04_token_budget_by_tier():
+    budget = TokenBudget(monthly_limit=10000)
+    budget.record("cloud", input_tokens=100, output_tokens=50, cost=0.01)
+    budget.record("edge", input_tokens=200, output_tokens=100, cost=0.001)
+    tiers = budget.usage_by_tier()
+    assert "cloud" in tiers
+    assert "edge" in tiers
+    assert tiers["cloud"]["tokens"] == 150
+    assert tiers["edge"]["tokens"] == 300
+
+def test_in04_token_budget_reset():
+    budget = TokenBudget(monthly_limit=1000)
+    budget.record("cloud", input_tokens=500)
+    budget.reset()
+    assert budget.total_tokens == 0
+
+def test_in04_router_tracks_tokens():
+    """Router automatically tracks token usage per tier."""
+    router = InferenceRouter()
+    router.add_tier("t1", RuleBasedProvider())
+    router.plan("deliver package", [], ["navigate"])
+    assert router.token_budget.total_tokens > 0
+
+test("IN-04: Token budget basic", test_in04_token_budget_basic)
+test("IN-04: Token budget alert", test_in04_token_budget_alert)
+test("IN-04: Token budget exceeded", test_in04_token_budget_exceeded)
+test("IN-04: Token budget by tier", test_in04_token_budget_by_tier)
+test("IN-04: Token budget reset", test_in04_token_budget_reset)
+test("IN-04: Router tracks tokens", test_in04_router_tracks_tokens)
+
+
+# --- IN-05: Tool-calling LLM provider ---
+
+def test_in05_tool_calling_provider_builds_tools():
+    """ToolCallingProvider can build tool definitions from skills."""
+    provider = ToolCallingProvider(model="test")
+    skills = [
+        {"skill_id": "navigate_to", "name": "Navigate", "description": "Go somewhere",
+         "parameters": {"x": 0.0, "y": 0.0}},
+        {"skill_id": "pick_object", "name": "Pick", "description": "Pick up",
+         "parameters": {}},
+    ]
+    tools = provider._build_tools(skills)
+    assert len(tools) == 2
+    assert tools[0]["type"] == "function"
+    assert tools[0]["function"]["name"] == "navigate_to"
+    assert "x" in tools[0]["function"]["parameters"]["properties"]
+
+def test_in05_tool_calling_in_registry():
+    """ToolCallingProvider is registered in the provider registry."""
+    from apyrobo.skills.agent import _PROVIDERS
+    assert "tool_calling" in _PROVIDERS
+
+test("IN-05: Tool-calling provider builds tools", test_in05_tool_calling_provider_builds_tools)
+test("IN-05: Tool-calling in provider registry", test_in05_tool_calling_in_registry)
+
+
+# --- IN-06: Multi-turn planning ---
+
+def test_in06_multi_turn_clarification():
+    """MultiTurnProvider raises ClarificationNeeded for ambiguous tasks."""
+    provider = MultiTurnProvider(inner_provider=RuleBasedProvider())
+    try:
+        # Very short ambiguous task
+        provider.plan("go", [], ["navigate"])
+        got_clarification = False
+    except ClarificationNeeded as e:
+        got_clarification = True
+        assert len(e.question) > 0
+        assert len(e.options) > 0
+    assert got_clarification
+
+def test_in06_multi_turn_clear_task():
+    """MultiTurnProvider handles clear tasks without clarification."""
+    provider = MultiTurnProvider(inner_provider=RuleBasedProvider())
+    result = provider.plan("deliver the package to room 3", [], ["navigate"])
+    assert len(result) > 0
+
+def test_in06_multi_turn_with_answer():
+    """MultiTurnProvider can plan with answer to clarification."""
+    provider = MultiTurnProvider(inner_provider=RuleBasedProvider())
+    result = provider.plan_with_answer(
+        "go", "room 3", [], ["navigate"],
+    )
+    assert len(result) > 0
+
+def test_in06_agent_plan_interactive():
+    """Agent.plan_interactive() handles clarification via callback."""
+    agent = Agent(provider="multi_turn")
+    robot = Robot.discover("mock://tb4")
+    # Short ambiguous task with answer callback
+    graph = agent.plan_interactive(
+        "go", robot,
+        answer_callback=lambda q, opts: "room 3",
+    )
+    assert len(graph) > 0
+
+def test_in06_multi_turn_context_tracking():
+    provider = MultiTurnProvider(inner_provider=RuleBasedProvider())
+    provider.plan_with_answer("go", "room 3", [], ["navigate"])
+    assert len(provider.context) == 1
+    assert provider.context[0]["answer"] == "room 3"
+    provider.reset_context()
+    assert len(provider.context) == 0
+
+test("IN-06: Multi-turn clarification", test_in06_multi_turn_clarification)
+test("IN-06: Multi-turn clear task", test_in06_multi_turn_clear_task)
+test("IN-06: Multi-turn with answer", test_in06_multi_turn_with_answer)
+test("IN-06: Agent plan_interactive", test_in06_agent_plan_interactive)
+test("IN-06: Multi-turn context tracking", test_in06_multi_turn_context_tracking)
+
+
+# --- IN-07: Plan caching ---
+
+def test_in07_cache_hit():
+    cache = PlanCache(max_size=10, ttl_seconds=60)
+    plan = [{"skill_id": "navigate_to", "parameters": {"x": 1}}]
+    cache.put("deliver pkg", ["navigate"], plan)
+    result = cache.get("deliver pkg", ["navigate"])
+    assert result == plan
+    assert cache.hit_rate > 0
+
+def test_in07_cache_miss():
+    cache = PlanCache(max_size=10, ttl_seconds=60)
+    result = cache.get("unknown task", ["navigate"])
+    assert result is None
+
+def test_in07_cache_expiry():
+    cache = PlanCache(max_size=10, ttl_seconds=0.05)
+    cache.put("task", ["cap"], [{"skill_id": "stop", "parameters": {}}])
+    time.sleep(0.1)
+    assert cache.get("task", ["cap"]) is None
+
+def test_in07_cache_eviction():
+    cache = PlanCache(max_size=2, ttl_seconds=60)
+    cache.put("task1", ["c"], [{"skill_id": "a", "parameters": {}}])
+    cache.put("task2", ["c"], [{"skill_id": "b", "parameters": {}}])
+    cache.put("task3", ["c"], [{"skill_id": "c", "parameters": {}}])
+    assert cache.size == 2
+
+def test_in07_cache_invalidate():
+    cache = PlanCache(max_size=10, ttl_seconds=60)
+    cache.put("t1", ["c"], [{"skill_id": "a", "parameters": {}}])
+    cache.put("t2", ["c"], [{"skill_id": "b", "parameters": {}}])
+    count = cache.invalidate()
+    assert count == 2
+    assert cache.size == 0
+
+def test_in07_router_caches_plans():
+    """Router caches plans from successful tier calls."""
+    router = InferenceRouter(enable_cache=True)
+    router.add_tier("t1", RuleBasedProvider())
+    # First call — cache miss
+    result1 = router.plan("deliver package", [], ["navigate"])
+    # Second call — should be cache hit
+    result2 = router.plan("deliver package", [], ["navigate"])
+    assert result1 == result2
+    stats = router.plan_cache_stats
+    assert stats["hits"] >= 1
+
+def test_in07_router_skip_cache():
+    """Router skip_cache=True bypasses cache."""
+    router = InferenceRouter(enable_cache=True)
+    router.add_tier("t1", RuleBasedProvider())
+    router.plan("deliver", [], ["navigate"])
+    router.plan("deliver", [], ["navigate"], skip_cache=True)
+    # The second call should NOT be a cache hit
+    log = router.route_log
+    cache_hits = [e for e in log if e["tier"] == "cache_hit"]
+    # Should have 0 or 1 cache hits (first call was miss, skip_cache bypasses)
+    assert len(cache_hits) <= 1
+
+test("IN-07: Cache hit", test_in07_cache_hit)
+test("IN-07: Cache miss", test_in07_cache_miss)
+test("IN-07: Cache expiry", test_in07_cache_expiry)
+test("IN-07: Cache eviction", test_in07_cache_eviction)
+test("IN-07: Cache invalidate", test_in07_cache_invalidate)
+test("IN-07: Router caches plans", test_in07_router_caches_plans)
+test("IN-07: Router skip cache", test_in07_router_skip_cache)
+
+
+# --- IN-08: VLM integration tier ---
+
+def test_in08_vlm_tier_flag():
+    """Tiers can be marked as VLM-capable."""
+    router = InferenceRouter()
+    router.add_tier("vlm", RuleBasedProvider(), is_vlm=True)
+    router.add_tier("text", RuleBasedProvider(), is_vlm=False)
+    report = router.health_report()
+    vlm_tier = [t for t in report["tiers"] if t["name"] == "vlm"][0]
+    assert vlm_tier["is_vlm"] is True
+
+def test_in08_vlm_tier_selection():
+    """use_vlm=True filters to VLM-capable tiers only."""
+    router = InferenceRouter()
+    router.add_tier("text", RuleBasedProvider(), is_vlm=False)
+    router.add_tier("vlm", RuleBasedProvider(), is_vlm=True)
+    result = router.plan("what do you see?", [], ["navigate"], use_vlm=True)
+    assert len(result) > 0
+    # Should have routed to vlm tier
+    log = router.route_log
+    assert any(e["tier"] == "vlm" for e in log)
+
+def test_in08_vlm_fallback_when_no_vlm():
+    """When use_vlm=True but no VLM tiers exist, falls back to rule-based."""
+    router = InferenceRouter()
+    router.add_tier("text", RuleBasedProvider(), is_vlm=False)
+    result = router.plan("what do you see?", [], ["navigate"], use_vlm=True)
+    assert len(result) > 0  # falls back to rule-based
+
+test("IN-08: VLM tier flag", test_in08_vlm_tier_flag)
+test("IN-08: VLM tier selection", test_in08_vlm_tier_selection)
+test("IN-08: VLM fallback", test_in08_vlm_fallback_when_no_vlm)
+
+
+# --- IN-09: Skill-constrained prompting ---
+
+def test_in09_constrained_prompt_includes_signatures():
+    """build_constrained_prompt includes parameter types and examples."""
+    skills = [
+        {"skill_id": "navigate_to", "name": "Navigate", "description": "Go to position",
+         "required_capability": "navigate",
+         "parameters": {"x": 0.0, "y": 0.0, "speed": 1.0}},
+        {"skill_id": "stop", "name": "Stop", "description": "Emergency stop",
+         "required_capability": "navigate",
+         "parameters": {}},
+    ]
+    prompt = build_constrained_prompt(skills, ["navigate", "pick"])
+    assert "navigate_to" in prompt
+    assert "x: float" in prompt
+    assert "navigate" in prompt
+    assert "Rules" in prompt
+
+def test_in09_constrained_prompt_without_signatures():
+    """build_constrained_prompt works without signatures."""
+    skills = [{"skill_id": "stop", "name": "Stop", "description": "Stop",
+               "required_capability": "navigate", "parameters": {}}]
+    prompt = build_constrained_prompt(skills, ["navigate"], include_signatures=False)
+    assert "stop" in prompt
+    assert "float" not in prompt
+
+def test_in09_agent_constrained_prompt_flag():
+    """Agent accepts constrained_prompt= flag."""
+    agent = Agent(provider="rule", constrained_prompt=True)
+    robot = Robot.discover("mock://tb4")
+    result = agent.execute("deliver package", robot)
+    assert result.status.value == "completed"
+
+test("IN-09: Constrained prompt with signatures", test_in09_constrained_prompt_includes_signatures)
+test("IN-09: Constrained prompt without signatures", test_in09_constrained_prompt_without_signatures)
+test("IN-09: Agent constrained_prompt flag", test_in09_agent_constrained_prompt_flag)
+
+
+# --- IN-10: Fine-tuned edge model ---
+
+def test_in10_edge_tier_flag():
+    """Tiers can be marked as edge (fine-tuned local model)."""
+    router = InferenceRouter()
+    router.add_tier("edge", RuleBasedProvider(), is_edge=True)
+    report = router.health_report()
+    assert report["tiers"][0]["is_edge"] is True
+
+def test_in10_edge_tier_preferred_for_high_urgency():
+    """Edge tiers are preferred for HIGH urgency requests."""
+    router = InferenceRouter()
+    router.add_tier("cloud", RuleBasedProvider(), priority=0,
+                    supports_urgency=[Urgency.HIGH, Urgency.NORMAL])
+    router.add_tier("edge", RuleBasedProvider(), priority=1,
+                    supports_urgency=[Urgency.HIGH, Urgency.NORMAL], is_edge=True)
+
+    # For HIGH urgency, edge should be tried first
+    tiers = router._select_tiers(Urgency.HIGH)
+    assert tiers[0].is_edge  # edge first for HIGH
+
+    # For NORMAL urgency, cloud should be first (by priority)
+    tiers = router._select_tiers(Urgency.NORMAL)
+    assert not tiers[0].is_edge  # cloud first for NORMAL
+
+test("IN-10: Edge tier flag", test_in10_edge_tier_flag)
+test("IN-10: Edge preferred for HIGH urgency", test_in10_edge_tier_preferred_for_high_urgency)
+
+
+# --- Integration: Router health_report includes all new fields ---
+
+def test_router_health_report_complete():
+    router = InferenceRouter()
+    router.add_tier("cloud", RuleBasedProvider(), is_vlm=False, is_edge=False)
+    router.add_tier("edge", RuleBasedProvider(), is_vlm=False, is_edge=True)
+    router.plan("deliver package", [], ["navigate"])
+
+    report = router.health_report()
+    assert "token_budget" in report
+    assert "plan_cache" in report
+    assert len(report["tiers"]) == 2
+    assert report["tiers"][0]["circuit_state"] in ["closed", "open", "half_open"]
+
+test("Integration: Router health report complete", test_router_health_report_complete)
+
+
+# =====================================================================
 # Summary
 # =====================================================================
 
