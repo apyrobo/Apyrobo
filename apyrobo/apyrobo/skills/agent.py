@@ -23,6 +23,7 @@ from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import TaskResult
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
 from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent, ExecutionState, SkillStatus
+from apyrobo.observability import trace_context, emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -756,6 +757,7 @@ class Agent:
         Plan and execute a task end-to-end.
 
         IN-01: urgency= is forwarded to the inference router.
+        OB-03: Wraps entire execution in trace_context for correlation.
 
         Args:
             task: Natural language task description
@@ -767,31 +769,38 @@ class Agent:
         Returns:
             TaskResult with outcome summary
         """
-        # Plan (IN-01: forward urgency)
-        graph = self.plan(task, robot, urgency=urgency)
+        # OB-03: Trace context propagation from Agent through all layers
+        with trace_context(task=task, component="agent",
+                           robot_id=getattr(robot, '_adapter', None) and robot._adapter.robot_id or "unknown",
+                           urgency=urgency or "normal") as ctx:
+            trace_id = ctx.get("trace_id")
 
-        if len(graph) == 0:
-            return TaskResult(
-                task_name=task,
-                status="failed",
-                error="Agent could not create a plan for this task",
-            )
+            # Plan (IN-01: forward urgency)
+            graph = self.plan(task, robot, urgency=urgency)
 
-        # Execute with shared state
-        state = ExecutionState()
-        executor = SkillExecutor(robot, state=state)
-        if on_event:
-            executor.on_event(on_event)
+            if len(graph) == 0:
+                emit_event("task_failed", task=task, reason="no_plan", trace_id=trace_id)
+                return TaskResult(
+                    task_name=task,
+                    status="failed",
+                    error="Agent could not create a plan for this task",
+                )
 
-        # Also capture events internally
-        self._last_events = []
-        executor.on_event(lambda e: self._last_events.append(e))
+            # Execute with shared state
+            state = ExecutionState()
+            executor = SkillExecutor(robot, state=state)
+            if on_event:
+                executor.on_event(on_event)
 
-        result = executor.execute_graph(graph, parallel=parallel)
-        # Override the generic task name with the actual task
-        result.task_name = task
-        self._last_state = state
-        return result
+            # Also capture events internally
+            self._last_events = []
+            executor.on_event(lambda e: self._last_events.append(e))
+
+            result = executor.execute_graph(graph, parallel=parallel, trace_id=trace_id)
+            # Override the generic task name with the actual task
+            result.task_name = task
+            self._last_state = state
+            return result
 
     # ------------------------------------------------------------------
     # IN-06: Multi-turn planning support
