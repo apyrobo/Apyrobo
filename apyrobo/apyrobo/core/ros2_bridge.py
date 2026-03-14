@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import logging
 import math
+import os
+import subprocess
 import threading
 import time
 from enum import Enum
@@ -45,6 +47,58 @@ from apyrobo.core.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Config helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_yaml_file(path: str) -> dict[str, Any]:
+    """Load YAML config if available; returns empty dict on failure."""
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning("Failed to load ROS2 config YAML %s: %s", path, e)
+        return {}
+
+
+def _apply_namespace(config: dict[str, Any], namespace: str | None) -> dict[str, Any]:
+    """Prefix configured topic names with namespace (RT-01)."""
+    if not namespace:
+        return dict(config)
+    ns = namespace.strip()
+    if not ns:
+        return dict(config)
+    if not ns.startswith("/"):
+        ns = f"/{ns}"
+    ns = ns.rstrip("/")
+
+    out = dict(config)
+    for key, value in list(out.items()):
+        if not isinstance(value, str):
+            continue
+        if key.endswith("_action"):
+            continue
+        if not value.startswith("/"):
+            out[key] = f"{ns}/{value}"
+        else:
+            out[key] = f"{ns}{value}"
+    return out
+
+
+def _ros_compat_layer() -> dict[str, str]:
+    """RT-10: expose active ROS distro compatibility metadata."""
+    distro = os.getenv("ROS_DISTRO", "humble").lower()
+    if distro in {"humble", "iron", "jazzy"}:
+        return {"distro": distro, "status": "supported"}
+    return {"distro": distro, "status": "unknown"}
+
 
 # ---------------------------------------------------------------------------
 # ROS 2 imports — fail gracefully outside Docker
@@ -72,6 +126,14 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Navigation state
 # ---------------------------------------------------------------------------
+
+class RobotState(str, Enum):
+    """RT-06: high-level robot execution state machine."""
+    IDLE = "idle"
+    NAVIGATING = "navigating"
+    MANIPULATING = "manipulating"
+    E_STOPPED = "e_stopped"
+
 
 class NavState(str, Enum):
     """State of the current navigation goal."""
@@ -191,6 +253,9 @@ if _HAS_ROS2:
 
         # Navigation tuning
         NAV_TIMEOUT_SEC = 120.0
+        NAV2_SERVER_WAIT_SEC = 5.0
+        ODOM_WAIT_SEC = 5.0
+        GOAL_ACCEPT_TIMEOUT_SEC = 10.0
         GOAL_TOLERANCE_M = 0.25
         CMD_VEL_HZ = 10.0
         PROPORTIONAL_GAIN_LINEAR = 0.8
@@ -201,9 +266,34 @@ if _HAS_ROS2:
             self._node = _ROS2NodeManager.get_node()
             self._cb_group = ReentrantCallbackGroup()
 
-            # Merge user config over defaults
+            # Merge user config over defaults + optional YAML + namespace (RT-01)
+            yaml_path = kwargs.get("config_yaml")
+            yaml_data = _load_yaml_file(yaml_path)
+            yaml_cfg = yaml_data.get("ros2_bridge", yaml_data) if isinstance(yaml_data, dict) else {}
+
             self._config = dict(self.DEFAULT_CONFIG)
+            if isinstance(yaml_cfg, dict):
+                self._config.update(yaml_cfg.get("topics", {}))
+                for key in ("nav2_action", "cmd_vel", "odom", "scan", "camera", "depth", "imu"):
+                    if key in yaml_cfg:
+                        self._config[key] = yaml_cfg[key]
             self._config.update(kwargs.get("config", {}))
+
+            self._namespace = kwargs.get("namespace") or (yaml_cfg.get("namespace") if isinstance(yaml_cfg, dict) else None)
+            self._config = _apply_namespace(self._config, self._namespace)
+
+            # Configurable timeouts/QoS (RT-02/RT-03)
+            self._nav_timeout_sec = float(kwargs.get("nav_timeout_sec", yaml_cfg.get("nav_timeout_sec", self.NAV_TIMEOUT_SEC) if isinstance(yaml_cfg, dict) else self.NAV_TIMEOUT_SEC))
+            self._nav2_server_wait_sec = float(kwargs.get("nav2_server_wait_sec", yaml_cfg.get("nav2_server_wait_sec", self.NAV2_SERVER_WAIT_SEC) if isinstance(yaml_cfg, dict) else self.NAV2_SERVER_WAIT_SEC))
+            self._odom_wait_sec = float(kwargs.get("odom_wait_sec", yaml_cfg.get("odom_wait_sec", self.ODOM_WAIT_SEC) if isinstance(yaml_cfg, dict) else self.ODOM_WAIT_SEC))
+            self._goal_accept_timeout_sec = float(kwargs.get("goal_accept_timeout_sec", yaml_cfg.get("goal_accept_timeout_sec", self.GOAL_ACCEPT_TIMEOUT_SEC) if isinstance(yaml_cfg, dict) else self.GOAL_ACCEPT_TIMEOUT_SEC))
+            self._odom_reliability = str(kwargs.get("odom_reliability", yaml_cfg.get("odom_reliability", "best_effort") if isinstance(yaml_cfg, dict) else "best_effort")).lower()
+
+            # Feedback hook for RT-08
+            self._feedback_handler: Any = kwargs.get("feedback_handler")
+            self._floor_maps: dict[str, str] = {}
+            self._current_floor: str | None = None
+            self._compat = _ros_compat_layer()
 
             # --- Publishers ---
             self._cmd_vel_pub = self._node.create_publisher(
@@ -214,6 +304,7 @@ if _HAS_ROS2:
             self._position = (0.0, 0.0)
             self._orientation = 0.0  # yaw in radians
             self._nav_state = NavState.IDLE
+            self._state_machine = RobotState.IDLE
             self._goal_handle: Any = None
             self._has_odom = False
             self._has_nav2 = False
@@ -223,7 +314,7 @@ if _HAS_ROS2:
                 Odometry,
                 self._config["odom"],
                 self._odom_callback,
-                _sensor_qos(),
+                self._odom_qos(),
                 callback_group=self._cb_group,
             )
 
@@ -236,7 +327,7 @@ if _HAS_ROS2:
                     callback_group=self._cb_group,
                 )
                 # Wait briefly for Nav2 to appear
-                self._has_nav2 = self._nav2_client.wait_for_server(timeout_sec=5.0)
+                self._has_nav2 = self._nav2_client.wait_for_server(timeout_sec=self._nav2_server_wait_sec)
                 if self._has_nav2:
                     logger.info("Nav2 action server found")
                 else:
@@ -248,12 +339,12 @@ if _HAS_ROS2:
 
             # Wait for first odometry message
             t0 = time.time()
-            while not self._has_odom and (time.time() - t0) < 5.0:
+            while not self._has_odom and (time.time() - t0) < self._odom_wait_sec:
                 time.sleep(0.1)
             if self._has_odom:
                 logger.info("Odometry online — position: (%.2f, %.2f)", *self._position)
             else:
-                logger.warning("No odometry received within 5s — position may be stale")
+                logger.warning("No odometry received within %.1fs — position may be stale", self._odom_wait_sec)
 
             logger.info(
                 "ROS2Adapter ready for %s [nav2=%s, odom=%s, pos=(%.1f, %.1f)]",
@@ -287,6 +378,23 @@ if _HAS_ROS2:
             q.y = 0.0
             q.z = math.sin(yaw / 2.0)
             return q
+
+        def _odom_qos(self) -> Any:
+            """RT-03: configurable odometry reliability to avoid silent QoS mismatch."""
+            reliability = (
+                ReliabilityPolicy.RELIABLE
+                if self._odom_reliability == "reliable"
+                else ReliabilityPolicy.BEST_EFFORT
+            )
+            return QoSProfile(
+                reliability=reliability,
+                durability=DurabilityPolicy.VOLATILE,
+                depth=5,
+            )
+
+        def get_pose(self) -> tuple[float, float, float]:
+            """RT-04: return current pose as (x, y, yaw)."""
+            return (self._position[0], self._position[1], self._orientation)
 
         # ==================================================================
         # Capability discovery
@@ -356,6 +464,9 @@ if _HAS_ROS2:
                     "nav2_available": self._has_nav2,
                     "topics_found": len(topic_names),
                     "odom_online": self._has_odom,
+                    "namespace": self._namespace,
+                    "odom_reliability": self._odom_reliability,
+                    "ros_compat": self._compat,
                 },
             )
 
@@ -372,10 +483,15 @@ if _HAS_ROS2:
             For the executor/agent, the blocking behavior is intentional:
             skills execute sequentially.
             """
+            if self._state_machine == RobotState.E_STOPPED:
+                raise RuntimeError("Robot is E_STOPPED; call reset_estop() before moving")
+            self._state_machine = RobotState.NAVIGATING
             if self._has_nav2:
                 self._move_nav2(x, y, speed)
             else:
                 self._move_cmd_vel(x, y, speed)
+            if self._state_machine != RobotState.E_STOPPED:
+                self._state_machine = RobotState.IDLE
 
         def _move_nav2(self, x: float, y: float, speed: float | None = None) -> None:
             """Send a NavigateToPose goal to Nav2."""
@@ -417,7 +533,7 @@ if _HAS_ROS2:
             t0 = time.time()
             while self._nav_state == NavState.NAVIGATING and self._goal_handle is None:
                 time.sleep(0.05)
-                if time.time() - t0 > 10.0:
+                if time.time() - t0 > self._goal_accept_timeout_sec:
                     logger.error("Nav2: goal acceptance timed out")
                     self._nav_state = NavState.TIMED_OUT
                     return
@@ -426,8 +542,8 @@ if _HAS_ROS2:
             t0 = time.time()
             while self._nav_state == NavState.NAVIGATING:
                 time.sleep(0.1)
-                if time.time() - t0 > self.NAV_TIMEOUT_SEC:
-                    logger.error("Nav2: navigation timed out after %.0fs", self.NAV_TIMEOUT_SEC)
+                if time.time() - t0 > self._nav_timeout_sec:
+                    logger.error("Nav2: navigation timed out after %.0fs", self._nav_timeout_sec)
                     self._cancel_nav2()
                     self._nav_state = NavState.TIMED_OUT
                     return
@@ -457,6 +573,17 @@ if _HAS_ROS2:
             if dist is not None:
                 logger.debug("Nav2 feedback: pos=(%.2f, %.2f) remaining=%.2fm",
                              pos.x, pos.y, dist)
+            if self._feedback_handler is not None:
+                try:
+                    self._feedback_handler({
+                        "event": "nav2_feedback",
+                        "position": (pos.x, pos.y),
+                        "orientation": self._orientation,
+                        "distance_remaining": float(dist) if dist is not None else None,
+                        "state": self._nav_state.value,
+                    })
+                except Exception as e:
+                    logger.warning("Nav2 feedback handler error: %s", e)
 
         def _nav2_result(self, future: Any) -> None:
             """Callback when Nav2 finishes the goal."""
@@ -499,9 +626,10 @@ if _HAS_ROS2:
             dt = 1.0 / self.CMD_VEL_HZ
             t0 = time.time()
 
-            logger.info("cmd_vel: driving to (%.2f, %.2f) speed=%.2f", x, y, speed)
+            controller_mode = self._config.get("cmd_vel_controller", "pure_pursuit")
+            logger.info("cmd_vel: driving to (%.2f, %.2f) speed=%.2f mode=%s", x, y, speed, controller_mode)
 
-            while time.time() - t0 < self.NAV_TIMEOUT_SEC:
+            while time.time() - t0 < self._nav_timeout_sec:
                 dx = x - self._position[0]
                 dy = y - self._position[1]
                 distance = math.sqrt(dx * dx + dy * dy)
@@ -512,19 +640,25 @@ if _HAS_ROS2:
                     logger.info("cmd_vel: reached goal (dist=%.2fm)", distance)
                     return
 
-                # Proportional control
                 target_yaw = math.atan2(dy, dx)
                 yaw_error = self._normalize_angle(target_yaw - self._orientation)
 
                 twist = Twist()
-                # Slow down when close, cap at requested speed
-                twist.linear.x = min(speed, distance * self.PROPORTIONAL_GAIN_LINEAR)
-                # Reduce forward speed if we need to turn a lot
-                if abs(yaw_error) > 0.5:
-                    twist.linear.x *= 0.3
-                twist.angular.z = yaw_error * self.PROPORTIONAL_GAIN_ANGULAR
-                # Clamp angular velocity
-                twist.angular.z = max(-1.5, min(1.5, twist.angular.z))
+                if controller_mode == "dwa":
+                    # Lightweight DWA-like fallback: favor heading alignment before translation.
+                    if abs(yaw_error) > 0.7:
+                        twist.linear.x = 0.0
+                    else:
+                        twist.linear.x = min(speed, distance * self.PROPORTIONAL_GAIN_LINEAR)
+                    twist.angular.z = max(-1.5, min(1.5, yaw_error * self.PROPORTIONAL_GAIN_ANGULAR))
+                else:
+                    # Pure-pursuit style proportional control on heading+distance.
+                    lookahead = max(0.3, min(1.5, distance))
+                    curvature = (2.0 * math.sin(yaw_error)) / lookahead
+                    twist.linear.x = min(speed, distance * self.PROPORTIONAL_GAIN_LINEAR)
+                    if abs(yaw_error) > 0.6:
+                        twist.linear.x *= 0.25
+                    twist.angular.z = max(-1.5, min(1.5, twist.linear.x * curvature * self.PROPORTIONAL_GAIN_ANGULAR))
 
                 self._cmd_vel_pub.publish(twist)
                 time.sleep(dt)
@@ -532,7 +666,7 @@ if _HAS_ROS2:
             # Timeout
             self._publish_stop()
             self._nav_state = NavState.TIMED_OUT
-            logger.error("cmd_vel: timed out after %.0fs", self.NAV_TIMEOUT_SEC)
+            logger.error("cmd_vel: timed out after %.0fs", self._nav_timeout_sec)
 
         # ==================================================================
         # Stop
@@ -546,11 +680,52 @@ if _HAS_ROS2:
                 self._nav_state = NavState.CANCELLED
 
             self._publish_stop()
+            if self._state_machine != RobotState.E_STOPPED:
+                self._state_machine = RobotState.IDLE
             logger.info("ROS2Adapter: STOPPED")
 
         def _publish_stop(self) -> None:
             """Publish zero velocity on cmd_vel."""
             self._cmd_vel_pub.publish(Twist())
+
+        def emergency_stop(self) -> None:
+            """RT-06: enter E_STOPPED state and publish zero velocity."""
+            self._state_machine = RobotState.E_STOPPED
+            self._publish_stop()
+            if self._has_nav2 and self._goal_handle is not None:
+                self._cancel_nav2()
+
+        def reset_estop(self) -> None:
+            """Leave E_STOPPED and return to IDLE."""
+            if self._state_machine == RobotState.E_STOPPED:
+                self._state_machine = RobotState.IDLE
+
+        def set_feedback_handler(self, handler: Any) -> None:
+            """RT-08: register callback for Nav2 progress payloads."""
+            self._feedback_handler = handler
+
+        def trigger_slam(self, mode: str = "online_async") -> bool:
+            """RT-05: trigger slam_toolbox launch via Python API wrapper."""
+            cmd = ["ros2", "launch", "slam_toolbox", "online_async_launch.py", f"slam_params_file:={mode}"]
+            try:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                logger.info("Triggered slam_toolbox launch: %s", " ".join(cmd))
+                return True
+            except Exception as e:
+                logger.warning("Failed to trigger slam_toolbox: %s", e)
+                return False
+
+        def switch_floor_map(self, floor_id: str, map_yaml: str) -> bool:
+            """RT-09: load/switch map yaml for a floor via map_server service CLI."""
+            cmd = ["ros2", "service", "call", "/map_server/load_map", "nav2_msgs/srv/LoadMap", f"{{map_url: '{map_yaml}'}}"]
+            try:
+                subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self._floor_maps[floor_id] = map_yaml
+                self._current_floor = floor_id
+                return True
+            except Exception as e:
+                logger.warning("Failed to switch floor map: %s", e)
+                return False
 
         # ==================================================================
         # Helpers
@@ -580,3 +755,7 @@ if _HAS_ROS2:
         @property
         def is_moving(self) -> bool:
             return self._nav_state == NavState.NAVIGATING
+
+        @property
+        def robot_state(self) -> RobotState:
+            return self._state_machine

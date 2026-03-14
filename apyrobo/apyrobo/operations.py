@@ -16,12 +16,25 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
+import subprocess
 import time
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
+from urllib import request as urllib_request
 
 logger = logging.getLogger(__name__)
+
+try:
+    import rclpy
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+    from sensor_msgs.msg import BatteryState
+    from geometry_msgs.msg import Twist
+    _HAS_ROS2 = True
+except Exception:
+    _HAS_ROS2 = False
 
 
 # =====================================================================
@@ -68,6 +81,9 @@ class BatteryMonitor:
         self.is_docked: bool = False
         self._last_update: float = time.time()
         self._callbacks: list[Callable[[str, float], None]] = []
+        self._return_to_dock_cb: Callable[[], None] | None = None
+        self._ros_battery_sub: Any = None
+        self._ros_node: Any = None
 
     def update(self, percentage: float | None = None, voltage: float | None = None,
                is_charging: bool | None = None) -> None:
@@ -127,6 +143,38 @@ class BatteryMonitor:
                 cb(level, pct)
             except Exception:
                 pass
+
+    def set_return_to_dock_callback(self, callback: Callable[[], None]) -> None:
+        """Set callback fired when battery reaches critical threshold (OP-04)."""
+        self._return_to_dock_cb = callback
+
+    def evaluate_return_to_dock(self) -> bool:
+        """Trigger return-to-dock action if battery is critical and not charging."""
+        if self.percentage <= self.critical_threshold and not self.is_charging:
+            if self._return_to_dock_cb is not None:
+                self._return_to_dock_cb()
+                return True
+        return False
+
+    def attach_ros2(self, node: Any, topic: str = "/battery_state", qos_depth: int = 10,
+                    reliability: str = "best_effort") -> bool:
+        """OP-01: subscribe to ROS2 battery topic when rclpy is available."""
+        if not _HAS_ROS2:
+            logger.warning("ROS2 unavailable; cannot attach battery subscriber")
+            return False
+        rel = ReliabilityPolicy.RELIABLE if reliability == "reliable" else ReliabilityPolicy.BEST_EFFORT
+        qos = QoSProfile(reliability=rel, durability=DurabilityPolicy.VOLATILE, depth=qos_depth)
+
+        def _cb(msg: Any) -> None:
+            pct = float(getattr(msg, "percentage", 0.0)) * (100.0 if getattr(msg, "percentage", 0.0) <= 1.0 else 1.0)
+            voltage = float(getattr(msg, "voltage", 0.0)) if hasattr(msg, "voltage") else None
+            is_charging = bool(getattr(msg, "power_supply_status", 0) == 1) if hasattr(msg, "power_supply_status") else None
+            self.update(percentage=pct, voltage=voltage, is_charging=is_charging)
+            self.evaluate_return_to_dock()
+
+        self._ros_battery_sub = node.create_subscription(BatteryState, topic, _cb, qos)
+        self._ros_node = node
+        return True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -188,8 +236,27 @@ class MapManager:
             raise ValueError(f"Unknown map: {name!r}. Available: {list(self._maps)}")
         self._active = name
         logger.info("MapManager: active map → %s", name)
-        # TODO: In Docker, call map_server load_map service
-        # ros2 service call /map_server/load_map nav2_msgs/srv/LoadMap "{map_url: path}"
+
+    def load_map_ros2(self, map_yaml: str) -> bool:
+        """OP-05: load map through Nav2 map_server service CLI."""
+        cmd = ["ros2", "service", "call", "/map_server/load_map", "nav2_msgs/srv/LoadMap", f"{{map_url: '{map_yaml}'}}"]
+        try:
+            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except Exception as e:
+            logger.warning("Map load failed: %s", e)
+            return False
+
+    def save_map_ros2(self, map_name: str, output_dir: str | None = None) -> bool:
+        """OP-05: save map through map_saver_cli."""
+        target = Path(output_dir) / map_name if output_dir else Path(map_name)
+        cmd = ["ros2", "run", "nav2_map_server", "map_saver_cli", "-f", str(target)]
+        try:
+            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except Exception as e:
+            logger.warning("Map save failed: %s", e)
+            return False
 
     @property
     def active_map(self) -> dict[str, Any] | None:
@@ -266,6 +333,22 @@ class TeleoperationBridge:
     def set_velocity_callback(self, callback: Callable[[float, float], None]) -> None:
         """Set the function that sends velocity commands to the robot."""
         self._velocity_callback = callback
+
+    def attach_ros2_publisher(self, node: Any, topic: str = "/cmd_vel", qos_depth: int = 10) -> bool:
+        """OP-02: wire teleop to ROS2 cmd_vel publishing."""
+        if not _HAS_ROS2:
+            logger.warning("ROS2 unavailable; cannot attach teleop publisher")
+            return False
+        pub = node.create_publisher(Twist, topic, qos_depth)
+
+        def _send(linear: float, angular: float) -> None:
+            msg = Twist()
+            msg.linear.x = float(linear)
+            msg.angular.z = float(angular)
+            pub.publish(msg)
+
+        self._velocity_callback = _send
+        return True
 
     def enable(self, operator_id: str = "operator") -> None:
         """Switch to teleoperation mode."""
@@ -381,11 +464,13 @@ class WebhookEmitter:
         webhooks.emit("task_completed", task_id="t1", robot="tb4", duration=12.5)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, retry_count: int = 3, retry_backoff_s: float = 0.5) -> None:
         self._targets: dict[str, WebhookTarget] = {}
         self._callbacks: dict[str, Callable[[dict[str, Any]], None]] = {}
         self._event_log: list[dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._retry_count = retry_count
+        self._retry_backoff_s = retry_backoff_s
 
     def add_target(self, name: str, url: str, events: list[str] | None = None,
                    headers: dict[str, str] | None = None) -> None:
@@ -433,24 +518,30 @@ class WebhookEmitter:
                 ).start()
 
     def _send_http(self, target: WebhookTarget, payload: dict[str, Any]) -> None:
-        """Send an HTTP POST to a webhook target."""
-        try:
-            import urllib.request
-            req = urllib.request.Request(
-                target.url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json", **target.headers},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                target.last_success = time.time()
-                target.failure_count = 0
-        except Exception as e:
-            target.failure_count += 1
-            logger.warning("Webhook %s failed (%d): %s", target.name, target.failure_count, e)
-            if target.failure_count >= 5:
-                target.enabled = False
-                logger.error("Webhook %s disabled after %d failures", target.name, target.failure_count)
+        """Send an HTTP POST to a webhook target with retry (OP-03)."""
+        for attempt in range(1, self._retry_count + 1):
+            try:
+                req = urllib_request.Request(
+                    target.url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", **target.headers},
+                    method="POST",
+                )
+                with urllib_request.urlopen(req, timeout=10):
+                    target.last_success = time.time()
+                    target.failure_count = 0
+                    return
+            except Exception as e:
+                target.failure_count += 1
+                logger.warning(
+                    "Webhook %s failed attempt %d/%d: %s",
+                    target.name, attempt, self._retry_count, e,
+                )
+                time.sleep(self._retry_backoff_s * attempt)
+
+        if target.failure_count >= 5:
+            target.enabled = False
+            logger.error("Webhook %s disabled after %d failures", target.name, target.failure_count)
 
     def format_slack(self, event_type: str, **data: Any) -> dict[str, Any]:
         """Format a payload for Slack incoming webhooks."""
@@ -468,6 +559,16 @@ class WebhookEmitter:
 
         return {"text": text}
 
+    def add_slack_target(self, name: str, webhook_url: str,
+                         events: list[str] | None = None) -> None:
+        """OP-07: register Slack incoming webhook target."""
+        self.add_target(name=name, url=webhook_url, events=events)
+
+    def add_teams_target(self, name: str, webhook_url: str,
+                         events: list[str] | None = None) -> None:
+        """OP-07: register Microsoft Teams webhook target."""
+        self.add_target(name=name, url=webhook_url, events=events)
+
     @property
     def event_log(self) -> list[dict[str, Any]]:
         return list(self._event_log)
@@ -478,3 +579,128 @@ class WebhookEmitter:
 
     def __repr__(self) -> str:
         return f"<WebhookEmitter targets={self.target_count} events={len(self._event_log)}>"
+
+
+# =====================================================================
+# Scheduling / API / Dashboard
+# =====================================================================
+
+
+class ScheduledTaskRunner:
+    """OP-06: cron-like periodic task runner for skill/task callbacks."""
+
+    def __init__(self) -> None:
+        self._jobs: list[dict[str, Any]] = []
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+
+    def add_interval_job(self, name: str, interval_s: float, fn: Callable[[], None]) -> None:
+        self._jobs.append({"name": name, "interval_s": interval_s, "fn": fn, "next": time.time() + interval_s})
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+
+        def _loop() -> None:
+            while not self._stop.is_set():
+                now = time.time()
+                for job in self._jobs:
+                    if now >= job["next"]:
+                        try:
+                            job["fn"]()
+                        except Exception as e:
+                            logger.warning("Scheduled job %s failed: %s", job["name"], e)
+                        job["next"] = now + float(job["interval_s"])
+                time.sleep(0.1)
+
+        self._thread = threading.Thread(target=_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
+class OperationsApiServer:
+    """OP-08: lightweight REST API (POST /tasks, GET /robots, GET /health)."""
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 8081) -> None:
+        self.host = host
+        self.port = port
+        self._tasks: list[dict[str, Any]] = []
+        self._robots: list[dict[str, Any]] = []
+        self._server: ThreadingHTTPServer | None = None
+        self._thread: threading.Thread | None = None
+
+    def set_robots(self, robots: list[dict[str, Any]]) -> None:
+        self._robots = robots
+
+    def start(self) -> None:
+        outer = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            def _send(self, code: int, payload: dict[str, Any]) -> None:
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):  # noqa: N802
+                if self.path == "/health":
+                    self._send(200, {"status": "ok"})
+                elif self.path == "/robots":
+                    self._send(200, {"robots": outer._robots})
+                else:
+                    self._send(404, {"error": "not_found"})
+
+            def do_POST(self):  # noqa: N802
+                if self.path != "/tasks":
+                    self._send(404, {"error": "not_found"})
+                    return
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length) if length else b"{}"
+                try:
+                    payload = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    payload = {}
+                payload["received_at"] = time.time()
+                outer._tasks.append(payload)
+                self._send(202, {"accepted": True, "task": payload})
+
+            def log_message(self, fmt: str, *args: Any) -> None:  # silence std logging
+                return
+
+        self._server = ThreadingHTTPServer((self.host, self.port), _Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._server:
+            self._server.shutdown()
+            self._server.server_close()
+
+
+class FleetDashboard:
+    """OP-09: simple web dashboard payload provider for task/robot status."""
+
+    def __init__(self) -> None:
+        self._robot_status: dict[str, Any] = {}
+        self._task_status: dict[str, Any] = {}
+        self._events: list[dict[str, Any]] = []
+
+    def update_robot(self, robot_id: str, status: dict[str, Any]) -> None:
+        self._robot_status[robot_id] = status
+        self._events.append({"type": "robot", "robot_id": robot_id, "status": status, "t": time.time()})
+
+    def update_task(self, task_id: str, status: dict[str, Any]) -> None:
+        self._task_status[task_id] = status
+        self._events.append({"type": "task", "task_id": task_id, "status": status, "t": time.time()})
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "robots": dict(self._robot_status),
+            "tasks": dict(self._task_status),
+            "events": list(self._events[-200:]),
+        }
