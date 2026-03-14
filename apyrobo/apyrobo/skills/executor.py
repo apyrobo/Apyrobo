@@ -240,16 +240,22 @@ class SkillExecutor:
     Executes a SkillGraph against a robot.
 
     Handles precondition checking, postcondition verification,
-    timeout enforcement, retry logic, parallel execution, and
-    event streaming.
+    timeout enforcement, retry logic, parallel execution,
+    confidence gating (SF-08), and event streaming.
     """
 
-    def __init__(self, robot: Robot, state: ExecutionState | None = None) -> None:
+    def __init__(
+        self,
+        robot: Robot,
+        state: ExecutionState | None = None,
+        confidence_estimator: Any = None,
+    ) -> None:
         self._robot = robot
         self._listeners: list[EventListener] = []
         self._events: list[ExecutionEvent] = []
         self._state = state or ExecutionState()
         self._emit_lock = threading.Lock()
+        self._confidence_estimator = confidence_estimator  # SF-08
 
     @property
     def state(self) -> ExecutionState:
@@ -463,6 +469,9 @@ class SkillExecutor:
         """
         Execute an entire skill graph.
 
+        SF-08: If a confidence_estimator is attached, gates execution
+        before starting. Returns FAILED result if confidence too low.
+
         Args:
             graph: The skill graph to execute.
             parallel: If True, run independent skills concurrently.
@@ -470,6 +479,24 @@ class SkillExecutor:
 
         Returns a TaskResult summarising the outcome.
         """
+        # SF-08: Confidence gating
+        if self._confidence_estimator is not None:
+            try:
+                report = self._confidence_estimator.gate(graph, self._robot)
+                logger.info(
+                    "Confidence gate passed: %.0f%%", report.confidence * 100
+                )
+            except Exception as e:
+                logger.warning("Confidence gate blocked execution: %s", e)
+                return TaskResult(
+                    task_name=f"graph_{len(graph)}_skills",
+                    status=TaskStatus.FAILED,
+                    steps_completed=0,
+                    steps_total=len(graph),
+                    error=str(e),
+                    recovery_actions_taken=[RecoveryAction.ABORT],
+                )
+
         if parallel:
             return self._execute_graph_parallel(graph)
         return self._execute_graph_sequential(graph)

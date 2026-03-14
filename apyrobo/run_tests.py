@@ -2869,6 +2869,425 @@ test("Builtin: rotate skill registered", test_builtin_rotate_skill_exists)
 
 
 # =====================================================================
+# SF-01 through SF-12: Safety & Confidence
+# =====================================================================
+section("Safety & Confidence (SF-01 through SF-12)")
+
+from apyrobo.safety.enforcer import (
+    SpeedProfile, SafetyAuditEntry, FormalConstraintExporter,
+    EscalationTimeout, POLICY_REGISTRY,
+)
+from apyrobo.safety.confidence import LowConfidenceError
+from apyrobo.sensors.pipeline import WorldState, DetectedObject, Obstacle
+from apyrobo.persistence import StateStore
+from apyrobo.operations import BatteryMonitor, WebhookEmitter
+import tempfile
+import threading
+
+# --- SF-01: Move timeout ---
+
+def test_sf01_move_timeout_timer_starts():
+    robot = Robot.discover("mock://sf01")
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="t", move_timeout=60.0))
+    enforcer.move(x=1.0, y=1.0)
+    assert enforcer._move_timer is not None
+    assert enforcer._move_timer.is_alive()
+    enforcer.stop()  # cancels timer
+    assert enforcer._move_timer is None
+
+def test_sf01_move_timeout_fires():
+    robot = Robot.discover("mock://sf01")
+    policy = SafetyPolicy(name="quick", move_timeout=0.1)
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    enforcer.move(x=5.0, y=5.0)
+    time.sleep(0.3)  # wait for timeout
+    # Timer should have fired and stopped the robot
+    assert robot._adapter.is_moving is False
+    assert any(i["type"] == "move_timeout" for i in enforcer.interventions)
+
+def test_sf01_stop_cancels_timer():
+    robot = Robot.discover("mock://sf01")
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="t", move_timeout=10.0))
+    enforcer.move(x=1.0, y=1.0)
+    enforcer.stop()
+    assert enforcer._move_timer is None
+
+test("SF-01: Move timeout timer starts", test_sf01_move_timeout_timer_starts)
+test("SF-01: Move timeout fires and stops robot", test_sf01_move_timeout_fires)
+test("SF-01: Stop cancels timer", test_sf01_stop_cancels_timer)
+
+# --- SF-02: Human proximity enforcement ---
+
+def test_sf02_human_proximity_violation():
+    robot = Robot.discover("mock://sf02")
+    ws = WorldState()
+    ws.detected_objects = [DetectedObject("h1", "person", 2.0, 2.0)]
+    policy = SafetyPolicy(name="prox", human_proximity_limit=1.0)
+    enforcer = SafetyEnforcer(robot, policy=policy, world_state=ws)
+    try:
+        enforcer.move(x=2.1, y=2.1)  # within 1m of person at (2,2)
+        assert False, "Should have raised SafetyViolation"
+    except SafetyViolation:
+        pass
+    assert any(v["type"] == "human_proximity" for v in enforcer.violations)
+
+def test_sf02_human_far_away_ok():
+    robot = Robot.discover("mock://sf02")
+    ws = WorldState()
+    ws.detected_objects = [DetectedObject("h1", "person", 10.0, 10.0)]
+    policy = SafetyPolicy(name="prox", human_proximity_limit=1.0)
+    enforcer = SafetyEnforcer(robot, policy=policy, world_state=ws)
+    enforcer.move(x=1.0, y=1.0)  # far from person — should work
+    assert robot._adapter.position == (1.0, 1.0)
+
+test("SF-02: Human proximity violation rejected", test_sf02_human_proximity_violation)
+test("SF-02: Human far away allows move", test_sf02_human_far_away_ok)
+
+# --- SF-03: ESCALATE recovery ---
+
+def test_sf03_escalation_ack():
+    robot = Robot.discover("mock://sf03")
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="esc", escalation_timeout=2.0))
+    # Acknowledge from another thread
+    def ack_later():
+        time.sleep(0.1)
+        enforcer.acknowledge_escalation()
+    t = threading.Thread(target=ack_later)
+    t.start()
+    result = enforcer.escalate("test reason")
+    t.join()
+    assert result is True
+    assert any(a.event_type == "escalation" for a in enforcer.audit_log)
+    assert any(a.event_type == "escalation_ack" for a in enforcer.audit_log)
+
+def test_sf03_escalation_timeout():
+    robot = Robot.discover("mock://sf03")
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="esc", escalation_timeout=0.1))
+    result = enforcer.escalate("no ack coming")
+    assert result is False
+    assert any(a.event_type == "escalation_timeout" for a in enforcer.audit_log)
+
+def test_sf03_escalation_with_webhook():
+    robot = Robot.discover("mock://sf03")
+    webhook = WebhookEmitter()
+    received = []
+    webhook.add_callback("test", lambda e: received.append(e))
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="esc", escalation_timeout=0.1),
+                               webhook_emitter=webhook)
+    enforcer.escalate("webhook test")
+    assert len(received) == 1
+    assert received[0]["event_type"] == "safety_escalation"
+
+test("SF-03: Escalation with ACK", test_sf03_escalation_ack)
+test("SF-03: Escalation timeout", test_sf03_escalation_timeout)
+test("SF-03: Escalation sends webhook", test_sf03_escalation_with_webhook)
+
+# --- SF-04: Audit log persistence ---
+
+def test_sf04_audit_log_records():
+    robot = Robot.discover("mock://sf04")
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="audit"))
+    enforcer.move(x=1.0, y=1.0, speed=5.0)
+    assert len(enforcer.audit_log) >= 1
+    assert enforcer.audit_log[0].event_type == "intervention"
+
+def test_sf04_audit_persists_to_state_store():
+    robot = Robot.discover("mock://sf04")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = StateStore(os.path.join(tmpdir, "state.json"))
+        enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="audit"),
+                                   state_store=store)
+        enforcer.move(x=1.0, y=1.0, speed=5.0)
+        log = store.get("safety_audit_log", [])
+        assert len(log) >= 1
+        assert log[0]["event_type"] == "intervention"
+
+test("SF-04: Audit log records interventions", test_sf04_audit_log_records)
+test("SF-04: Audit persists to StateStore", test_sf04_audit_persists_to_state_store)
+
+# --- SF-05: Runtime watchdog ---
+
+def test_sf05_watchdog_ok():
+    robot = Robot.discover("mock://sf05")
+    policy = SafetyPolicy(name="wd", watchdog_tolerance=5.0)
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    enforcer.move(x=1.0, y=1.0)
+    result = enforcer.check_watchdog()
+    assert result is not None
+    assert result["ok"] is True
+
+def test_sf05_watchdog_divergence():
+    robot = Robot.discover("mock://sf05")
+    policy = SafetyPolicy(name="wd", watchdog_tolerance=0.1)
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    # Command to (10, 10) but mock adapter is at (10, 10)
+    enforcer.move(x=10.0, y=10.0)
+    # Now manually move adapter to somewhere wrong
+    robot._adapter._position = (0.0, 0.0)
+    result = enforcer.check_watchdog()
+    assert result is not None
+    assert result["ok"] is False
+    assert any(i["type"] == "watchdog_estop" for i in enforcer.interventions)
+
+test("SF-05: Watchdog OK when positions match", test_sf05_watchdog_ok)
+test("SF-05: Watchdog e-stops on divergence", test_sf05_watchdog_divergence)
+
+# --- SF-06: Speed profiles ---
+
+def test_sf06_speed_profile_ramp_up():
+    sp = SpeedProfile(ramp_up_s=2.0, ramp_down_s=0.5)
+    # At t=0, speed should be minimal
+    s0 = sp.compute(requested=1.0, elapsed=0.0)
+    assert s0 == sp.min_speed
+    # At t=1 (half ramp), speed should be ~0.5
+    s1 = sp.compute(requested=1.0, elapsed=1.0)
+    assert abs(s1 - 0.5) < 0.01
+    # At t=2 (full ramp), speed should be 1.0
+    s2 = sp.compute(requested=1.0, elapsed=2.0)
+    assert abs(s2 - 1.0) < 0.01
+
+def test_sf06_speed_profile_ramp_down():
+    sp = SpeedProfile(ramp_up_s=0.01, ramp_down_s=1.0)
+    # Far from goal — full speed
+    s1 = sp.compute(requested=1.0, elapsed=5.0, remaining_dist=10.0)
+    assert abs(s1 - 1.0) < 0.01
+    # Close to goal — should be slower
+    s2 = sp.compute(requested=1.0, elapsed=5.0, remaining_dist=0.1)
+    assert s2 < 0.5
+
+def test_sf06_speed_profile_in_enforcer():
+    robot = Robot.discover("mock://sf06")
+    profile = SpeedProfile(ramp_up_s=1.0, ramp_down_s=0.5)
+    policy = SafetyPolicy(name="prof", speed_profile=profile)
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    enforcer.move(x=1.0, y=1.0, speed=1.0)
+    # Speed should have been profiled (reduced at t=0)
+    assert robot._adapter.position == (1.0, 1.0)  # move still happens
+
+test("SF-06: Speed profile ramp-up", test_sf06_speed_profile_ramp_up)
+test("SF-06: Speed profile ramp-down", test_sf06_speed_profile_ramp_down)
+test("SF-06: Speed profile integrated in enforcer", test_sf06_speed_profile_in_enforcer)
+
+# --- SF-07: Dynamic collision zones ---
+
+def test_sf07_dynamic_zones_from_obstacles():
+    robot = Robot.discover("mock://sf07")
+    ws = WorldState()
+    ws.obstacles = [Obstacle(x=5.0, y=5.0, radius=0.5)]
+    policy = SafetyPolicy(name="dyn")
+    enforcer = SafetyEnforcer(robot, policy=policy, world_state=ws)
+    try:
+        enforcer.move(x=5.0, y=5.0)  # inside obstacle zone
+        assert False, "Should reject"
+    except SafetyViolation:
+        pass
+    assert any(v["type"] == "dynamic_collision_zone" for v in enforcer.violations)
+
+def test_sf07_add_collision_zone_runtime():
+    robot = Robot.discover("mock://sf07")
+    policy = SafetyPolicy(name="dyn")
+    enforcer = SafetyEnforcer(robot, policy=policy)
+    enforcer.add_collision_zone({"x_min": 3, "x_max": 4, "y_min": 3, "y_max": 4})
+    assert len(enforcer.policy.collision_zones) == 1
+    try:
+        enforcer.move(x=3.5, y=3.5)
+        assert False
+    except SafetyViolation:
+        pass
+
+def test_sf07_update_world_state():
+    robot = Robot.discover("mock://sf07")
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(name="dyn"))
+    ws = WorldState()
+    ws.obstacles = [Obstacle(x=1.0, y=1.0, radius=0.3)]
+    enforcer.update_world_state(ws)
+    assert enforcer._world_state is ws
+
+test("SF-07: Dynamic zones from WorldState obstacles", test_sf07_dynamic_zones_from_obstacles)
+test("SF-07: Add collision zone at runtime", test_sf07_add_collision_zone_runtime)
+test("SF-07: Update world state", test_sf07_update_world_state)
+
+# --- SF-08: Confidence gates executor ---
+
+def test_sf08_confidence_gate_passes():
+    from apyrobo.safety.confidence import ConfidenceEstimator
+    robot = Robot.discover("mock://sf08")
+    estimator = ConfidenceEstimator(block_below=0.3)
+    graph = SkillGraph()
+    nav = Skill(skill_id="navigate_to", name="Nav", required_capability=CapabilityType.NAVIGATE,
+                parameters={"x": 1.0, "y": 1.0})
+    graph.add_skill(nav)
+    report = estimator.gate(graph, robot)
+    assert report.can_proceed is True
+
+def test_sf08_confidence_gate_blocks():
+    from apyrobo.safety.confidence import ConfidenceEstimator
+    robot = Robot.discover("mock://sf08")
+    estimator = ConfidenceEstimator(block_below=1.1)  # impossible threshold
+    graph = SkillGraph()
+    nav = Skill(skill_id="navigate_to", name="Nav", required_capability=CapabilityType.NAVIGATE,
+                parameters={"x": 1.0, "y": 1.0})
+    graph.add_skill(nav)
+    try:
+        estimator.gate(graph, robot)
+        assert False, "Should have raised LowConfidenceError"
+    except LowConfidenceError as e:
+        assert e.report.confidence < 1.1
+
+def test_sf08_executor_confidence_gating():
+    from apyrobo.safety.confidence import ConfidenceEstimator
+    from apyrobo.skills.executor import ExecutionState
+    robot = Robot.discover("mock://sf08")
+    estimator = ConfidenceEstimator(block_below=1.1)  # always blocks
+    state = ExecutionState()
+    executor = SkillExecutor(robot, state=state, confidence_estimator=estimator)
+    graph = SkillGraph()
+    nav = Skill(skill_id="navigate_to", name="Nav", required_capability=CapabilityType.NAVIGATE,
+                parameters={"x": 1.0, "y": 1.0})
+    graph.add_skill(nav)
+    result = executor.execute_graph(graph)
+    assert result.status == TaskStatus.FAILED
+    assert "Confidence" in (result.error or "")
+
+test("SF-08: Confidence gate passes", test_sf08_confidence_gate_passes)
+test("SF-08: Confidence gate blocks", test_sf08_confidence_gate_blocks)
+test("SF-08: Executor with confidence gating", test_sf08_executor_confidence_gating)
+
+# --- SF-09: Historical success rate ---
+
+def test_sf09_historical_success_rate():
+    from apyrobo.safety.confidence import ConfidenceEstimator
+    from apyrobo.persistence import StateStore
+    robot = Robot.discover("mock://sf09")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = StateStore(os.path.join(tmpdir, "state.json"))
+        # Add some completed and failed tasks
+        for i in range(8):
+            store.begin_task(f"t{i}", "test_task")
+            store.complete_task(f"t{i}", {"status": "ok"})
+        for i in range(8, 12):
+            store.begin_task(f"t{i}", "test_task")
+            store.fail_task(f"t{i}", "error")
+
+        estimator = ConfidenceEstimator(state_store=store)
+        graph = SkillGraph()
+        nav = Skill(skill_id="navigate_to", name="Nav",
+                    required_capability=CapabilityType.NAVIGATE,
+                    parameters={"x": 1.0, "y": 1.0})
+        graph.add_skill(nav)
+        report = estimator.assess(graph, robot)
+        # With 8/12 = 67% success rate, should see moderate_historical_success risk
+        risk_names = [r.name for r in report.risks]
+        assert "moderate_historical_success" in risk_names or "low_historical_success" in risk_names
+
+test("SF-09: Historical success rate affects confidence", test_sf09_historical_success_rate)
+
+# --- SF-10: Battery-aware safety ---
+
+def test_sf10_battery_low_rejects():
+    robot = Robot.discover("mock://sf10")
+    battery = BatteryMonitor("sf10", dock_position=(0.0, 0.0))
+    battery.update(percentage=5.0)
+    policy = SafetyPolicy(name="batt", min_battery_pct=15.0)
+    enforcer = SafetyEnforcer(robot, policy=policy, battery_monitor=battery)
+    try:
+        enforcer.move(x=1.0, y=1.0)
+        assert False, "Should reject"
+    except SafetyViolation:
+        pass
+    assert any(v["type"] == "battery_below_minimum" for v in enforcer.violations)
+
+def test_sf10_battery_ok_allows():
+    robot = Robot.discover("mock://sf10")
+    battery = BatteryMonitor("sf10", dock_position=(0.0, 0.0))
+    battery.update(percentage=80.0)
+    policy = SafetyPolicy(name="batt", min_battery_pct=15.0)
+    enforcer = SafetyEnforcer(robot, policy=policy, battery_monitor=battery)
+    enforcer.move(x=1.0, y=1.0)
+    assert robot._adapter.position == (1.0, 1.0)
+
+def test_sf10_check_battery():
+    robot = Robot.discover("mock://sf10")
+    battery = BatteryMonitor("sf10", dock_position=(0.0, 0.0))
+    battery.update(percentage=50.0)
+    policy = SafetyPolicy(name="batt", min_battery_pct=15.0)
+    enforcer = SafetyEnforcer(robot, policy=policy, battery_monitor=battery)
+    result = enforcer.check_battery(distance_m=10.0)
+    assert result["available"] is True
+    assert result["battery_pct"] == 50.0
+
+test("SF-10: Battery low rejects move", test_sf10_battery_low_rejects)
+test("SF-10: Battery OK allows move", test_sf10_battery_ok_allows)
+test("SF-10: Check battery status", test_sf10_check_battery)
+
+# --- SF-11: Policy hot-swap ---
+
+def test_sf11_policy_hot_swap():
+    robot = Robot.discover("mock://sf11")
+    enforcer = SafetyEnforcer(robot, policy="default")
+    assert enforcer.policy.name == "default"
+    old = enforcer.swap_policy("strict")
+    assert old.name == "default"
+    assert enforcer.policy.name == "strict"
+    assert enforcer.policy.max_speed == 0.5
+
+def test_sf11_swap_to_custom():
+    robot = Robot.discover("mock://sf11")
+    enforcer = SafetyEnforcer(robot, policy="default")
+    custom = SafetyPolicy(name="custom", max_speed=0.3)
+    enforcer.swap_policy(custom)
+    assert enforcer.policy.name == "custom"
+    assert enforcer.policy.max_speed == 0.3
+
+def test_sf11_swap_audit_logged():
+    robot = Robot.discover("mock://sf11")
+    enforcer = SafetyEnforcer(robot, policy="default")
+    enforcer.swap_policy("strict")
+    assert any(a.event_type == "policy_swap" for a in enforcer.audit_log)
+
+test("SF-11: Policy hot-swap", test_sf11_policy_hot_swap)
+test("SF-11: Swap to custom policy", test_sf11_swap_to_custom)
+test("SF-11: Swap logged in audit", test_sf11_swap_audit_logged)
+
+# --- SF-12: Formal constraint export ---
+
+def test_sf12_tlaplus_export():
+    policy = SafetyPolicy(
+        name="formal_test", max_speed=1.0, max_angular_speed=1.5,
+        collision_zones=[{"x_min": 0, "x_max": 2, "y_min": 0, "y_max": 2}],
+    )
+    exporter = FormalConstraintExporter(policy)
+    tla = exporter.to_tlaplus()
+    assert "MODULE SafetyPolicy_formal_test" in tla
+    assert "MaxSpeed" in tla
+    assert "SafetyInvariant" in tla
+    assert "SpeedInvariant" in tla
+    assert "HumanSafety" in tla
+
+def test_sf12_uppaal_export():
+    policy = SafetyPolicy(name="uppaal_test", max_speed=1.0, move_timeout=60.0)
+    exporter = FormalConstraintExporter(policy)
+    xml = exporter.to_uppaal()
+    assert "<?xml" in xml
+    assert "SafetyEnforcer" in xml
+    assert "MAX_SPEED = 1.0" in xml
+    assert "MOVE_TIMEOUT = 60" in xml
+
+def test_sf12_dict_export():
+    policy = SafetyPolicy(name="dict_test", max_speed=2.0, min_battery_pct=20.0)
+    exporter = FormalConstraintExporter(policy)
+    d = exporter.to_dict()
+    assert d["policy_name"] == "dict_test"
+    assert d["constraints"]["max_speed_ms"] == 2.0
+    assert d["constraints"]["min_battery_pct"] == 20.0
+
+test("SF-12: TLA+ export", test_sf12_tlaplus_export)
+test("SF-12: UPPAAL export", test_sf12_uppaal_export)
+test("SF-12: Dict export", test_sf12_dict_export)
+
+
+# =====================================================================
 # Summary
 # =====================================================================
 

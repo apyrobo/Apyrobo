@@ -10,7 +10,10 @@ Factors:
     - Sensor availability
     - Battery / connectivity (when available)
     - Path clearance (from world state)
-    - Historical success rate (from benchmark data)
+    - Historical success rate (SF-09: from StateStore data)
+
+SF-08: ConfidenceEstimator gates execution — block if confidence < threshold.
+SF-09: Historical success rate feeds into confidence from StateStore.
 """
 
 from __future__ import annotations
@@ -87,9 +90,23 @@ class ConfidenceReport:
         )
 
 
+class LowConfidenceError(Exception):
+    """Raised when confidence is below threshold and execution is blocked (SF-08)."""
+
+    def __init__(self, report: ConfidenceReport) -> None:
+        self.report = report
+        super().__init__(
+            f"Confidence {report.confidence:.0%} below threshold — "
+            f"risks: {[r.name for r in report.risks]}"
+        )
+
+
 class ConfidenceEstimator:
     """
     Estimates task success probability before execution.
+
+    SF-08: Wire to executor — blocks execution if confidence < threshold.
+    SF-09: Incorporates historical success rate from StateStore.
 
     Usage:
         estimator = ConfidenceEstimator()
@@ -98,13 +115,24 @@ class ConfidenceEstimator:
             executor.execute_graph(graph)
         else:
             print(f"Too risky: {report.risks}")
+
+    With executor gating (SF-08):
+        estimator = ConfidenceEstimator(block_below=0.4)
+        estimator.gate(graph, robot)  # raises LowConfidenceError if too risky
     """
 
     # Minimum confidence to auto-proceed
     PROCEED_THRESHOLD = 0.4
 
-    def __init__(self, world_state: Any = None) -> None:
+    def __init__(
+        self,
+        world_state: Any = None,
+        state_store: Any = None,
+        block_below: float | None = None,
+    ) -> None:
         self._world_state = world_state
+        self._state_store = state_store  # SF-09: for historical success rate
+        self._block_threshold = block_below  # SF-08: raise if below this
 
     def assess(self, graph: SkillGraph, robot: Robot) -> ConfidenceReport:
         """
@@ -132,6 +160,9 @@ class ConfidenceEstimator:
         # --- Check 5: Speed constraints ---
         score, risks = self._check_speed(graph, caps, score, risks)
 
+        # --- Check 6 (SF-09): Historical success rate ---
+        score, risks = self._check_historical_success(graph, score, risks)
+
         # Clamp
         score = max(0.0, min(1.0, score))
         can_proceed = score >= self.PROCEED_THRESHOLD
@@ -153,6 +184,19 @@ class ConfidenceEstimator:
             report.confidence * 100, report.risk_level, report.can_proceed, len(risks),
         )
 
+        return report
+
+    def gate(self, graph: SkillGraph, robot: Robot) -> ConfidenceReport:
+        """
+        SF-08: Assess and block execution if confidence is too low.
+
+        Returns the report if confidence is sufficient.
+        Raises LowConfidenceError if confidence < block_threshold.
+        """
+        report = self.assess(graph, robot)
+        threshold = self._block_threshold if self._block_threshold is not None else self.PROCEED_THRESHOLD
+        if report.confidence < threshold:
+            raise LowConfidenceError(report)
         return report
 
     def _check_capabilities(
@@ -283,6 +327,55 @@ class ConfidenceEstimator:
                         f"but robot max is {caps.max_speed} m/s (will be clamped)"
                     ),
                 ))
+
+        return score, risks
+
+    def _check_historical_success(
+        self, graph: SkillGraph,
+        score: float, risks: list[RiskFactor],
+    ) -> tuple[float, list[RiskFactor]]:
+        """
+        SF-09: Factor in historical success rate from StateStore.
+
+        Looks at recent tasks in the StateStore to compute a success rate.
+        A low success rate penalises the confidence score.
+        """
+        if self._state_store is None:
+            return score, risks
+
+        try:
+            recent = self._state_store.get_recent_tasks(limit=50)
+        except Exception:
+            return score, risks
+
+        if len(recent) < 3:
+            # Not enough history to be meaningful
+            return score, risks
+
+        completed = sum(1 for t in recent if t.status == "completed")
+        total = len(recent)
+        success_rate = completed / total
+
+        if success_rate < 0.5:
+            risks.append(RiskFactor(
+                name="low_historical_success",
+                severity=0.6,
+                description=(
+                    f"Historical success rate is {success_rate:.0%} "
+                    f"({completed}/{total} recent tasks) — system may be unreliable"
+                ),
+            ))
+            score -= 0.15
+        elif success_rate < 0.8:
+            risks.append(RiskFactor(
+                name="moderate_historical_success",
+                severity=0.3,
+                description=(
+                    f"Historical success rate is {success_rate:.0%} "
+                    f"({completed}/{total} recent tasks)"
+                ),
+            ))
+            score -= 0.05
 
         return score, risks
 
