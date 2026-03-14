@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APYROBO Skill Playground</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --purple: #bc8cff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #sidebar {
+    width: 380px;
+    min-width: 380px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #sidebar h1 {
+    padding: 16px;
+    font-size: 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #sidebar h1 span { color: var(--accent); }
+  .section {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section h2 {
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+  .skill-btn {
+    display: inline-block;
+    padding: 6px 12px;
+    margin: 3px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .skill-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .skill-btn.active { border-color: var(--green); color: var(--green); }
+  .param-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+  }
+  .param-row label {
+    font-size: 13px;
+    color: var(--muted);
+    width: 80px;
+    text-align: right;
+  }
+  .param-row input {
+    flex: 1;
+    padding: 4px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .param-row input:focus { outline: none; border-color: var(--accent); }
+  #add-btn, #run-btn, #clear-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    margin: 4px;
+  }
+  #add-btn { background: var(--accent); color: #000; }
+  #run-btn { background: var(--green); color: #000; }
+  #clear-btn { background: var(--border); color: var(--text); }
+  #add-btn:hover { opacity: 0.9; }
+  #run-btn:hover { opacity: 0.9; }
+  #run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #graph-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 16px;
+  }
+  .graph-item {
+    padding: 8px 12px;
+    margin: 4px 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .graph-item .name { font-weight: 600; }
+  .graph-item .params { color: var(--muted); font-size: 12px; }
+  .graph-item .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+  .graph-item .status-dot.running { background: var(--orange); }
+  .graph-item .status-dot.done { background: var(--green); }
+  .graph-item .status-dot.failed { background: var(--red); }
+  .graph-item .remove-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+  }
+  .graph-item .remove-btn:hover { color: var(--red); }
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #log-panel {
+    height: 180px;
+    min-height: 120px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 8px 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .log-line { white-space: pre; }
+  .log-line .ts { color: var(--muted); }
+  .log-line .event { color: var(--accent); }
+  .log-line .ok { color: var(--green); }
+  .log-line .err { color: var(--red); }
+  .log-line .warn { color: var(--orange); }
+  #safety-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green);
+    border: 1px solid var(--green);
+  }
+  #safety-badge.violation {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--red);
+    border-color: var(--red);
+  }
+  #pos-label {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: monospace;
+  }
+  .zone-overlay {
+    position: absolute;
+    background: rgba(248, 81, 73, 0.1);
+    border: 1px dashed var(--red);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1><span>&#9670;</span> APYROBO Playground</h1>
+
+  <div class="section">
+    <h2>Skills</h2>
+    <div id="skill-buttons"></div>
+  </div>
+
+  <div class="section" id="params-section" style="display:none">
+    <h2>Parameters</h2>
+    <div id="params-form"></div>
+    <div style="margin-top:8px">
+      <button id="add-btn" onclick="addToGraph()">Add to Graph</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Execution Graph</h2>
+    <div style="margin-bottom:8px">
+      <button id="run-btn" onclick="runGraph()" disabled>Run Graph</button>
+      <button id="clear-btn" onclick="clearGraph()">Clear</button>
+      <label style="font-size:12px;color:var(--muted);margin-left:8px">
+        <input type="checkbox" id="safety-toggle" checked onchange="toggleSafety()"> Safety
+      </label>
+    </div>
+  </div>
+
+  <div id="graph-list"></div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="arena"></canvas>
+    <div id="safety-badge">Safety: ON</div>
+    <div id="pos-label">Position: (0.0, 0.0)</div>
+  </div>
+  <div id="log-panel"></div>
+</div>
+
+<script>
+// --- Skill definitions ---
+const SKILLS = {
+  navigate_to: {
+    name: "Navigate To",
+    params: { x: 5.0, y: 5.0, speed: 0.8 },
+    color: "#58a6ff",
+  },
+  rotate: {
+    name: "Rotate",
+    params: { angle_deg: 90, speed: 1.0 },
+    color: "#bc8cff",
+  },
+  pick_object: {
+    name: "Pick Object",
+    params: {},
+    color: "#3fb950",
+  },
+  place_object: {
+    name: "Place Object",
+    params: {},
+    color: "#d29922",
+  },
+  stop: {
+    name: "Stop",
+    params: {},
+    color: "#f85149",
+  },
+  report_status: {
+    name: "Report Status",
+    params: {},
+    color: "#8b949e",
+  },
+};
+
+// --- State ---
+let selectedSkill = null;
+let graphItems = [];
+let robot = { x: 0, y: 0, angle: 0, holding: false, trail: [] };
+let safetyOn = true;
+let running = false;
+let collisionZones = [
+  { x_min: 6, x_max: 8, y_min: 6, y_max: 8 },
+];
+const SAFETY = { max_speed: 1.5, max_angular_speed: 2.0 };
+const GRID_SIZE = 10; // -GRID_SIZE to +GRID_SIZE
+
+// --- Canvas setup ---
+const canvas = document.getElementById("arena");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  const wrap = document.getElementById("canvas-wrap");
+  canvas.width = wrap.clientWidth * devicePixelRatio;
+  canvas.height = wrap.clientHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  draw();
+}
+window.addEventListener("resize", resize);
+
+function worldToCanvas(wx, wy) {
+  const w = canvas.width / devicePixelRatio;
+  const h = canvas.height / devicePixelRatio;
+  const scale = Math.min(w, h) / (GRID_SIZE * 2 + 2);
+  const cx = w / 2 + wx * scale;
+  const cy = h / 2 - wy * scale;
+  return [cx, cy, scale];
+}
+
+function draw() {
+  const w = canvas.width / devicePixelRatio;
+  const h = canvas.height / devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  const [, , scale] = worldToCanvas(0, 0);
+
+  // Grid
+  ctx.strokeStyle = "#21262d";
+  ctx.lineWidth = 1;
+  for (let i = -GRID_SIZE; i <= GRID_SIZE; i++) {
+    const [x1, y1] = worldToCanvas(i, -GRID_SIZE);
+    const [x2, y2] = worldToCanvas(i, GRID_SIZE);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const [x3, y3] = worldToCanvas(-GRID_SIZE, i);
+    const [x4, y4] = worldToCanvas(GRID_SIZE, i);
+    ctx.beginPath(); ctx.moveTo(x3, y3); ctx.lineTo(x4, y4); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = "#30363d";
+  ctx.lineWidth = 2;
+  const [ax1, ay1] = worldToCanvas(-GRID_SIZE, 0);
+  const [ax2, ay2] = worldToCanvas(GRID_SIZE, 0);
+  ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(ax2, ay2); ctx.stroke();
+  const [ax3, ay3] = worldToCanvas(0, -GRID_SIZE);
+  const [ax4, ay4] = worldToCanvas(0, GRID_SIZE);
+  ctx.beginPath(); ctx.moveTo(ax3, ay3); ctx.lineTo(ax4, ay4); ctx.stroke();
+
+  // Collision zones
+  for (const z of collisionZones) {
+    const [zx, zy] = worldToCanvas(z.x_min, z.y_max);
+    const zw = (z.x_max - z.x_min) * scale;
+    const zh = (z.y_max - z.y_min) * scale;
+    ctx.fillStyle = "rgba(248, 81, 73, 0.08)";
+    ctx.fillRect(zx, zy, zw, zh);
+    ctx.strokeStyle = "#f85149";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(zx, zy, zw, zh);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#f8514988";
+    ctx.font = "11px monospace";
+    ctx.fillText("NO-GO", zx + 4, zy + 14);
+  }
+
+  // Trail
+  if (robot.trail.length > 1) {
+    ctx.strokeStyle = "#58a6ff44";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const [tx0, ty0] = worldToCanvas(robot.trail[0][0], robot.trail[0][1]);
+    ctx.moveTo(tx0, ty0);
+    for (let i = 1; i < robot.trail.length; i++) {
+      const [tx, ty] = worldToCanvas(robot.trail[i][0], robot.trail[i][1]);
+      ctx.lineTo(tx, ty);
+    }
+    ctx.stroke();
+  }
+
+  // Robot
+  const [rx, ry] = worldToCanvas(robot.x, robot.y);
+  const rSize = 12;
+
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.rotate(-robot.angle);
+
+  // Body
+  ctx.fillStyle = robot.holding ? "#d29922" : "#58a6ff";
+  ctx.beginPath();
+  ctx.moveTo(rSize, 0);
+  ctx.lineTo(-rSize * 0.7, -rSize * 0.6);
+  ctx.lineTo(-rSize * 0.4, 0);
+  ctx.lineTo(-rSize * 0.7, rSize * 0.6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Direction indicator
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(rSize * 0.4, 0, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // Axis labels
+  ctx.fillStyle = "#8b949e";
+  ctx.font = "11px monospace";
+  const [lx, ly] = worldToCanvas(GRID_SIZE - 0.5, -0.8);
+  ctx.fillText("x", lx, ly);
+  const [lx2, ly2] = worldToCanvas(0.5, GRID_SIZE - 0.3);
+  ctx.fillText("y", lx2, ly2);
+}
+
+// --- Skill buttons ---
+const btnContainer = document.getElementById("skill-buttons");
+for (const [id, skill] of Object.entries(SKILLS)) {
+  const btn = document.createElement("button");
+  btn.className = "skill-btn";
+  btn.textContent = skill.name;
+  btn.dataset.skill = id;
+  btn.style.borderLeftColor = skill.color;
+  btn.style.borderLeftWidth = "3px";
+  btn.onclick = () => selectSkill(id);
+  btnContainer.appendChild(btn);
+}
+
+function selectSkill(id) {
+  selectedSkill = id;
+  document.querySelectorAll(".skill-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.skill === id);
+  });
+
+  const section = document.getElementById("params-section");
+  const form = document.getElementById("params-form");
+  const skill = SKILLS[id];
+
+  if (Object.keys(skill.params).length === 0) {
+    section.style.display = "none";
+    addToGraph();
+    return;
+  }
+
+  section.style.display = "block";
+  form.innerHTML = "";
+  for (const [key, val] of Object.entries(skill.params)) {
+    const row = document.createElement("div");
+    row.className = "param-row";
+    row.innerHTML = `<label>${key}:</label><input type="number" step="0.1" value="${val}" data-param="${key}">`;
+    form.appendChild(row);
+  }
+}
+
+function addToGraph() {
+  if (!selectedSkill) return;
+  const skill = SKILLS[selectedSkill];
+  const params = {};
+  document.querySelectorAll("#params-form input").forEach(inp => {
+    params[inp.dataset.param] = parseFloat(inp.value);
+  });
+
+  graphItems.push({ id: selectedSkill, name: skill.name, params, status: "pending", color: skill.color });
+  renderGraph();
+  document.getElementById("run-btn").disabled = false;
+}
+
+function renderGraph() {
+  const list = document.getElementById("graph-list");
+  list.innerHTML = "";
+  graphItems.forEach((item, i) => {
+    const div = document.createElement("div");
+    div.className = "graph-item";
+    const paramStr = Object.entries(item.params).map(([k, v]) => `${k}=${v}`).join(", ");
+    div.innerHTML = `
+      <div>
+        <div class="name" style="color:${item.color}">${i + 1}. ${item.name}</div>
+        ${paramStr ? `<div class="params">${paramStr}</div>` : ""}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="status-dot ${item.status === 'running' ? 'running' : item.status === 'done' ? 'done' : item.status === 'failed' ? 'failed' : ''}"></div>
+        ${!running ? `<button class="remove-btn" onclick="removeItem(${i})">&times;</button>` : ""}
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function removeItem(i) {
+  graphItems.splice(i, 1);
+  renderGraph();
+  document.getElementById("run-btn").disabled = graphItems.length === 0;
+}
+
+function clearGraph() {
+  if (running) return;
+  graphItems = [];
+  robot = { x: 0, y: 0, angle: 0, holding: false, trail: [[0, 0]] };
+  renderGraph();
+  draw();
+  updatePosLabel();
+  document.getElementById("run-btn").disabled = true;
+}
+
+function toggleSafety() {
+  safetyOn = document.getElementById("safety-toggle").checked;
+  const badge = document.getElementById("safety-badge");
+  badge.textContent = safetyOn ? "Safety: ON" : "Safety: OFF";
+  badge.className = safetyOn ? "" : "violation";
+}
+
+// --- Logging ---
+function log(msg, cls = "") {
+  const panel = document.getElementById("log-panel");
+  const ts = new Date().toISOString().slice(11, 23);
+  const line = document.createElement("div");
+  line.className = "log-line";
+  line.innerHTML = `<span class="ts">[${ts}]</span> <span class="${cls}">${msg}</span>`;
+  panel.appendChild(line);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function updatePosLabel() {
+  document.getElementById("pos-label").textContent =
+    `Position: (${robot.x.toFixed(1)}, ${robot.y.toFixed(1)}) | Heading: ${(robot.angle * 180 / Math.PI).toFixed(0)}°${robot.holding ? " | Holding object" : ""}`;
+}
+
+// --- Execution engine ---
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function inCollisionZone(x, y) {
+  return collisionZones.some(z => x >= z.x_min && x <= z.x_max && y >= z.y_min && y <= z.y_max);
+}
+
+async function animateMove(tx, ty, speed) {
+  const dx = tx - robot.x;
+  const dy = ty - robot.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 0.01) return true;
+
+  const steps = Math.max(Math.round(dist / speed * 30), 10);
+  const sx = dx / steps;
+  const sy = dy / steps;
+  robot.angle = Math.atan2(dy, dx);
+
+  for (let i = 0; i < steps; i++) {
+    robot.x += sx;
+    robot.y += sy;
+    robot.trail.push([robot.x, robot.y]);
+    draw();
+    updatePosLabel();
+    await sleep(33);
+  }
+  robot.x = tx;
+  robot.y = ty;
+  draw();
+  updatePosLabel();
+  return true;
+}
+
+async function animateRotate(angleDeg, speed) {
+  const angleRad = angleDeg * Math.PI / 180;
+  const steps = Math.max(Math.round(Math.abs(angleRad) / speed * 20), 10);
+  const step = angleRad / steps;
+
+  for (let i = 0; i < steps; i++) {
+    robot.angle += step;
+    draw();
+    updatePosLabel();
+    await sleep(50);
+  }
+  return true;
+}
+
+async function executeSkill(item) {
+  const start = performance.now();
+  item.status = "running";
+  renderGraph();
+  log(`Executing: ${item.name} ${JSON.stringify(item.params)}`, "event");
+
+  let success = true;
+  let safetyViolation = false;
+
+  try {
+    switch (item.id) {
+      case "navigate_to": {
+        let { x, y, speed } = item.params;
+
+        if (safetyOn) {
+          if (speed > SAFETY.max_speed) {
+            log(`Safety: speed ${speed} clamped to ${SAFETY.max_speed} m/s`, "warn");
+            speed = SAFETY.max_speed;
+          }
+          if (inCollisionZone(x, y)) {
+            log(`Safety VIOLATION: target (${x}, ${y}) is in collision zone`, "err");
+            safetyViolation = true;
+            success = false;
+            break;
+          }
+        }
+        await animateMove(x, y, speed);
+        break;
+      }
+      case "rotate": {
+        let { angle_deg, speed } = item.params;
+        if (safetyOn && speed > SAFETY.max_angular_speed) {
+          log(`Safety: angular speed ${speed} clamped to ${SAFETY.max_angular_speed} rad/s`, "warn");
+          speed = SAFETY.max_angular_speed;
+        }
+        await animateRotate(angle_deg, speed);
+        break;
+      }
+      case "pick_object":
+        await sleep(500);
+        robot.holding = true;
+        log("Gripper closed — holding object", "ok");
+        draw();
+        updatePosLabel();
+        break;
+      case "place_object":
+        await sleep(500);
+        robot.holding = false;
+        log("Gripper opened — object placed", "ok");
+        draw();
+        updatePosLabel();
+        break;
+      case "stop":
+        log("Emergency stop — all motion halted", "warn");
+        break;
+      case "report_status":
+        log(`Status: pos=(${robot.x.toFixed(1)}, ${robot.y.toFixed(1)}), heading=${(robot.angle * 180 / Math.PI).toFixed(0)}°, holding=${robot.holding}`, "ok");
+        break;
+    }
+  } catch (e) {
+    log(`Error: ${e.message}`, "err");
+    success = false;
+  }
+
+  const elapsed = (performance.now() - start).toFixed(0);
+
+  if (success) {
+    item.status = "done";
+    log(`Completed: ${item.name} (${elapsed}ms)`, "ok");
+  } else {
+    item.status = "failed";
+    log(`Failed: ${item.name} (${elapsed}ms)${safetyViolation ? " — SAFETY VIOLATION" : ""}`, "err");
+    if (safetyViolation) {
+      const badge = document.getElementById("safety-badge");
+      badge.textContent = "VIOLATION";
+      badge.className = "violation";
+      setTimeout(() => {
+        badge.textContent = "Safety: ON";
+        badge.className = "";
+      }, 3000);
+    }
+  }
+
+  renderGraph();
+  return success;
+}
+
+async function runGraph() {
+  if (running || graphItems.length === 0) return;
+  running = true;
+  document.getElementById("run-btn").disabled = true;
+  robot.trail = [[robot.x, robot.y]];
+
+  log("=== Graph execution started ===", "event");
+  const graphStart = performance.now();
+
+  for (const item of graphItems) {
+    const ok = await executeSkill(item);
+    if (!ok) {
+      log("Graph execution ABORTED — skill failed", "err");
+      break;
+    }
+  }
+
+  const elapsed = (performance.now() - graphStart).toFixed(0);
+  const completed = graphItems.filter(i => i.status === "done").length;
+  log(`=== Graph finished: ${completed}/${graphItems.length} skills completed (${elapsed}ms) ===`, "event");
+
+  running = false;
+  document.getElementById("run-btn").disabled = false;
+}
+
+// --- Click-to-navigate on canvas ---
+canvas.addEventListener("click", (e) => {
+  if (running) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const w = rect.width;
+  const h = rect.height;
+  const scale = Math.min(w, h) / (GRID_SIZE * 2 + 2);
+  const wx = (mx - w / 2) / scale;
+  const wy = -(my - h / 2) / scale;
+
+  // Set the navigate_to params if that skill is selected
+  selectedSkill = "navigate_to";
+  document.querySelectorAll(".skill-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.skill === "navigate_to");
+  });
+  const section = document.getElementById("params-section");
+  section.style.display = "block";
+  document.getElementById("params-form").innerHTML = `
+    <div class="param-row"><label>x:</label><input type="number" step="0.1" value="${wx.toFixed(1)}" data-param="x"></div>
+    <div class="param-row"><label>y:</label><input type="number" step="0.1" value="${wy.toFixed(1)}" data-param="y"></div>
+    <div class="param-row"><label>speed:</label><input type="number" step="0.1" value="0.8" data-param="speed"></div>
+  `;
+});
+
+// --- Init ---
+robot.trail = [[0, 0]];
+resize();
+updatePosLabel();
+log("APYROBO Skill Playground loaded", "event");
+log("Click the canvas to set navigation targets, or use skill buttons on the left", "");
+log(`Safety enforcer: max_speed=${SAFETY.max_speed} m/s, collision zone at (6-8, 6-8)`, "warn");
+</script>
+</body>
+</html>
