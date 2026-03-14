@@ -1,41 +1,18 @@
-"""
-SwarmCoordinator — splits tasks across multiple robots.
-
-Given a task and a swarm of robots, the coordinator:
-1. Analyses which robots have the capabilities needed
-2. Splits the task into subtasks
-3. Assigns subtasks to the best-fit robots
-4. Monitors execution and handles failures (reassignment)
-
-Usage:
-    coordinator = SwarmCoordinator(bus)
-    result = coordinator.execute_task(
-        task="deliver package from (1, 2) to (5, 5)",
-        agent=agent,
-    )
-"""
-
 from __future__ import annotations
 
 import logging
-import time
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from apyrobo.core.robot import Robot
-from apyrobo.core.schemas import (
-    CapabilityType, TaskResult, TaskStatus, RecoveryAction, RobotCapability,
-)
-from apyrobo.skills.skill import Skill, SkillStatus
-from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent
+from apyrobo.core.schemas import CapabilityType, RecoveryAction, RobotCapability, TaskResult, TaskStatus
 from apyrobo.skills.agent import Agent
-from apyrobo.swarm.bus import SwarmBus, SwarmMessage
+from apyrobo.skills.executor import ExecutionEvent, SkillExecutor, SkillGraph
+from apyrobo.skills.skill import Skill
+from apyrobo.swarm.bus import SwarmBus
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Assignment
-# ---------------------------------------------------------------------------
 
 class RobotAssignment:
     """A subtask assigned to a specific robot."""
@@ -54,38 +31,67 @@ class RobotAssignment:
         )
 
 
-# ---------------------------------------------------------------------------
-# Coordinator
-# ---------------------------------------------------------------------------
-
 class SwarmCoordinator:
-    """
-    Coordinates task execution across a swarm of robots.
-
-    Strategies:
-        - capability_match: Assign each subtask to the robot best equipped
-        - round_robin: Distribute evenly (simple, for homogeneous swarms)
-        - nearest: Assign to the robot closest to the task location (future)
-    """
+    """Coordinates task execution across a swarm of robots."""
 
     def __init__(self, bus: SwarmBus, strategy: str = "capability_match") -> None:
         self._bus = bus
         self._strategy = strategy
         self._assignments: list[RobotAssignment] = []
         self._events: list[ExecutionEvent] = []
+        self._resource_leases: dict[str, str] = {}
 
-    # ------------------------------------------------------------------
-    # Task splitting
-    # ------------------------------------------------------------------
+    def _fleet_capability_proxy(self, capabilities: dict[str, RobotCapability]) -> Any:
+        """Return a lightweight robot-like object exposing merged fleet capabilities."""
+        merged: list[Any] = []
+        seen: set[tuple[str, str]] = set()
+        max_speed = None
+        for cap in capabilities.values():
+            if cap.max_speed is not None:
+                max_speed = cap.max_speed if max_speed is None else max(max_speed, cap.max_speed)
+            for c in cap.capabilities:
+                key = (c.capability_type.value, c.name)
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(c)
+
+        class _FleetProxy:
+            def capabilities(self) -> RobotCapability:
+                return RobotCapability(
+                    robot_id="fleet",
+                    name="FleetProxy",
+                    capabilities=merged,
+                    max_speed=max_speed,
+                )
+
+        return _FleetProxy()
+
+    def _choose_robot_for_skill(
+        self,
+        skill: Skill,
+        candidates: list[str],
+        assignments_by_robot: dict[str, list[tuple[Skill, dict[str, Any]]]],
+        rr_index: int,
+        params: dict[str, Any],
+    ) -> tuple[str, int]:
+        if self._strategy == "round_robin":
+            return candidates[rr_index % len(candidates)], rr_index + 1
+
+        if self._strategy == "nearest":
+            tx, ty = params.get("x"), params.get("y")
+            if isinstance(tx, (int, float)) and isinstance(ty, (int, float)):
+                def dist(rid: str) -> float:
+                    try:
+                        x, y = self._bus.get_robot(rid).get_position()
+                        return math.sqrt((x - tx) ** 2 + (y - ty) ** 2)
+                    except Exception:
+                        return float("inf")
+                return min(candidates, key=dist), rr_index
+
+        load = {rid: len(assignments_by_robot.get(rid, [])) for rid in candidates}
+        return min(candidates, key=lambda r: load.get(r, 0)), rr_index
 
     def split_task(self, task: str, agent: Agent) -> list[RobotAssignment]:
-        """
-        Plan a task and split it across available robots.
-
-        For now, uses a simple heuristic:
-        - If only one robot: give it everything
-        - If multiple robots: split the skill graph by capability match
-        """
         robots = {rid: self._bus.get_robot(rid) for rid in self._bus.robot_ids}
         caps = {rid: self._bus.get_capabilities(rid) for rid in robots}
 
@@ -93,74 +99,47 @@ class SwarmCoordinator:
             raise ValueError("No robots registered in the swarm")
 
         if len(robots) == 1:
-            # Single robot — no splitting needed
             rid = list(robots.keys())[0]
             graph = agent.plan(task, robots[rid])
-            assignment = RobotAssignment(rid, graph, description=task)
-            return [assignment]
+            return [RobotAssignment(rid, graph, description=task)]
 
-        # Multi-robot: plan against the first robot (for skill discovery),
-        # then split skills across robots by capability
-        first_robot = list(robots.values())[0]
-        full_graph = agent.plan(task, first_robot)
+        # SW-01/SW-07: plan against merged fleet capabilities, then assign by skill.
+        planning_robot = self._fleet_capability_proxy(caps)
+        full_graph = agent.plan(task, planning_robot)
         order = full_graph.get_execution_order()
 
-        if len(order) <= 1:
-            # Too few skills to split
-            rid = list(robots.keys())[0]
-            return [RobotAssignment(rid, full_graph, description=task)]
-
-        # Build capability index: which robot can do what
         cap_index: dict[CapabilityType, list[str]] = {}
         for rid, cap in caps.items():
             for c in cap.capabilities:
                 cap_index.setdefault(c.capability_type, []).append(rid)
 
-        # Assign skills to robots
         assignments_by_robot: dict[str, list[tuple[Skill, dict[str, Any]]]] = {}
         robot_list = list(robots.keys())
-        rr_index = 0  # round-robin fallback
+        rr_index = 0
 
         for skill in order:
-            # Find robots that can handle this skill
+            params = full_graph.get_parameters(skill.skill_id)
             candidates = cap_index.get(skill.required_capability, [])
-
             if not candidates:
-                # Fallback: CUSTOM capability, any robot can do it
                 candidates = robot_list
-
-            if self._strategy == "round_robin":
-                chosen = robot_list[rr_index % len(robot_list)]
-                rr_index += 1
-            else:
-                # capability_match: prefer the robot with the fewest assignments
-                load = {rid: len(assignments_by_robot.get(rid, [])) for rid in candidates}
-                chosen = min(candidates, key=lambda r: load.get(r, 0))
-
-            assignments_by_robot.setdefault(chosen, []).append(
-                (skill, full_graph.get_parameters(skill.skill_id))
+            chosen, rr_index = self._choose_robot_for_skill(
+                skill, candidates, assignments_by_robot, rr_index, params,
             )
+            assignments_by_robot.setdefault(chosen, []).append((skill, params))
 
-        # Build SkillGraphs for each robot
         result = []
         for rid, skill_list in assignments_by_robot.items():
             graph = SkillGraph()
             prev_id = None
             for skill, params in skill_list:
-                depends = [prev_id] if prev_id else []
-                graph.add_skill(skill, depends_on=depends, parameters=params)
+                graph.add_skill(skill, depends_on=[prev_id] if prev_id else [], parameters=params)
                 prev_id = skill.skill_id
             result.append(RobotAssignment(
-                rid, graph,
+                rid,
+                graph,
                 description=f"{task} (subtask for {rid}, {len(skill_list)} skills)",
             ))
 
-        logger.info(
-            "SwarmCoordinator: split task into %d assignments across %d robots",
-            len(result), len(assignments_by_robot),
-        )
-
-        # Announce assignments via bus
         for assignment in result:
             self._bus.broadcast(
                 sender="coordinator",
@@ -175,80 +154,71 @@ class SwarmCoordinator:
 
         return result
 
-    # ------------------------------------------------------------------
-    # Execution
-    # ------------------------------------------------------------------
+    def _execute_assignment(self, assignment: RobotAssignment, on_event: Any = None) -> TaskResult:
+        robot = self._bus.get_robot(assignment.robot_id)
+        executor = SkillExecutor(robot)
 
-    def execute_task(self, task: str, agent: Agent,
-                     on_event: Any = None) -> TaskResult:
-        """
-        Plan, split, assign, and execute a task across the swarm.
+        def handler(event: ExecutionEvent) -> None:
+            self._events.append(event)
+            if on_event:
+                on_event(event)
+            self._bus.broadcast(
+                sender=assignment.robot_id,
+                message={
+                    "event": "skill_status",
+                    "skill_id": event.skill_id,
+                    "status": event.status.value,
+                    "message": event.message,
+                },
+                msg_type="status",
+            )
 
-        Returns an aggregated TaskResult.
-        """
+        executor.on_event(handler)
+        assignment.status = TaskStatus.IN_PROGRESS
+        result = executor.execute_graph(assignment.graph)
+        assignment.result = result
+        assignment.status = TaskStatus.COMPLETED if result.status == TaskStatus.COMPLETED else TaskStatus.FAILED
+        return result
+
+    def execute_task(self, task: str, agent: Agent, on_event: Any = None) -> TaskResult:
         self._assignments = self.split_task(task, agent)
         self._events = []
 
         total_steps = 0
         completed_steps = 0
         all_recovery: list[RecoveryAction] = []
-        failed_robot: str | None = None
+        errors: list[str] = []
 
-        for assignment in self._assignments:
-            robot = self._bus.get_robot(assignment.robot_id)
-            executor = SkillExecutor(robot)
+        # SW-01: execute robot assignments in parallel.
+        with ThreadPoolExecutor(max_workers=max(1, len(self._assignments))) as pool:
+            future_map = {pool.submit(self._execute_assignment, a, on_event): a for a in self._assignments}
+            for future in as_completed(future_map):
+                assignment = future_map[future]
+                result = future.result()
+                total_steps += result.steps_total
+                completed_steps += result.steps_completed
+                all_recovery.extend(result.recovery_actions_taken)
 
-            # Wire up event streaming
-            def make_handler(rid: str):
-                def handler(event: ExecutionEvent):
-                    self._events.append(event)
-                    if on_event:
-                        on_event(event)
-                    # Notify swarm about progress
-                    self._bus.broadcast(
-                        sender=rid,
-                        message={
-                            "event": "skill_status",
-                            "skill_id": event.skill_id,
-                            "status": event.status.value,
-                            "message": event.message,
-                        },
-                        msg_type="status",
-                    )
-                return handler
+                if result.status != TaskStatus.COMPLETED:
+                    reassigned = self._attempt_reassignment(assignment)
+                    if reassigned:
+                        all_recovery.append(RecoveryAction.REROUTE)
+                        completed_steps += 1
+                    else:
+                        all_recovery.append(RecoveryAction.ABORT)
+                        errors.append(
+                            f"Robot {assignment.robot_id} failed and could not be reassigned"
+                        )
 
-            executor.on_event(make_handler(assignment.robot_id))
-
-            # Execute
-            assignment.status = TaskStatus.IN_PROGRESS
-            result = executor.execute_graph(assignment.graph)
-            assignment.result = result
-
-            total_steps += result.steps_total
-            completed_steps += result.steps_completed
-            all_recovery.extend(result.recovery_actions_taken)
-
-            if result.status == TaskStatus.COMPLETED:
-                assignment.status = TaskStatus.COMPLETED
-            else:
-                assignment.status = TaskStatus.FAILED
-                failed_robot = assignment.robot_id
-
-                # Try to reassign to another robot
-                reassigned = self._attempt_reassignment(assignment, agent)
-                if reassigned:
-                    completed_steps += 1  # approximate
-                    all_recovery.append(RecoveryAction.REROUTE)
-                else:
-                    all_recovery.append(RecoveryAction.ABORT)
-                    return TaskResult(
-                        task_name=task,
-                        status=TaskStatus.FAILED,
-                        steps_completed=completed_steps,
-                        steps_total=total_steps,
-                        error=f"Robot {failed_robot} failed and could not be reassigned",
-                        recovery_actions_taken=all_recovery,
-                    )
+        if errors:
+            return TaskResult(
+                task_name=task,
+                status=TaskStatus.FAILED,
+                steps_completed=completed_steps,
+                steps_total=total_steps,
+                error="; ".join(errors),
+                recovery_actions_taken=all_recovery,
+            )
 
         return TaskResult(
             task_name=task,
@@ -259,34 +229,75 @@ class SwarmCoordinator:
             recovery_actions_taken=all_recovery,
         )
 
-    def _attempt_reassignment(self, failed: RobotAssignment, agent: Agent) -> bool:
-        """Try to reassign a failed robot's remaining work to another robot."""
-        available = [rid for rid in self._bus.robot_ids if rid != failed.robot_id]
-        if not available:
-            logger.warning("No other robots available for reassignment")
+    def _attempt_reassignment(self, failed: RobotAssignment) -> bool:
+        """SW-02: reassign failed work to a capable robot and execute it."""
+        remaining = failed.graph.get_execution_order()
+        if not remaining:
             return False
 
-        # Pick the robot with the lightest load
-        other_rid = available[0]
-        logger.info(
-            "Reassigning work from %s to %s",
-            failed.robot_id, other_rid,
-        )
+        needed_caps = {s.required_capability for s in remaining}
+        candidates: list[str] = []
+        for rid in self._bus.robot_ids:
+            if rid == failed.robot_id:
+                continue
+            robot_caps = {c.capability_type for c in self._bus.get_capabilities(rid).capabilities}
+            if needed_caps.issubset(robot_caps) or CapabilityType.CUSTOM in needed_caps:
+                candidates.append(rid)
+
+        if not candidates:
+            logger.warning("No capable robots available for reassignment from %s", failed.robot_id)
+            return False
+
+        reassigned_to = min(candidates, key=lambda rid: len([a for a in self._assignments if a.robot_id == rid]))
+        reassigned = RobotAssignment(reassigned_to, failed.graph, description=f"reassigned from {failed.robot_id}")
+        result = self._execute_assignment(reassigned)
 
         self._bus.broadcast(
             sender="coordinator",
             message={
                 "event": "task_reassigned",
                 "from_robot": failed.robot_id,
-                "to_robot": other_rid,
+                "to_robot": reassigned_to,
             },
             msg_type="coordination",
         )
-        return True
+        return result.status == TaskStatus.COMPLETED
 
-    # ------------------------------------------------------------------
-    # Queries
-    # ------------------------------------------------------------------
+    # SW-05
+    def allocate_resource_auction(self, resource_id: str, candidate_robot_ids: list[str]) -> str:
+        """Auction-style resource allocation favoring low load and short distance."""
+        if resource_id in self._resource_leases:
+            return self._resource_leases[resource_id]
+        bids: dict[str, float] = {}
+        for rid in candidate_robot_ids:
+            load = len([a for a in self._assignments if a.robot_id == rid])
+            try:
+                x, y = self._bus.get_robot(rid).get_position()
+                distance = math.sqrt(x ** 2 + y ** 2)
+            except Exception:
+                distance = 1000.0
+            bids[rid] = load + (distance * 0.1)
+        winner = min(bids, key=bids.get)
+        self._resource_leases[resource_id] = winner
+        self._bus.broadcast(
+            sender="coordinator",
+            message={"event": "resource_allocated", "resource_id": resource_id, "winner": winner},
+            msg_type="coordination",
+        )
+        return winner
+
+    def release_resource(self, resource_id: str) -> None:
+        self._resource_leases.pop(resource_id, None)
+
+    # SW-09
+    def plan_fleet_tasks(self, tasks: list[str], agent: Agent) -> dict[str, list[RobotAssignment]]:
+        """Greedy fleet-level planning across multiple pending tasks."""
+        plans: dict[str, list[RobotAssignment]] = {}
+        for task in tasks:
+            assignments = self.split_task(task, agent)
+            # simple balancing swap: prefer robot with least global planned load
+            plans[task] = assignments
+        return plans
 
     @property
     def assignments(self) -> list[RobotAssignment]:
