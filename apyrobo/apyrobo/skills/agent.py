@@ -771,7 +771,7 @@ class Agent:
         """
         # OB-03: Trace context propagation from Agent through all layers
         with trace_context(task=task, component="agent",
-                           robot_id=getattr(robot, '_adapter', None) and robot._adapter.robot_id or "unknown",
+                           robot_id=getattr(robot, 'robot_id', "unknown"),
                            urgency=urgency or "normal") as ctx:
             trace_id = ctx.get("trace_id")
 

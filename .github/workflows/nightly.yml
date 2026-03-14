@@ -1,0 +1,61 @@
+# CI-09: Nightly Docker image build job — catches dependency breakage
+name: Nightly Build
+
+on:
+  schedule:
+    # Run at 03:00 UTC every day
+    - cron: "0 3 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  nightly-docker:
+    name: Nightly Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t apyrobo:nightly \
+            -f apyrobo/docker/Dockerfile \
+            apyrobo/
+
+      - name: Smoke test — imports
+        run: |
+          docker run --rm apyrobo:nightly python3 -c "
+          from apyrobo import Robot
+          from apyrobo.skills.skill import BUILTIN_SKILLS
+          from apyrobo.skills.executor import SkillExecutor, SkillGraph
+          from apyrobo.skills.agent import Agent
+          from apyrobo.safety.enforcer import SafetyEnforcer
+          from apyrobo.swarm.bus import SwarmBus
+          from apyrobo.swarm.coordinator import SwarmCoordinator
+          from apyrobo.observability import get_logger, trace_context, MetricsCollector
+          from apyrobo.persistence import StateStore, SQLiteStateStore
+          print('All imports OK')
+          print(f'Built-in skills: {list(BUILTIN_SKILLS.keys())}')
+          "
+
+      - name: Smoke test — run_tests.py
+        run: |
+          docker run --rm apyrobo:nightly python3 run_tests.py
+
+      - name: Smoke test — mock robot
+        run: |
+          docker run --rm apyrobo:nightly python3 -c "
+          from apyrobo import Robot
+          robot = Robot.discover('mock://nightly_bot')
+          caps = robot.capabilities()
+          robot.move(x=1.0, y=2.0, speed=0.5)
+          robot.stop()
+          print(f'Robot {robot.robot_id}: {len(caps.capabilities)} capabilities')
+          print('Mock robot test PASSED')
+          "
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::Nightly Docker build failed — dependency breakage detected"
+          echo "Check Dockerfile and pyproject.toml for incompatible dependency versions"
