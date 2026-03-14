@@ -160,25 +160,67 @@ class CameraProcessor:
     """
     Processes sensor_msgs/Image into detected objects.
 
-    This is a stub — real implementation would use:
-    - OpenCV for basic detection
-    - A VLM (e.g. via the agent's LLM provider) for object identification
-    - NVIDIA Isaac Perceptor for GPU-accelerated perception
+    Supports optional detector backends if installed:
+      - ultralytics (YOLOv8)
+      - nanoowl/groundingdino via future adapters
 
-    For the MVP demo, we pass the raw image dimensions so the pipeline
-    knows a camera is active, and rely on a separate detection node.
+    Falls back to mock detections attached to the message (for tests)
+    and finally camera-frame metadata when no detector is available.
     """
 
+    def __init__(self, backend: str = "auto") -> None:
+        self._backend = self._init_backend(backend)
+
     @staticmethod
-    def process(msg: Any) -> list[dict[str, Any]]:
-        """Convert an Image message to basic image metadata."""
+    def _init_backend(backend: str) -> Any:
+        if backend in {"auto", "yolov8"}:
+            try:
+                from ultralytics import YOLO
+                return YOLO("yolov8n.pt")
+            except Exception as e:
+                logger.debug("YOLOv8 backend unavailable: %s", e)
+        return None
+
+    def process(self, msg: Any) -> list[dict[str, Any]]:
+        """Convert an Image message to detections using best available backend."""
+        if hasattr(msg, "mock_detections") and isinstance(msg.mock_detections, list):
+            return list(msg.mock_detections)
+
+        if self._backend is not None and hasattr(msg, "data"):
+            try:
+                import numpy as np
+                arr = np.frombuffer(msg.data, dtype=np.uint8)
+                if msg.height > 0 and msg.width > 0:
+                    arr = arr.reshape((msg.height, msg.width, -1))
+                results = self._backend(arr, verbose=False)
+                detections: list[dict[str, Any]] = []
+                for result in results:
+                    names = getattr(result, "names", {})
+                    boxes = getattr(result, "boxes", [])
+                    for i, box in enumerate(boxes):
+                        cls_id = int(box.cls[0]) if hasattr(box, "cls") else 0
+                        conf = float(box.conf[0]) if hasattr(box, "conf") else 0.5
+                        xyxy = box.xyxy[0].tolist() if hasattr(box, "xyxy") else [0, 0, 0, 0]
+                        detections.append({
+                            "id": f"det_{i}",
+                            "label": names.get(cls_id, str(cls_id)),
+                            "center_x": float((xyxy[0] + xyxy[2]) / 2.0),
+                            "center_y": float((xyxy[1] + xyxy[3]) / 2.0),
+                            "confidence": conf,
+                            "bbox": [float(v) for v in xyxy],
+                        })
+                if detections:
+                    return detections
+            except Exception as e:
+                logger.debug("Camera backend failed, falling back to metadata: %s", e)
+
         return [{
             "id": "camera_frame",
             "label": "__raw_image__",
             "width": msg.width,
             "height": msg.height,
-            "encoding": msg.encoding,
-            "confidence": 0.0,  # no detection, just metadata
+            "encoding": getattr(msg, "encoding", "unknown"),
+            "confidence": 0.0,
         }]
 
 

@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import CapabilityType, TaskResult, TaskStatus, RecoveryAction
+from apyrobo.sensors.pipeline import WorldState
 from apyrobo.skills.skill import Skill, SkillStatus, BUILTIN_SKILLS
 
 logger = logging.getLogger(__name__)
@@ -249,6 +250,7 @@ class SkillExecutor:
         robot: Robot,
         state: ExecutionState | None = None,
         confidence_estimator: Any = None,
+        world_state_provider: Any = None,
     ) -> None:
         self._robot = robot
         self._listeners: list[EventListener] = []
@@ -256,6 +258,7 @@ class SkillExecutor:
         self._state = state or ExecutionState()
         self._emit_lock = threading.Lock()
         self._confidence_estimator = confidence_estimator  # SF-08
+        self._world_state_provider = world_state_provider
 
     @property
     def state(self) -> ExecutionState:
@@ -299,7 +302,9 @@ class SkillExecutor:
                     f"Requested speed {requested_speed} exceeds robot max {caps.max_speed}"
                 )
 
-        # Check state-based preconditions
+        world = self._resolve_world_state()
+
+        # Check state/sensor-based preconditions
         for cond in skill.preconditions:
             if cond.check_type == "state":
                 required_key = cond.parameters.get("key", cond.name)
@@ -310,6 +315,68 @@ class SkillExecutor:
                         f"State precondition '{cond.name}' not met: "
                         f"expected {required_key}={expected!r}, got {actual!r}"
                     )
+            elif cond.check_type == "sensor":
+                ok, reason = self._check_sensor_precondition(cond, world)
+                if not ok:
+                    return False, reason
+
+        return True, "OK"
+
+    def _resolve_world_state(self) -> WorldState | None:
+        provider = self._world_state_provider
+        if provider is None:
+            return None
+        if hasattr(provider, "get_world_state"):
+            return provider.get_world_state()
+        if callable(provider):
+            return provider()
+        if isinstance(provider, WorldState):
+            return provider
+        return None
+
+    def _check_sensor_precondition(self, cond: Any, world: WorldState | None) -> tuple[bool, str]:
+        if world is None:
+            return False, "World state unavailable for sensor precondition"
+
+        if cond.name == "object_visible":
+            label = cond.parameters.get("label") or cond.parameters.get("object")
+            if not isinstance(label, str) or not label.strip():
+                return False, "object_visible requires a 'label' parameter"
+            obj = world.find_object(label)
+            if obj is None:
+                return False, f"Object '{label}' is not visible"
+            min_conf = float(cond.parameters.get("min_confidence", 0.0))
+            if obj.confidence < min_conf:
+                return False, f"Object '{label}' confidence {obj.confidence:.2f} < {min_conf:.2f}"
+            return True, "OK"
+
+        if cond.name == "path_clear":
+            tx = cond.parameters.get("x")
+            ty = cond.parameters.get("y")
+            if not isinstance(tx, (int, float)) or not isinstance(ty, (int, float)):
+                return False, "path_clear requires numeric x/y target"
+            clearance = float(cond.parameters.get("clearance", 0.5))
+            rx, ry = world.robot_position
+            if not world.is_path_clear(rx, ry, float(tx), float(ty), clearance=clearance):
+                return False, "Path is blocked by obstacles"
+            return True, "OK"
+
+        if cond.name == "no_obstacle_within":
+            radius = float(cond.parameters.get("radius", 0.5))
+            nearby = world.obstacles_within(radius)
+            if nearby:
+                return False, f"Found {len(nearby)} obstacle(s) within {radius}m"
+            return True, "OK"
+
+        if cond.name == "contact_detected":
+            required = bool(cond.parameters.get("value", True))
+            actual = bool(world.metadata.get("contact_detected", False))
+            return (actual == required, f"contact_detected expected {required}, got {actual}")
+
+        if cond.name == "gps_fix":
+            required = bool(cond.parameters.get("value", True))
+            actual = bool(world.metadata.get("gps_fix", False))
+            return (actual == required, f"gps_fix expected {required}, got {actual}")
 
         return True, "OK"
 
