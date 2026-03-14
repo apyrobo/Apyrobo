@@ -24,6 +24,7 @@ from typing import Any, Callable
 from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import CapabilityType, TaskResult, TaskStatus, RecoveryAction
 from apyrobo.skills.skill import Skill, SkillStatus, BUILTIN_SKILLS
+from apyrobo.observability import emit_event, trace_context, current_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -353,12 +354,14 @@ class SkillExecutor:
         """
         Execute a single skill against the robot.
 
-        Handles precondition checking, timeout enforcement,
-        postcondition verification, and retries.
+        OB-01: Emits per-skill telemetry (latency, success/fail, retry count).
+        OB-03: Wraps execution in trace_context for correlation.
         """
         params = dict(skill.parameters)
         if parameters:
             params.update(parameters)
+
+        skill_start = time.time()
 
         self._emit(skill.skill_id, SkillStatus.PENDING, "Checking preconditions")
 
@@ -366,11 +369,21 @@ class SkillExecutor:
         ok, reason = self.check_preconditions(skill, self._robot)
         if not ok:
             self._emit(skill.skill_id, SkillStatus.FAILED, f"Precondition failed: {reason}")
+            # OB-01: Emit telemetry for precondition failure
+            emit_event("skill_executed",
+                        skill_id=skill.skill_id,
+                        status="failed",
+                        reason="precondition_failed",
+                        latency_ms=round((time.time() - skill_start) * 1000, 1),
+                        attempts=0,
+                        trace_id=current_trace_id())
             return SkillStatus.FAILED
 
         # Execute with retry
         attempts = 0
         max_attempts = skill.retry_count + 1
+        final_status = SkillStatus.FAILED
+        error_msg = ""
 
         while attempts < max_attempts:
             attempts += 1
@@ -395,25 +408,42 @@ class SkillExecutor:
                         continue  # retry if postcondition fails
 
                     self._emit(skill.skill_id, SkillStatus.COMPLETED, "Success")
-                    return SkillStatus.COMPLETED
+                    final_status = SkillStatus.COMPLETED
+                    break
                 else:
+                    error_msg = f"Attempt {attempts} returned False"
                     self._emit(
                         skill.skill_id, SkillStatus.RUNNING,
                         f"Attempt {attempts} failed, {'retrying' if attempts < max_attempts else 'no more retries'}"
                     )
             except SkillTimeout as e:
+                error_msg = f"timeout: {e}"
                 self._emit(
                     skill.skill_id, SkillStatus.RUNNING,
                     f"Timeout on attempt {attempts}: {e}"
                 )
             except Exception as e:
+                error_msg = str(e)
                 self._emit(
                     skill.skill_id, SkillStatus.RUNNING,
                     f"Error on attempt {attempts}: {e}"
                 )
 
-        self._emit(skill.skill_id, SkillStatus.FAILED, f"Failed after {max_attempts} attempts")
-        return SkillStatus.FAILED
+        if final_status == SkillStatus.FAILED:
+            self._emit(skill.skill_id, SkillStatus.FAILED, f"Failed after {max_attempts} attempts")
+
+        # OB-01: Emit per-skill telemetry
+        latency_ms = round((time.time() - skill_start) * 1000, 1)
+        emit_event("skill_executed",
+                    skill_id=skill.skill_id,
+                    status=final_status.value,
+                    latency_ms=latency_ms,
+                    attempts=attempts,
+                    max_attempts=max_attempts,
+                    error=error_msg if final_status == SkillStatus.FAILED else "",
+                    trace_id=current_trace_id())
+
+        return final_status
 
     def _dispatch_skill(self, skill: Skill, params: dict[str, Any]) -> bool:
         """
@@ -465,41 +495,64 @@ class SkillExecutor:
             logger.warning("Unknown skill: %s — treating as success", skill.skill_id)
             return True
 
-    def execute_graph(self, graph: SkillGraph, parallel: bool = False) -> TaskResult:
+    def execute_graph(self, graph: SkillGraph, parallel: bool = False,
+                      trace_id: str | None = None) -> TaskResult:
         """
         Execute an entire skill graph.
 
         SF-08: If a confidence_estimator is attached, gates execution
         before starting. Returns FAILED result if confidence too low.
+        OB-03: Wraps execution in trace_context for end-to-end tracing.
 
         Args:
             graph: The skill graph to execute.
             parallel: If True, run independent skills concurrently.
                       If False (default), execute in topological order.
+            trace_id: Optional trace ID for correlation.
 
         Returns a TaskResult summarising the outcome.
         """
-        # SF-08: Confidence gating
-        if self._confidence_estimator is not None:
-            try:
-                report = self._confidence_estimator.gate(graph, self._robot)
-                logger.info(
-                    "Confidence gate passed: %.0f%%", report.confidence * 100
-                )
-            except Exception as e:
-                logger.warning("Confidence gate blocked execution: %s", e)
-                return TaskResult(
-                    task_name=f"graph_{len(graph)}_skills",
-                    status=TaskStatus.FAILED,
-                    steps_completed=0,
-                    steps_total=len(graph),
-                    error=str(e),
-                    recovery_actions_taken=[RecoveryAction.ABORT],
-                )
+        # OB-03: Wrap in trace context
+        trace_kwargs: dict[str, Any] = {"component": "executor", "skill_count": len(graph)}
+        if trace_id:
+            trace_kwargs["trace_id"] = trace_id
 
-        if parallel:
-            return self._execute_graph_parallel(graph)
-        return self._execute_graph_sequential(graph)
+        with trace_context(**trace_kwargs):
+            graph_start = time.time()
+
+            # SF-08: Confidence gating
+            if self._confidence_estimator is not None:
+                try:
+                    report = self._confidence_estimator.gate(graph, self._robot)
+                    logger.info(
+                        "Confidence gate passed: %.0f%%", report.confidence * 100
+                    )
+                except Exception as e:
+                    logger.warning("Confidence gate blocked execution: %s", e)
+                    return TaskResult(
+                        task_name=f"graph_{len(graph)}_skills",
+                        status=TaskStatus.FAILED,
+                        steps_completed=0,
+                        steps_total=len(graph),
+                        error=str(e),
+                        recovery_actions_taken=[RecoveryAction.ABORT],
+                    )
+
+            if parallel:
+                result = self._execute_graph_parallel(graph)
+            else:
+                result = self._execute_graph_sequential(graph)
+
+            # OB-01: Emit graph-level telemetry
+            graph_latency = round((time.time() - graph_start) * 1000, 1)
+            emit_event("graph_executed",
+                        status=result.status.value if hasattr(result.status, 'value') else str(result.status),
+                        skill_count=len(graph),
+                        steps_completed=result.steps_completed,
+                        latency_ms=graph_latency,
+                        trace_id=current_trace_id())
+
+            return result
 
     def _execute_graph_sequential(self, graph: SkillGraph) -> TaskResult:
         """Execute skills one at a time in topological order."""
