@@ -210,6 +210,33 @@ class SwarmSafety:
                 f"Deadlock: {' → '.join(cycle)} → {cycle[0]}"
             )
 
+
+    def resolve_deadlock(self) -> dict[str, Any] | None:
+        """SW-06: Resolve the first detected deadlock by releasing one waiter."""
+        cycles = self.check_deadlock()
+        if not cycles:
+            return None
+
+        cycle = cycles[0]
+        # Break tie by oldest waiter (waited longest yields), fallback lexical
+        victim = max(
+            cycle,
+            key=lambda rid: (time.time() - self._wait_start.get(rid, time.time()), rid),
+        )
+        waited_on = self._waiting_on.get(victim)
+        self.set_waiting(victim, None)
+
+        action = {
+            "event": "deadlock_resolved",
+            "cycle": cycle,
+            "released_robot": victim,
+            "was_waiting_on": waited_on,
+            "timestamp": time.time(),
+        }
+        self._violations.append({"type": "deadlock_resolution", **action})
+        self._bus.broadcast(sender="safety", message=action, msg_type="safety")
+        return action
+
     # ------------------------------------------------------------------
     # Combined check
     # ------------------------------------------------------------------
