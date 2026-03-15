@@ -25,6 +25,7 @@ from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import CapabilityType, TaskResult, TaskStatus, RecoveryAction
 from apyrobo.sensors.pipeline import WorldState
 from apyrobo.skills.skill import Skill, SkillStatus, BUILTIN_SKILLS
+from apyrobo.skills.handlers import dispatch as _handler_dispatch, UnknownSkillError
 from apyrobo.observability import emit_event, trace_context, current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -516,51 +517,11 @@ class SkillExecutor:
         """
         Map a skill to actual robot commands.
 
-        This is the core translation layer between abstract skills
-        and concrete robot actions.  Handles both exact IDs and
+        Looks up the handler registry first, then raises UnknownSkillError
+        for truly unknown skills.  Handles both exact IDs and
         agent-generated suffixed IDs (e.g. "navigate_to_0").
         """
-        # Normalise: strip numeric suffix added by agent for graph uniqueness
-        base_id = skill.skill_id.rsplit("_", 1)[0] if skill.skill_id[-1:].isdigit() else skill.skill_id
-
-        if base_id == "navigate_to":
-            x = float(params.get("x", 0.0))
-            y = float(params.get("y", 0.0))
-            speed = params.get("speed")
-            speed = float(speed) if speed is not None else None
-            self._robot.move(x=x, y=y, speed=speed)
-            return True
-
-        elif base_id == "stop":
-            self._robot.stop()
-            return True
-
-        elif base_id == "rotate":
-            angle = float(params.get("angle_rad", 0.0))
-            speed = params.get("speed")
-            speed = float(speed) if speed is not None else None
-            self._robot.rotate(angle_rad=angle, speed=speed)
-            return True
-
-        elif base_id == "pick_object":
-            result = self._robot.gripper_close()
-            logger.info("Executing %s → gripper_close=%s", skill.skill_id, result)
-            return result
-
-        elif base_id == "place_object":
-            result = self._robot.gripper_open()
-            logger.info("Executing %s → gripper_open=%s", skill.skill_id, result)
-            return result
-
-        elif base_id == "report_status":
-            caps = self._robot.capabilities()
-            logger.info("Status: robot=%s capabilities=%d sensors=%d",
-                        caps.name, len(caps.capabilities), len(caps.sensors))
-            return True
-
-        else:
-            logger.warning("Unknown skill: %s — treating as success", skill.skill_id)
-            return True
+        return _handler_dispatch(skill.skill_id, self._robot, params)
 
     def execute_graph(self, graph: SkillGraph, parallel: bool = False,
                       trace_id: str | None = None) -> TaskResult:

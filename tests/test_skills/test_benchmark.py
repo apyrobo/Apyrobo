@@ -42,7 +42,7 @@ class TestPerformanceBenchmark:
         for i in range(100):
             g = SkillGraph()
             nav = Skill(
-                skill_id=f"nav_{i}",
+                skill_id=f"navigate_to_{i}",
                 name=f"Nav {i}",
                 required_capability=BUILTIN_SKILLS["navigate_to"].required_capability,
                 parameters={"x": float(i), "y": float(i), "speed": 0.5},
@@ -72,8 +72,9 @@ class TestPerformanceBenchmark:
             g = SkillGraph()
             prev_id = None
             for i in range(10):
+                sid = f"navigate_to_{run * 10 + i}"
                 s = Skill(
-                    skill_id=f"step_{run}_{i}",
+                    skill_id=sid,
                     name=f"Step {i}",
                     required_capability=BUILTIN_SKILLS["navigate_to"].required_capability,
                     parameters={"x": float(i), "y": float(i)},
@@ -102,22 +103,25 @@ class TestPerformanceBenchmark:
         for run in range(20):
             g = SkillGraph()
             # 5 independent skills + 1 final
+            par_ids = []
             for i in range(5):
+                sid = f"report_status_{run * 10 + i}"
                 s = Skill(
-                    skill_id=f"par_{run}_{i}",
+                    skill_id=sid,
                     name=f"Parallel {i}",
                     required_capability=BUILTIN_SKILLS["report_status"].required_capability,
                     timeout_seconds=5.0,
                 )
                 g.add_skill(s)
+                par_ids.append(sid)
 
             final = Skill(
-                skill_id=f"final_{run}",
+                skill_id=f"stop_{run}",
                 name="Final",
                 required_capability=BUILTIN_SKILLS["stop"].required_capability,
                 timeout_seconds=5.0,
             )
-            g.add_skill(final, depends_on=[f"par_{run}_{i}" for i in range(5)])
+            g.add_skill(final, depends_on=par_ids)
 
             exe = SkillExecutor(mock_robot)
             result = exe.execute_graph(g, parallel=True)
