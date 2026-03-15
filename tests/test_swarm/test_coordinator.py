@@ -151,10 +151,13 @@ class TestFailureReassignment:
     ) -> None:
         """When a robot fails, reassignment is attempted."""
         coord = SwarmCoordinator(two_robot_bus)
-        # Create a failing assignment manually
-        assignment = RobotAssignment("robot_a", SkillGraph(), "test")
+        # Create a failing assignment with a skill to reassign
+        graph = SkillGraph()
+        nav = Skill(skill_id="navigate_to", name="Navigate", required_capabilities=[CapabilityType.NAVIGATE])
+        graph.add_skill(nav, parameters={"x": 1.0, "y": 2.0, "speed": 0.5})
+        assignment = RobotAssignment("robot_a", graph, "test")
         assignment.status = TaskStatus.FAILED
-        result = coord._attempt_reassignment(assignment, agent)
+        result = coord._attempt_reassignment(assignment)
         assert result is True  # robot_b available
 
     def test_no_reassignment_single_robot(
@@ -164,7 +167,7 @@ class TestFailureReassignment:
         bus.register(robot_a)
         coord = SwarmCoordinator(bus)
         assignment = RobotAssignment("robot_a", SkillGraph(), "test")
-        result = coord._attempt_reassignment(assignment, agent)
+        result = coord._attempt_reassignment(assignment)
         assert result is False
 
     def test_assignments_property(
