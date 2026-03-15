@@ -1,0 +1,13 @@
+# Lightweight CI image — no ROS, just Python + tests
+FROM python:3.12-slim
+
+WORKDIR /workspace
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null; true
+RUN pip install --no-cache-dir hypothesis pytest-timeout
+
+COPY . .
+RUN pip install --no-cache-dir -e ".[dev]"
+
+CMD ["python3", "-m", "pytest", "tests/", "-v", "--timeout=120"]
