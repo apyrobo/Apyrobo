@@ -172,6 +172,9 @@ class SkillRegistry:
         }
         self._save_index()
 
+        # Load handlers declared by skills in the package
+        pkg._load_skill_handlers()
+
         logger.info("Installed %s@%s (%d skills)", pkg.name, pkg.version, len(pkg.skills))
         return pkg
 

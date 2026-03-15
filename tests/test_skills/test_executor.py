@@ -231,12 +231,11 @@ class TestPreconditionEvaluation:
 class TestUnknownSkill:
     """CI-03: Unknown skills are handled correctly."""
 
-    def test_unknown_skill_dispatch_succeeds_with_warning(
+    def test_unknown_skill_dispatch_raises_error(
         self, executor: SkillExecutor
     ) -> None:
         """
-        Unknown skills currently return True from _dispatch_skill (with a warning).
-        This test verifies the current behavior.
+        Unknown skills raise UnknownSkillError and return FAILED status.
         """
         unknown = Skill(
             skill_id="totally_unknown_skill",
@@ -244,8 +243,7 @@ class TestUnknownSkill:
             required_capability=CapabilityType.CUSTOM,
         )
         status = executor.execute_skill(unknown)
-        # Current behavior: unknown skills treat as success
-        assert status == SkillStatus.COMPLETED
+        assert status == SkillStatus.FAILED
 
     def test_unknown_skill_not_in_registry(self) -> None:
         """Unregistered skill IDs are not in BUILTIN_SKILLS."""

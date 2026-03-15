@@ -51,6 +51,8 @@ class Skill(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     timeout_seconds: float = 60.0
     retry_count: int = 0
+    handler_module: str | None = None
+    handler_fn: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict (JSON-compatible)."""
@@ -72,6 +74,8 @@ class Skill(BaseModel):
             "parameters": self.parameters,
             "timeout_seconds": self.timeout_seconds,
             "retry_count": self.retry_count,
+            "handler_module": self.handler_module,
+            "handler_fn": self.handler_fn,
         }
 
     @classmethod
@@ -87,6 +91,8 @@ class Skill(BaseModel):
             parameters=data.get("parameters", {}),
             timeout_seconds=data.get("timeout_seconds", 60.0),
             retry_count=data.get("retry_count", 0),
+            handler_module=data.get("handler_module"),
+            handler_fn=data.get("handler_fn"),
         )
 
     def to_json(self) -> str:

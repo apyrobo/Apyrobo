@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
+from apyrobo.skills.handlers import load_handler_module
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +295,25 @@ class SkillPackage:
                 else:
                     logger.warning("Skill file not found: %s", skill_path)
 
-        return cls.from_manifest(manifest, skills=skills)
+        pkg = cls.from_manifest(manifest, skills=skills)
+        pkg._load_skill_handlers()
+        return pkg
+
+    # ------------------------------------------------------------------
+    # Handler loading
+    # ------------------------------------------------------------------
+
+    def _load_skill_handlers(self) -> None:
+        """Import handler modules declared by skills in this package."""
+        for skill in self.skills:
+            if skill.handler_module:
+                try:
+                    load_handler_module(skill.handler_module)
+                except Exception:
+                    logger.warning(
+                        "Could not load handler module %s for skill %s",
+                        skill.handler_module, skill.skill_id,
+                    )
 
     # ------------------------------------------------------------------
     # Archive operations (.skillpkg)

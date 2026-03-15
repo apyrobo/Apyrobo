@@ -103,17 +103,17 @@ class TestEndToEnd:
         """Independent skills can be executed in parallel."""
         from apyrobo.skills.skill import Skill
 
-        s1 = Skill(skill_id="report_1", name="Report 1",
+        s1 = Skill(skill_id="report_status_1", name="Report 1",
                     required_capability=BUILTIN_SKILLS["report_status"].required_capability)
-        s2 = Skill(skill_id="report_2", name="Report 2",
+        s2 = Skill(skill_id="report_status_2", name="Report 2",
                     required_capability=BUILTIN_SKILLS["report_status"].required_capability)
-        s3 = Skill(skill_id="stop_final", name="Stop Final",
+        s3 = Skill(skill_id="stop_3", name="Stop Final",
                     required_capability=BUILTIN_SKILLS["stop"].required_capability)
 
         g = SkillGraph()
         g.add_skill(s1)
         g.add_skill(s2)
-        g.add_skill(s3, depends_on=["report_1", "report_2"])
+        g.add_skill(s3, depends_on=["report_status_1", "report_status_2"])
 
         exe = SkillExecutor(mock_robot)
         result = exe.execute_graph(g, parallel=True)

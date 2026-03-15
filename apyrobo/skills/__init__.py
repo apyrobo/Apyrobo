@@ -10,4 +10,9 @@ Key components (Phase 2):
     - graph: Directed skill graph with dependency edges
     - executor: Runs skills against a robot via the Core API
     - agent: LLM-powered planning (model-agnostic via LiteLLM)
+    - handlers: Dynamic handler registry with @skill_handler decorator
+    - builtins: Built-in skill handlers (auto-registered on import)
 """
+
+# Auto-register built-in handlers so they are always available.
+import apyrobo.skills.builtins as _builtins  # noqa: F401
