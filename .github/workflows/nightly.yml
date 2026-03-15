@@ -19,8 +19,8 @@ jobs:
         run: |
           docker build \
             -t apyrobo:nightly \
-            -f apyrobo/docker/Dockerfile \
-            apyrobo/
+            -f docker/Dockerfile \
+            .
 
       - name: Smoke test — imports
         run: |
