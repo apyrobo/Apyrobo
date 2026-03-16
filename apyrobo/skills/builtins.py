@@ -61,3 +61,19 @@ def _report_status(robot: Any, params: dict[str, Any]) -> bool:
         caps.name, len(caps.capabilities), len(caps.sensors),
     )
     return True
+
+
+@skill_handler("speak")
+def _speak(robot: Any, params: dict[str, Any]) -> bool:
+    """VC-01: Dispatch speak to a VoiceAdapter if available."""
+    text = params.get("text", "")
+    if not text:
+        logger.warning("speak handler: no text provided")
+        return False
+    # Try robot's voice adapter if attached
+    adapter = getattr(robot, "_voice_adapter", None)
+    if adapter is not None:
+        adapter.speak(text)
+        return True
+    logger.info("speak handler: no voice adapter, text=%r", text)
+    return True

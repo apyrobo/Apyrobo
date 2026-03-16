@@ -642,6 +642,10 @@ class Agent:
         self._registry: SkillRegistry | None = kwargs.pop("registry", None)
         self._use_constrained_prompt = kwargs.pop("constrained_prompt", False)
 
+        # VC-02: Optional agent memory for episodic + semantic knowledge
+        from apyrobo.memory import AgentMemory
+        self.memory: AgentMemory | None = kwargs.pop("memory", None)
+
         # Auto-discover default registry if none provided
         if self._registry is None and DEFAULT_REGISTRY_DIR.exists():
             try:
@@ -721,6 +725,13 @@ class Agent:
             })
 
         capability_names = [c.capability_type.value for c in caps.capabilities]
+
+        # VC-02: Inject memory context into LLM-based providers
+        if self.memory and isinstance(self._provider, (LLMProvider, ToolCallingProvider)):
+            memory_context = self.memory.to_context_string()
+            if memory_context:
+                # Prepend memory context to the task for LLM awareness
+                task = f"{task}\n\n[Agent Memory Context]\n{memory_context}"
 
         # IN-09: Optionally inject constrained prompt into provider
         if self._use_constrained_prompt and isinstance(self._provider, LLMProvider):
@@ -829,6 +840,24 @@ class Agent:
             # Override the generic task name with the actual task
             result.task_name = task
             self._last_state = state
+
+            # VC-02: Record episode in memory after execution
+            if self.memory is not None:
+                plan_steps = [
+                    {"skill_id": s.skill_id, "parameters": graph.get_parameters(s.skill_id)}
+                    for s in graph.get_execution_order()
+                ]
+                self.memory.record_episode(
+                    task=task,
+                    plan=plan_steps,
+                    result={
+                        "status": result.status.value if hasattr(result.status, "value") else str(result.status),
+                        "steps_completed": result.steps_completed,
+                        "steps_total": result.steps_total,
+                        "error": result.error,
+                    },
+                )
+
             return result
 
     # ------------------------------------------------------------------

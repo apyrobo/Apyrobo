@@ -101,8 +101,8 @@ class TestBuiltinSkillHandlers:
         assert status == SkillStatus.COMPLETED
 
     def test_all_builtin_skills_registered(self) -> None:
-        """All 6 built-in skills are in the registry."""
-        expected = {"navigate_to", "rotate", "stop", "pick_object", "place_object", "report_status"}
+        """All 7 built-in skills are in the registry."""
+        expected = {"navigate_to", "rotate", "stop", "pick_object", "place_object", "report_status", "speak"}
         assert expected == set(BUILTIN_SKILLS.keys())
 
     def test_navigate_to_updates_state(self, executor: SkillExecutor) -> None:
