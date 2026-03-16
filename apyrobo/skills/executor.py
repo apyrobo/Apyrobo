@@ -253,6 +253,7 @@ class SkillExecutor:
         state: ExecutionState | None = None,
         confidence_estimator: Any = None,
         world_state_provider: Any = None,
+        state_store: Any = None,
     ) -> None:
         self._robot = robot
         self._listeners: list[EventListener] = []
@@ -261,6 +262,7 @@ class SkillExecutor:
         self._emit_lock = threading.Lock()
         self._confidence_estimator = confidence_estimator  # SF-08
         self._world_state_provider = world_state_provider
+        self._state_store = state_store  # OB-02: StorageBackend for crash recovery
 
     @property
     def state(self) -> ExecutionState:
@@ -547,6 +549,18 @@ class SkillExecutor:
 
         with trace_context(**trace_kwargs):
             graph_start = time.time()
+            active_trace_id = trace_id or current_trace_id()
+
+            # OB-02: Record task start in state store
+            if self._state_store and active_trace_id:
+                try:
+                    self._state_store.begin_task(
+                        task_id=active_trace_id,
+                        metadata={"skill_count": len(graph)},
+                        total_steps=len(graph),
+                    )
+                except Exception as e:
+                    logger.warning("State store begin_task failed: %s", e)
 
             # SF-08: Confidence gating
             if self._confidence_estimator is not None:
@@ -571,6 +585,24 @@ class SkillExecutor:
             else:
                 result = self._execute_graph_sequential(graph)
 
+            # OB-02: Record final state in state store
+            if self._state_store and active_trace_id:
+                try:
+                    status_val = result.status.value if hasattr(result.status, 'value') else str(result.status)
+                    if status_val == "completed":
+                        self._state_store.complete_task(
+                            active_trace_id,
+                            result={"steps_completed": result.steps_completed,
+                                    "steps_total": result.steps_total},
+                        )
+                    else:
+                        self._state_store.fail_task(
+                            active_trace_id,
+                            error=result.error or "graph execution failed",
+                        )
+                except Exception as e:
+                    logger.warning("State store complete/fail failed: %s", e)
+
             # OB-01: Emit graph-level telemetry
             graph_latency = round((time.time() - graph_start) * 1000, 1)
             emit_event("graph_executed",
@@ -594,6 +626,16 @@ class SkillExecutor:
 
             if status == SkillStatus.COMPLETED:
                 completed += 1
+                # OB-02: Update progress in state store
+                if self._state_store:
+                    try:
+                        tid = current_trace_id()
+                        if tid:
+                            self._state_store.update_task(
+                                tid, step=completed, status="in_progress",
+                            )
+                    except Exception as e:
+                        logger.warning("State store update_task failed: %s", e)
             elif status == SkillStatus.FAILED:
                 if skill.retry_count > 0:
                     recovery_actions.append(RecoveryAction.RETRY)

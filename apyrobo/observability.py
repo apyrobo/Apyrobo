@@ -750,6 +750,11 @@ class AlertManager:
 
         return None
 
+    def add_webhook(self, url: str, headers: dict[str, str] | None = None) -> None:
+        """Register a WebhookEmitter as a built-in alert callback."""
+        emitter = WebhookEmitter(url, headers=headers)
+        self._callbacks.append(emitter.emit)
+
     @property
     def alert_log(self) -> list[dict[str, Any]]:
         return list(self._alert_log)
@@ -764,6 +769,61 @@ class AlertManager:
         for rule in self._rules:
             rule.fire_count = 0
             rule.last_fired = None
+
+
+# ---------------------------------------------------------------------------
+# OB-11: WebhookEmitter — HTTP POST alerts with retry
+# ---------------------------------------------------------------------------
+
+class WebhookEmitter:
+    """
+    Sends alert payloads to a webhook URL via HTTP POST.
+
+    Uses stdlib urllib only (no extra dependencies).
+    Retries up to 3 times with exponential backoff on failure.
+    """
+
+    def __init__(self, url: str, headers: dict[str, str] | None = None,
+                 max_retries: int = 3, backoff_s: float = 0.5) -> None:
+        self._url = url
+        self._headers = headers or {}
+        self._max_retries = max_retries
+        self._backoff_s = backoff_s
+
+    def emit(self, payload: dict[str, Any]) -> None:
+        """POST payload as JSON to the configured URL with retry."""
+        import urllib.request
+
+        data = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json", **self._headers}
+
+        last_error: Exception | None = None
+        for attempt in range(1, self._max_retries + 1):
+            try:
+                req = urllib.request.Request(
+                    self._url, data=data, headers=headers, method="POST",
+                )
+                urllib.request.urlopen(req, timeout=5)
+                return
+            except Exception as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    time.sleep(self._backoff_s * attempt)
+
+        logging.getLogger(__name__).error(
+            "Webhook POST to %s failed after %d attempts: %s",
+            self._url, self._max_retries, last_error,
+        )
+
+
+def setup_alerting(alert_manager: AlertManager) -> None:
+    """
+    Register an AlertManager as a global observability event handler.
+
+    After calling this, every emit_event() will be checked against
+    the alert manager's rules.
+    """
+    on_event(alert_manager.check_event)
 
 
 # ---------------------------------------------------------------------------
