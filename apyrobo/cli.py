@@ -368,6 +368,49 @@ def cmd_pkg_validate(args: argparse.Namespace) -> None:
     print(f"  Tags: {', '.join(pkg.tags) or '(none)'}")
 
 
+def cmd_voice(args: argparse.Namespace) -> None:
+    """VC-01: Interactive voice control demo."""
+    from apyrobo.voice import (
+        MockVoiceAdapter, WhisperAdapter, OpenAIVoiceAdapter, voice_loop,
+    )
+
+    robot = Robot.discover(args.robot)
+    agent = Agent(provider=args.provider)
+
+    adapter_map = {
+        "mock": lambda: MockVoiceAdapter(["go to (2, 3)", "stop"]),
+        "whisper": lambda: WhisperAdapter(),
+        "openai": lambda: OpenAIVoiceAdapter(),
+    }
+    adapter = adapter_map[args.adapter]()
+
+    if args.listen or args.adapter != "mock":
+        print(f"Voice mode: {args.adapter} adapter")
+        print(f"Robot:      {robot.robot_id}")
+        print("Listening... (say 'stop' to exit)")
+        print("-" * 50)
+
+        def on_listen(text: str) -> None:
+            print(f"  Heard: {text!r}")
+
+        def on_result(result: Any) -> None:
+            print(f"  Result: {result.status.value} "
+                  f"({result.steps_completed}/{result.steps_total})")
+
+        turns = voice_loop(
+            agent=agent,
+            robot=robot,
+            adapter=adapter,
+            max_turns=args.max_turns,
+            on_listen=on_listen,
+            on_result=on_result,
+        )
+        print("-" * 50)
+        print(f"Completed {len(turns)} turn(s)")
+    else:
+        print("Use --listen to start voice interaction")
+
+
 # Reference to the pkg argparser, set during main() so cmd_pkg can print help.
 _p_pkg: argparse.ArgumentParser | None = None
 
@@ -488,6 +531,18 @@ def main() -> None:
     else:
         logging.basicConfig(level=logging.WARNING)
 
+    # voice — VC-01
+    p_voice = sub.add_parser("voice", help="Interactive voice control")
+    p_voice.add_argument("--robot", default="mock://turtlebot4")
+    p_voice.add_argument("--provider", default="rule")
+    p_voice.add_argument("--adapter", default="mock",
+                         choices=["whisper", "openai", "mock"],
+                         help="Voice adapter backend")
+    p_voice.add_argument("--listen", action="store_true",
+                         help="Start interactive voice demo")
+    p_voice.add_argument("--max-turns", type=int, default=None,
+                         help="Maximum conversation turns")
+
     if args.command is None:
         parser.print_help()
         return
@@ -503,6 +558,7 @@ def main() -> None:
         "skills": cmd_skills,
         "config": cmd_config,
         "pkg": cmd_pkg,
+        "voice": cmd_voice,
     }
     commands[args.command](args)
 

@@ -189,3 +189,12 @@ report_status = _register_builtin(Skill(
     parameters={},
     timeout_seconds=5.0,
 ))
+
+speak = _register_builtin(Skill(
+    skill_id="speak",
+    name="Speak",
+    description="Speak a text message aloud via text-to-speech",
+    required_capability=CapabilityType.SPEAK,
+    parameters={"text": ""},
+    timeout_seconds=30.0,
+))

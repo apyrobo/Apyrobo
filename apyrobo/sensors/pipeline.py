@@ -10,6 +10,7 @@ objects, robot pose, and environment metadata.
 
 from __future__ import annotations
 
+import abc
 import logging
 import math
 import time
@@ -239,6 +240,147 @@ class WorldState:
 # Sensor Pipeline
 # ---------------------------------------------------------------------------
 
+class ObjectDetector(abc.ABC):
+    """Abstract interface for object detection backends (VC-03)."""
+
+    @abc.abstractmethod
+    def detect(self, image_data: Any, target_labels: list[str] | None = None) -> list[DetectedObject]:
+        """Run detection on image data, returning DetectedObject instances."""
+        ...
+
+
+class MockDetector(ObjectDetector):
+    """
+    VC-03: Mock detector that returns configurable fake detections for testing.
+
+    Usage:
+        detector = MockDetector([
+            {"label": "box", "x": 1.0, "y": 2.0, "confidence": 0.95},
+        ])
+    """
+
+    def __init__(self, detections: list[dict[str, Any]] | None = None) -> None:
+        self._detections = detections or []
+
+    def detect(self, image_data: Any, target_labels: list[str] | None = None) -> list[DetectedObject]:
+        objects = []
+        for i, det in enumerate(self._detections):
+            label = det.get("label", "object")
+            if target_labels and label not in target_labels:
+                continue
+            objects.append(DetectedObject(
+                object_id=det.get("id", f"mock_{i}"),
+                label=label,
+                x=det.get("x", 0.0),
+                y=det.get("y", 0.0),
+                confidence=det.get("confidence", 1.0),
+                source="mock_detector",
+            ))
+        return objects
+
+    def set_detections(self, detections: list[dict[str, Any]]) -> None:
+        """Update the fake detections returned by detect()."""
+        self._detections = detections
+
+
+class YOLOv8Detector(ObjectDetector):
+    """
+    VC-03: YOLOv8 backend using ultralytics.
+
+    Requires: pip install ultralytics
+    """
+
+    def __init__(self, model_name: str = "yolov8n.pt") -> None:
+        self._model_name = model_name
+        self._model: Any = None
+
+    def _load_model(self) -> Any:
+        if self._model is None:
+            from ultralytics import YOLO
+            self._model = YOLO(self._model_name)
+        return self._model
+
+    def detect(self, image_data: Any, target_labels: list[str] | None = None) -> list[DetectedObject]:
+        model = self._load_model()
+        results = model(image_data, verbose=False)
+        objects = []
+        for result in results:
+            for box in result.boxes:
+                label = result.names[int(box.cls[0])]
+                if target_labels and label not in target_labels:
+                    continue
+                # Use center of bounding box as position
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+                conf = float(box.conf[0])
+                objects.append(DetectedObject(
+                    object_id=f"yolo_{len(objects)}",
+                    label=label,
+                    x=cx,
+                    y=cy,
+                    confidence=conf,
+                    source="yolov8",
+                ))
+        return objects
+
+
+class NanoOWLDetector(ObjectDetector):
+    """
+    VC-03: NanoOWL open-vocabulary detection from text prompts.
+
+    Requires: nanoowl package (NVIDIA Jetson optimized)
+    """
+
+    def __init__(self, model_name: str = "google/owlvit-base-patch32") -> None:
+        self._model_name = model_name
+        self._predictor: Any = None
+
+    def _load_model(self) -> Any:
+        if self._predictor is None:
+            from nanoowl.owl_predictor import OwlPredictor
+            self._predictor = OwlPredictor(self._model_name)
+        return self._predictor
+
+    def detect(self, image_data: Any, target_labels: list[str] | None = None) -> list[DetectedObject]:
+        if not target_labels:
+            return []
+        predictor = self._load_model()
+        output = predictor.predict(
+            image=image_data,
+            text=target_labels,
+            threshold=0.1,
+        )
+        objects = []
+        for i, (box, label_idx, score) in enumerate(
+            zip(output.boxes, output.labels, output.scores)
+        ):
+            x1, y1, x2, y2 = box.tolist()
+            cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+            objects.append(DetectedObject(
+                object_id=f"owl_{i}",
+                label=target_labels[label_idx],
+                x=cx,
+                y=cy,
+                confidence=float(score),
+                source="nanoowl",
+            ))
+        return objects
+
+
+def _load_detector(backend: str) -> ObjectDetector | None:
+    """Factory function to create a detector by backend name."""
+    if backend == "none":
+        return None
+    if backend == "mock":
+        return MockDetector()
+    if backend == "yolov8":
+        return YOLOv8Detector()
+    if backend == "nanoowl":
+        return NanoOWLDetector()
+    raise ValueError(f"Unknown detector backend: {backend!r}. "
+                     f"Available: none, mock, yolov8, nanoowl")
+
+
 class SensorPipeline:
     """
     Ingests raw sensor data and builds a WorldState.
@@ -246,14 +388,21 @@ class SensorPipeline:
     In production, subscribes to ROS 2 topics. In mock mode, accepts
     readings programmatically.
 
+    VC-03: Supports pluggable object detection backends via detector_backend.
+
     Usage:
         pipeline = SensorPipeline()
         pipeline.feed(SensorReading("lidar0", SensorType.LIDAR, scan_data))
         pipeline.feed(SensorReading("cam0", SensorType.CAMERA, detections))
         world = pipeline.get_world_state()
+
+        # With object detection:
+        pipeline = SensorPipeline(detector_backend="yolov8")
+        pipeline = SensorPipeline(detector_backend="mock", target_labels=["box"])
     """
 
-    def __init__(self) -> None:
+    def __init__(self, detector_backend: str = "none",
+                 target_labels: list[str] | None = None) -> None:
         self._readings: dict[str, SensorReading] = {}  # latest per sensor
         self._all_readings: list[SensorReading] = []
         self._world: WorldState = WorldState()
@@ -266,10 +415,25 @@ class SensorPipeline:
             SensorType.DEPTH: self._process_depth,
         }
         self._obstacle_max_age_s: float | None = None
+        self._detector: ObjectDetector | None = _load_detector(detector_backend)
+        self._target_labels: list[str] = target_labels or []
 
     def set_obstacle_max_age(self, max_age_s: float | None) -> None:
         """Configure automatic stale obstacle expiration."""
         self._obstacle_max_age_s = max_age_s
+
+    def set_target_labels(self, labels: list[str]) -> None:
+        """VC-03: Set target labels for open-vocab detectors (e.g. NanoOWL)."""
+        self._target_labels = labels
+
+    @property
+    def detector(self) -> ObjectDetector | None:
+        """VC-03: The attached object detector, or None."""
+        return self._detector
+
+    def set_detector(self, detector: ObjectDetector | None) -> None:
+        """VC-03: Attach or replace the object detection backend."""
+        self._detector = detector
 
     def feed(self, reading: SensorReading) -> None:
         """Ingest a sensor reading and update the world state."""
@@ -331,8 +495,23 @@ class SensorPipeline:
         """
         Process camera data into detected objects.
 
-        Expected data format: list of {"id": str, "label": str, "x": float, "y": float}
+        VC-03: When a detector backend is attached, runs detection on image data.
+        Otherwise, accepts pre-annotated detections as before.
+
+        Expected data format (no detector):
+            list of {"id": str, "label": str, "x": float, "y": float}
+        Expected data format (with detector):
+            raw image bytes or numpy array
         """
+        if self._detector:
+            # VC-03: Run object detection on image data
+            objects = self._detector.detect(reading.data, self._target_labels or None)
+            self._world.detected_objects = objects
+            self._fuse_obstacles()
+            logger.debug("Camera (detector): detected %d objects", len(objects))
+            return
+
+        # Existing behavior: accept pre-annotated detections
         if not isinstance(reading.data, list):
             return
 
