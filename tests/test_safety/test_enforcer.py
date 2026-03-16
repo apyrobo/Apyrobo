@@ -23,6 +23,8 @@ from apyrobo.safety.enforcer import (
     DEFAULT_POLICY,
     STRICT_POLICY,
 )
+from apyrobo.sensors.pipeline import DetectedObject, WorldState
+from apyrobo.operations import BatteryMonitor
 
 
 # ---------------------------------------------------------------------------
@@ -315,3 +317,272 @@ class TestFormalExport:
         d = exp.to_dict()
         assert d["policy_name"] == "default"
         assert "constraints" in d
+
+
+# ===========================================================================
+# SF-01: Watchdog odometry divergence — Timer-based periodic checks
+# ===========================================================================
+
+class TestWatchdogDivergence:
+    """SF-01: Watchdog wires odometry feedback to divergence detection."""
+
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+    def test_watchdog_triggers_stop_on_divergence(self, mock_robot: Robot) -> None:
+        """Watchdog triggers stop() when MockAdapter.position is manually overridden to diverge."""
+        policy = SafetyPolicy(
+            name="tight_watchdog",
+            watchdog_tolerance=0.5,
+            watchdog_interval=0.05,
+        )
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        # Issue move — this starts the watchdog timer
+        enforcer.move(x=5.0, y=5.0, speed=0.5)
+
+        # Manually override the adapter position to simulate divergence
+        mock_robot._adapter._position = (50.0, 50.0)
+
+        # Wait for the watchdog timer to fire
+        time.sleep(0.2)
+
+        # The watchdog should have triggered
+        assert enforcer.watchdog_triggered_count >= 1
+        assert any(
+            i["type"] == "watchdog_triggered" for i in enforcer.interventions
+        )
+
+    def test_watchdog_no_trigger_at_correct_position(self, mock_robot: Robot) -> None:
+        """Watchdog does NOT trigger when robot arrives at correct position."""
+        policy = SafetyPolicy(
+            name="normal_watchdog",
+            watchdog_tolerance=2.0,
+            watchdog_interval=0.05,
+        )
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        # Move robot — MockAdapter sets position to commanded position
+        enforcer.move(x=3.0, y=3.0, speed=0.5)
+
+        # Wait for a few watchdog cycles
+        time.sleep(0.2)
+
+        # No divergence should be detected
+        assert enforcer.watchdog_triggered_count == 0
+        assert not any(
+            i["type"] == "watchdog_triggered" for i in enforcer.interventions
+        )
+
+        enforcer.stop_watchdog()
+
+    def test_watchdog_interval_configurable(self, mock_robot: Robot) -> None:
+        """Watchdog interval is configurable and polls repeatedly."""
+        policy = SafetyPolicy(
+            name="fast_watchdog",
+            watchdog_tolerance=100.0,  # high tolerance — won't trigger
+            watchdog_interval=0.05,
+        )
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        enforcer.move(x=1.0, y=1.0, speed=0.5)
+
+        # Wait long enough for multiple timer firings
+        time.sleep(0.3)
+        enforcer.stop_watchdog()
+
+        # The default interval is what we set
+        assert policy.watchdog_interval == 0.05
+
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+    def test_watchdog_audit_log_entry(self, mock_robot: Robot) -> None:
+        """Triggered watchdog appears in enforcer.audit_log."""
+        policy = SafetyPolicy(
+            name="audit_watchdog",
+            watchdog_tolerance=0.1,
+            watchdog_interval=0.05,
+        )
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        enforcer.move(x=2.0, y=2.0, speed=0.5)
+
+        # Force divergence
+        mock_robot._adapter._position = (20.0, 20.0)
+
+        # Wait for watchdog
+        time.sleep(0.2)
+
+        watchdog_entries = [
+            e for e in enforcer.audit_log
+            if e.event_type == "watchdog_triggered"
+        ]
+        assert len(watchdog_entries) >= 1
+        assert watchdog_entries[0].details["type"] == "watchdog_triggered"
+        assert "divergence_m" in watchdog_entries[0].details
+
+    def test_watchdog_check_raises_safety_violation(self, mock_robot: Robot) -> None:
+        """check_watchdog stops robot on divergence detection."""
+        policy = SafetyPolicy(name="check_test", watchdog_tolerance=0.1)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        enforcer.move(x=1.0, y=1.0, speed=0.5)
+        mock_robot._adapter._position = (10.0, 10.0)
+
+        result = enforcer.check_watchdog()
+        assert result is not None
+        assert not result["ok"]
+        assert result["divergence_m"] > 0.1
+        assert enforcer.watchdog_triggered_count == 1
+
+    def test_stop_cancels_watchdog(self, mock_robot: Robot) -> None:
+        """Calling stop() cancels the watchdog timer."""
+        policy = SafetyPolicy(
+            name="stop_test",
+            watchdog_tolerance=0.5,
+            watchdog_interval=0.05,
+        )
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+        enforcer.move(x=5.0, y=5.0, speed=0.5)
+
+        # Stop should cancel the watchdog
+        enforcer.stop()
+        assert not enforcer._watchdog_active
+
+
+# ===========================================================================
+# SF-02: Human proximity — WorldState detections
+# ===========================================================================
+
+class TestHumanProximityWorldState:
+    """SF-02: Human proximity wired to WorldState detections."""
+
+    def test_person_too_close_raises_violation(self, mock_robot: Robot) -> None:
+        """Move to (2,2) with person detected at (2.1, 2.1) at proximity < 0.5m: violation raised."""
+        world = WorldState()
+        world.detected_objects.append(
+            DetectedObject("p1", "person", 2.1, 2.1, confidence=0.95)
+        )
+        policy = SafetyPolicy(name="proximity", human_proximity_limit=0.5)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, world_state=world)
+
+        with pytest.raises(SafetyViolation, match="Human detected"):
+            enforcer.move(x=2.0, y=2.0, speed=0.5)
+
+    def test_person_far_away_no_violation(self, mock_robot: Robot) -> None:
+        """Move to (5,5) with person at (1,1): no violation."""
+        world = WorldState()
+        world.detected_objects.append(
+            DetectedObject("p1", "person", 1.0, 1.0, confidence=0.9)
+        )
+        policy = SafetyPolicy(name="proximity", human_proximity_limit=0.5)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, world_state=world)
+
+        # Should not raise
+        enforcer.move(x=5.0, y=5.0, speed=0.5)
+
+    def test_empty_detected_objects_no_violation(self, mock_robot: Robot) -> None:
+        """Empty detected_objects: no violation."""
+        world = WorldState()
+        policy = SafetyPolicy(name="proximity", human_proximity_limit=0.5)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, world_state=world)
+
+        enforcer.move(x=3.0, y=3.0, speed=0.5)
+
+    def test_violation_in_audit_log(self, mock_robot: Robot) -> None:
+        """Violation appears in audit_log with person coordinates."""
+        world = WorldState()
+        world.detected_objects.append(
+            DetectedObject("p1", "person", 2.1, 2.1, confidence=0.95)
+        )
+        policy = SafetyPolicy(name="proximity", human_proximity_limit=0.5)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, world_state=world)
+
+        with pytest.raises(SafetyViolation):
+            enforcer.move(x=2.0, y=2.0, speed=0.5)
+
+        proximity_entries = [
+            e for e in enforcer.audit_log
+            if e.details.get("type") == "human_proximity"
+        ]
+        assert len(proximity_entries) == 1
+        assert "human_position" in proximity_entries[0].details
+        assert "distance" in proximity_entries[0].details
+
+    def test_pedestrian_label_detected(self, mock_robot: Robot) -> None:
+        """Pedestrian label is also recognized as a human."""
+        world = WorldState()
+        world.detected_objects.append(
+            DetectedObject("p1", "pedestrian", 3.0, 3.0, confidence=0.9)
+        )
+        policy = SafetyPolicy(name="proximity", human_proximity_limit=0.5)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, world_state=world)
+
+        with pytest.raises(SafetyViolation, match="Human detected"):
+            enforcer.move(x=3.0, y=3.0, speed=0.5)
+
+    def test_human_label_detected(self, mock_robot: Robot) -> None:
+        """'human' label is also recognized."""
+        world = WorldState()
+        world.detected_objects.append(
+            DetectedObject("h1", "Human", 1.0, 1.0, confidence=0.9)
+        )
+        policy = SafetyPolicy(name="proximity", human_proximity_limit=2.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, world_state=world)
+
+        with pytest.raises(SafetyViolation):
+            enforcer.move(x=1.0, y=1.0, speed=0.5)
+
+
+# ===========================================================================
+# SF-03/SF-10: Battery-aware safety gate
+# ===========================================================================
+
+class TestBatterySafetyGate:
+    """SF-03: Battery-aware safety — refuse tasks below return threshold."""
+
+    def test_low_battery_raises_violation(self, mock_robot: Robot) -> None:
+        """8% battery raises SafetyViolation for a 100m trip."""
+        battery = BatteryMonitor(robot_id="safety_bot", dock_position=(0.0, 0.0))
+        battery.update(percentage=8.0)
+
+        policy = SafetyPolicy(name="battery_test", min_battery_pct=15.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, battery_monitor=battery)
+
+        with pytest.raises(SafetyViolation, match="Battery"):
+            enforcer.move(x=100.0, y=0.0, speed=0.5)
+
+    def test_sufficient_battery_allows_move(self, mock_robot: Robot) -> None:
+        """80% battery allows a 100m trip."""
+        battery = BatteryMonitor(robot_id="safety_bot", dock_position=(0.0, 0.0))
+        battery.update(percentage=80.0)
+
+        policy = SafetyPolicy(name="battery_test", min_battery_pct=15.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, battery_monitor=battery)
+
+        # Should not raise
+        enforcer.move(x=50.0, y=86.6, speed=0.5)  # ~100m from origin
+
+    def test_no_battery_monitor_allows_move(self, mock_robot: Robot) -> None:
+        """No battery monitor attached: move proceeds normally."""
+        policy = SafetyPolicy(name="no_battery")
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        # No battery_monitor — should not raise
+        enforcer.move(x=100.0, y=100.0, speed=0.5)
+
+    def test_battery_violation_in_audit_log(self, mock_robot: Robot) -> None:
+        """Violation appears in audit_log with percentage and distance."""
+        battery = BatteryMonitor(robot_id="safety_bot", dock_position=(0.0, 0.0))
+        battery.update(percentage=5.0)
+
+        policy = SafetyPolicy(name="battery_audit", min_battery_pct=15.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, battery_monitor=battery)
+
+        with pytest.raises(SafetyViolation):
+            enforcer.move(x=100.0, y=0.0, speed=0.5)
+
+        battery_entries = [
+            e for e in enforcer.audit_log
+            if "battery" in e.details.get("type", "")
+        ]
+        assert len(battery_entries) >= 1
+        assert "battery_pct" in battery_entries[0].details
+        assert "distance_m" in battery_entries[0].details

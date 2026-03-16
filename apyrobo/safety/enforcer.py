@@ -164,6 +164,7 @@ class SafetyPolicy:
         min_battery_pct: float = 15.0,
         speed_profile: SpeedProfile | None = None,
         escalation_timeout: float = 300.0,
+        watchdog_interval: float = 2.0,
     ) -> None:
         self.name = name
         self.max_speed = max_speed
@@ -175,6 +176,7 @@ class SafetyPolicy:
         self.min_battery_pct = min_battery_pct
         self.speed_profile = speed_profile
         self.escalation_timeout = escalation_timeout
+        self.watchdog_interval = watchdog_interval
 
     @classmethod
     def from_ref(cls, ref: SafetyPolicyRef) -> SafetyPolicy:
@@ -266,6 +268,8 @@ class SafetyEnforcer:
         # SF-05: Watchdog state
         self._last_commanded_position: tuple[float, float] | None = None
         self._watchdog_active = False
+        self._watchdog_timer: threading.Timer | None = None
+        self._watchdog_triggered_count = 0
 
         # SF-03: Escalation state
         self._escalation_event = threading.Event()
@@ -442,6 +446,9 @@ class SafetyEnforcer:
         self._move_timer.daemon = True
         self._move_timer.start()
 
+        # --- SF-05: Start watchdog timer for periodic odometry check ---
+        self._start_move_watchdog()
+
         # --- All checks passed — forward to robot ---
         self._robot.move(x=x, y=y, speed=speed)
 
@@ -503,11 +510,13 @@ class SafetyEnforcer:
     def stop(self) -> None:
         """Stop is always allowed — safety never prevents stopping."""
         self._cancel_move_timer()
+        self._cancel_watchdog_timer()
         self._robot.stop()
 
     def cancel(self) -> None:
         """Cancel is always allowed."""
         self._cancel_move_timer()
+        self._cancel_watchdog_timer()
         self._robot.cancel()
 
     # ------------------------------------------------------------------
@@ -542,6 +551,7 @@ class SafetyEnforcer:
 
     def disconnect(self) -> None:
         self._cancel_move_timer()
+        self._cancel_watchdog_timer()
         self._robot.disconnect()
 
     # ------------------------------------------------------------------
@@ -558,7 +568,7 @@ class SafetyEnforcer:
         if ws is None:
             return
 
-        human_labels = {"person", "human"}
+        human_labels = {"person", "human", "pedestrian"}
         limit = self._policy.human_proximity_limit
 
         for obj in ws.detected_objects:
@@ -673,8 +683,72 @@ class SafetyEnforcer:
                 logger.warning("Failed to persist audit entry: %s", e)
 
     # ------------------------------------------------------------------
-    # SF-05: Runtime watchdog
+    # SF-05: Runtime watchdog — odometry divergence detection
     # ------------------------------------------------------------------
+
+    def _start_move_watchdog(self) -> None:
+        """Start the periodic watchdog timer after a move command."""
+        self._cancel_watchdog_timer()
+        self._watchdog_active = True
+        self._reschedule_watchdog()
+
+    def _cancel_watchdog_timer(self) -> None:
+        """Cancel any pending watchdog timer."""
+        self._watchdog_active = False
+        if self._watchdog_timer is not None:
+            self._watchdog_timer.cancel()
+            self._watchdog_timer = None
+
+    def _reschedule_watchdog(self) -> None:
+        """Schedule the next watchdog check using threading.Timer."""
+        if not self._watchdog_active:
+            return
+        self._watchdog_timer = threading.Timer(
+            self._policy.watchdog_interval, self._watchdog_check,
+        )
+        self._watchdog_timer.daemon = True
+        self._watchdog_timer.start()
+
+    def _watchdog_check(self) -> None:
+        """
+        Timer callback: compare actual odometry vs commanded position.
+
+        If divergence exceeds tolerance, stop the robot, record audit,
+        and raise SafetyViolation. Otherwise, reschedule for the next check.
+        """
+        if self._last_commanded_position is None:
+            self._reschedule_watchdog()
+            return
+
+        actual = self._robot.get_position()
+        cx, cy = self._last_commanded_position
+        dist = math.sqrt((actual[0] - cx) ** 2 + (actual[1] - cy) ** 2)
+
+        if dist > self._policy.watchdog_tolerance:
+            self._watchdog_triggered_count += 1
+            logger.error(
+                "SAFETY WATCHDOG: Position divergence %.2fm exceeds tolerance "
+                "%.2fm — E-STOP triggered",
+                dist, self._policy.watchdog_tolerance,
+            )
+            self._robot.stop()
+            self._cancel_move_timer()
+            intervention = {
+                "type": "watchdog_triggered",
+                "divergence_m": dist,
+                "tolerance_m": self._policy.watchdog_tolerance,
+                "commanded": self._last_commanded_position,
+                "actual": actual,
+            }
+            self._interventions.append(intervention)
+            self._record_audit("watchdog_triggered", intervention)
+            self._watchdog_active = False
+            raise SafetyViolation(
+                f"Divergence {dist:.2f}m > tolerance "
+                f"{self._policy.watchdog_tolerance}m"
+            )
+
+        self._reschedule_watchdog()
 
     def check_watchdog(self) -> dict[str, Any] | None:
         """
@@ -700,6 +774,7 @@ class SafetyEnforcer:
         }
 
         if not result["ok"]:
+            self._watchdog_triggered_count += 1
             logger.error(
                 "SAFETY WATCHDOG: Position divergence %.2fm exceeds tolerance "
                 "%.2fm — E-STOP triggered",
@@ -713,24 +788,30 @@ class SafetyEnforcer:
                 "actual": actual,
             }
             self._interventions.append(intervention)
-            self._record_audit("watchdog", intervention)
+            self._record_audit("watchdog_triggered", intervention)
             self._robot.stop()
             self._cancel_move_timer()
+            self._cancel_watchdog_timer()
 
         return result
 
-    def start_watchdog(self, interval: float = 1.0) -> threading.Timer:
+    def start_watchdog(self, interval: float | None = None) -> threading.Timer:
         """
         Start a periodic watchdog that checks odometry vs commanded position.
 
+        Args:
+            interval: Check interval in seconds. Defaults to policy watchdog_interval.
+
         Returns the Timer object so the caller can cancel it.
         """
+        if interval is not None:
+            self._policy.watchdog_interval = interval
         self._watchdog_active = True
 
         def _watchdog_loop() -> None:
             while self._watchdog_active:
                 self.check_watchdog()
-                time.sleep(interval)
+                time.sleep(self._policy.watchdog_interval)
 
         t = threading.Thread(target=_watchdog_loop, daemon=True)
         t.start()
@@ -738,7 +819,12 @@ class SafetyEnforcer:
 
     def stop_watchdog(self) -> None:
         """Stop the periodic watchdog."""
-        self._watchdog_active = False
+        self._cancel_watchdog_timer()
+
+    @property
+    def watchdog_triggered_count(self) -> int:
+        """Number of times the watchdog has triggered an E-STOP."""
+        return self._watchdog_triggered_count
 
     # ------------------------------------------------------------------
     # SF-07: Dynamic collision zones from WorldState
