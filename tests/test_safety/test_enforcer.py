@@ -24,6 +24,7 @@ from apyrobo.safety.enforcer import (
     STRICT_POLICY,
 )
 from apyrobo.sensors.pipeline import DetectedObject, WorldState
+from apyrobo.operations import BatteryMonitor
 
 
 # ---------------------------------------------------------------------------
@@ -526,3 +527,60 @@ class TestHumanProximityWorldState:
 
         with pytest.raises(SafetyViolation):
             enforcer.move(x=1.0, y=1.0, speed=0.5)
+
+
+# ===========================================================================
+# SF-03/SF-10: Battery-aware safety gate
+# ===========================================================================
+
+class TestBatterySafetyGate:
+    """SF-03: Battery-aware safety — refuse tasks below return threshold."""
+
+    def test_low_battery_raises_violation(self, mock_robot: Robot) -> None:
+        """8% battery raises SafetyViolation for a 100m trip."""
+        battery = BatteryMonitor(robot_id="safety_bot", dock_position=(0.0, 0.0))
+        battery.update(percentage=8.0)
+
+        policy = SafetyPolicy(name="battery_test", min_battery_pct=15.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, battery_monitor=battery)
+
+        with pytest.raises(SafetyViolation, match="Battery"):
+            enforcer.move(x=100.0, y=0.0, speed=0.5)
+
+    def test_sufficient_battery_allows_move(self, mock_robot: Robot) -> None:
+        """80% battery allows a 100m trip."""
+        battery = BatteryMonitor(robot_id="safety_bot", dock_position=(0.0, 0.0))
+        battery.update(percentage=80.0)
+
+        policy = SafetyPolicy(name="battery_test", min_battery_pct=15.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, battery_monitor=battery)
+
+        # Should not raise
+        enforcer.move(x=50.0, y=86.6, speed=0.5)  # ~100m from origin
+
+    def test_no_battery_monitor_allows_move(self, mock_robot: Robot) -> None:
+        """No battery monitor attached: move proceeds normally."""
+        policy = SafetyPolicy(name="no_battery")
+        enforcer = SafetyEnforcer(mock_robot, policy=policy)
+
+        # No battery_monitor — should not raise
+        enforcer.move(x=100.0, y=100.0, speed=0.5)
+
+    def test_battery_violation_in_audit_log(self, mock_robot: Robot) -> None:
+        """Violation appears in audit_log with percentage and distance."""
+        battery = BatteryMonitor(robot_id="safety_bot", dock_position=(0.0, 0.0))
+        battery.update(percentage=5.0)
+
+        policy = SafetyPolicy(name="battery_audit", min_battery_pct=15.0)
+        enforcer = SafetyEnforcer(mock_robot, policy=policy, battery_monitor=battery)
+
+        with pytest.raises(SafetyViolation):
+            enforcer.move(x=100.0, y=0.0, speed=0.5)
+
+        battery_entries = [
+            e for e in enforcer.audit_log
+            if "battery" in e.details.get("type", "")
+        ]
+        assert len(battery_entries) >= 1
+        assert "battery_pct" in battery_entries[0].details
+        assert "distance_m" in battery_entries[0].details
