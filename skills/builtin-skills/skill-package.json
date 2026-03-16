@@ -1,0 +1,21 @@
+{
+  "name": "builtin-skills",
+  "version": "1.0.0",
+  "description": "Core APYROBO skill handlers for navigation, manipulation, and status reporting",
+  "author": "APYROBO Team",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/apyrobo/Apyrobo",
+  "required_capabilities": ["navigate", "rotate", "pick", "place"],
+  "min_apyrobo_version": "0.1.0",
+  "skills": [
+    "navigate_to",
+    "stop",
+    "rotate",
+    "pick_object",
+    "place_object",
+    "report_status",
+    "report_battery_status"
+  ],
+  "dependencies": {},
+  "tags": ["core", "builtin", "navigation", "manipulation"]
+}

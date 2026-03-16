@@ -1,0 +1,13 @@
+{
+  "name": "navigation-extras",
+  "version": "1.0.0",
+  "description": "Extended navigation skills: waypoint tours and autonomous docking",
+  "author": "APYROBO Team",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/apyrobo/Apyrobo",
+  "required_capabilities": ["navigate"],
+  "min_apyrobo_version": "0.1.0",
+  "skills": ["waypoint_tour", "dock_to_charger"],
+  "dependencies": {"builtin-skills": ">=1.0.0"},
+  "tags": ["navigation", "waypoint", "docking", "charging"]
+}

@@ -1,0 +1,9 @@
+{
+  "skill_id": "report_status",
+  "name": "Report Status",
+  "description": "Report current robot status (position, battery, held objects)",
+  "required_capability": "custom",
+  "parameters": {},
+  "timeout_seconds": 5.0,
+  "retry_count": 0
+}

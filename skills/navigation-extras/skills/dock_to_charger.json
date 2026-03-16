@@ -1,0 +1,19 @@
+{
+  "skill_id": "dock_to_charger",
+  "name": "Dock to Charger",
+  "description": "Navigate to the charging dock and initiate docking connection",
+  "required_capability": "navigate",
+  "preconditions": [
+    {"name": "robot_idle", "description": "Robot is not currently executing another skill", "check_type": "state"}
+  ],
+  "postconditions": [
+    {"name": "robot_docked", "description": "Robot is connected to the charger", "check_type": "state"}
+  ],
+  "parameters": {
+    "dock_x": 0.0,
+    "dock_y": 0.0
+  },
+  "timeout_seconds": 120.0,
+  "retry_count": 2,
+  "handler_module": "apyrobo.skills.builtins_extended"
+}

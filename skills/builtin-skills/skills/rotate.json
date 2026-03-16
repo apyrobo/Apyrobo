@@ -1,0 +1,12 @@
+{
+  "skill_id": "rotate",
+  "name": "Rotate",
+  "description": "Rotate the robot in place by a given angle (radians)",
+  "required_capability": "rotate",
+  "preconditions": [
+    {"name": "robot_idle", "description": "Robot is not currently executing another skill", "check_type": "state"}
+  ],
+  "parameters": {"angle_rad": 0.0, "speed": null},
+  "timeout_seconds": 30.0,
+  "retry_count": 0
+}

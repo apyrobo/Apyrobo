@@ -1,0 +1,13 @@
+{
+  "name": "inspection",
+  "version": "1.0.0",
+  "description": "Inspection skills: patrol routes with scanning and area surveys",
+  "author": "APYROBO Team",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/apyrobo/Apyrobo",
+  "required_capabilities": ["navigate", "rotate"],
+  "min_apyrobo_version": "0.1.0",
+  "skills": ["patrol_route", "scan_area"],
+  "dependencies": {"builtin-skills": ">=1.0.0"},
+  "tags": ["inspection", "patrol", "scanning", "survey"]
+}

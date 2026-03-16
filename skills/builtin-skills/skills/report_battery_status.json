@@ -1,0 +1,10 @@
+{
+  "skill_id": "report_battery_status",
+  "name": "Report Battery Status",
+  "description": "Report current battery level and estimated remaining runtime",
+  "required_capability": "custom",
+  "parameters": {},
+  "timeout_seconds": 5.0,
+  "retry_count": 0,
+  "handler_module": "apyrobo.skills.builtins_extended"
+}

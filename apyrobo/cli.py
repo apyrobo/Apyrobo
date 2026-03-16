@@ -368,6 +368,32 @@ def cmd_pkg_validate(args: argparse.Namespace) -> None:
     print(f"  Tags: {', '.join(pkg.tags) or '(none)'}")
 
 
+# Reference to the pkg argparser, set during main() so cmd_pkg can print help.
+_p_pkg: argparse.ArgumentParser | None = None
+
+_PKG_COMMANDS = {
+    "init": cmd_pkg_init,
+    "pack": cmd_pkg_pack,
+    "install": cmd_pkg_install,
+    "remove": cmd_pkg_remove,
+    "list": cmd_pkg_list,
+    "info": cmd_pkg_info,
+    "search": cmd_pkg_search,
+    "validate": cmd_pkg_validate,
+}
+
+
+def cmd_pkg(args: argparse.Namespace) -> None:
+    """Dispatch to the appropriate pkg sub-command."""
+    if args.pkg_command is None:
+        if _p_pkg is not None:
+            _p_pkg.print_help()
+        else:
+            print("Usage: apyrobo pkg <subcommand>")
+        return
+    _PKG_COMMANDS[args.pkg_command](args)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -466,23 +492,9 @@ def main() -> None:
         parser.print_help()
         return
 
-    # Dispatch pkg subcommands
-    if args.command == "pkg":
-        pkg_commands = {
-            "init": cmd_pkg_init,
-            "pack": cmd_pkg_pack,
-            "install": cmd_pkg_install,
-            "remove": cmd_pkg_remove,
-            "list": cmd_pkg_list,
-            "info": cmd_pkg_info,
-            "search": cmd_pkg_search,
-            "validate": cmd_pkg_validate,
-        }
-        if args.pkg_command is None:
-            p_pkg.print_help()
-            return
-        pkg_commands[args.pkg_command](args)
-        return
+    # Store pkg parser reference for cmd_pkg help
+    global _p_pkg
+    _p_pkg = p_pkg
 
     commands = {
         "discover": cmd_discover,
@@ -490,6 +502,7 @@ def main() -> None:
         "execute": cmd_execute,
         "skills": cmd_skills,
         "config": cmd_config,
+        "pkg": cmd_pkg,
     }
     commands[args.command](args)
 

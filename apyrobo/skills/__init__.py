@@ -16,3 +16,4 @@ Key components (Phase 2):
 
 # Auto-register built-in handlers so they are always available.
 import apyrobo.skills.builtins as _builtins  # noqa: F401
+import apyrobo.skills.builtins_extended as _builtins_ext  # noqa: F401

@@ -1,0 +1,9 @@
+{
+  "skill_id": "stop",
+  "name": "Stop",
+  "description": "Immediately halt all robot motion",
+  "required_capability": "navigate",
+  "parameters": {},
+  "timeout_seconds": 5.0,
+  "retry_count": 0
+}

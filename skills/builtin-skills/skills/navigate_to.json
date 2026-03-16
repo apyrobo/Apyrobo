@@ -1,0 +1,15 @@
+{
+  "skill_id": "navigate_to",
+  "name": "Navigate To",
+  "description": "Move the robot to a specified (x, y) position",
+  "required_capability": "navigate",
+  "preconditions": [
+    {"name": "robot_idle", "description": "Robot is not currently executing another skill", "check_type": "state"}
+  ],
+  "postconditions": [
+    {"name": "at_position", "description": "Robot is within tolerance of target position", "check_type": "state", "parameters": {"tolerance_m": 0.3}}
+  ],
+  "parameters": {"x": 0.0, "y": 0.0, "speed": 0.5},
+  "timeout_seconds": 60.0,
+  "retry_count": 0
+}
