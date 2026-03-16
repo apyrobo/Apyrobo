@@ -1,0 +1,15 @@
+{
+  "skill_id": "place_object",
+  "name": "Place Object",
+  "description": "Place the held object at the current position",
+  "required_capability": "place",
+  "preconditions": [
+    {"name": "object_held", "description": "Robot is holding an object", "check_type": "state"}
+  ],
+  "postconditions": [
+    {"name": "gripper_open", "description": "Object has been released", "check_type": "state"}
+  ],
+  "parameters": {"target_x": 0.0, "target_y": 0.0},
+  "timeout_seconds": 60.0,
+  "retry_count": 0
+}

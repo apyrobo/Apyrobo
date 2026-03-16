@@ -1,0 +1,16 @@
+{
+  "skill_id": "pick_object",
+  "name": "Pick Object",
+  "description": "Pick up an object at or near the robot's current position",
+  "required_capability": "pick",
+  "preconditions": [
+    {"name": "object_detected", "description": "An object is within grasp range", "check_type": "state"},
+    {"name": "gripper_open", "description": "Gripper is not holding anything", "check_type": "state"}
+  ],
+  "postconditions": [
+    {"name": "object_held", "description": "Object is securely grasped", "check_type": "state"}
+  ],
+  "parameters": {"object_id": null},
+  "timeout_seconds": 60.0,
+  "retry_count": 2
+}

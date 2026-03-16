@@ -1,0 +1,25 @@
+{
+  "skill_id": "waypoint_tour",
+  "name": "Waypoint Tour",
+  "description": "Navigate a loop of waypoints in order, repeating for the specified number of loops",
+  "required_capability": "navigate",
+  "preconditions": [
+    {"name": "robot_idle", "description": "Robot is not currently executing another skill", "check_type": "state"}
+  ],
+  "postconditions": [
+    {"name": "route_completed", "description": "Robot has visited all waypoints", "check_type": "state"}
+  ],
+  "parameters": {
+    "waypoints": [
+      {"x": 1.0, "y": 0.0},
+      {"x": 3.0, "y": 2.0},
+      {"x": 1.0, "y": 4.0},
+      {"x": 0.0, "y": 2.0}
+    ],
+    "speed": 0.5,
+    "loops": 1
+  },
+  "timeout_seconds": 300.0,
+  "retry_count": 1,
+  "handler_module": "apyrobo.skills.builtins_extended"
+}
