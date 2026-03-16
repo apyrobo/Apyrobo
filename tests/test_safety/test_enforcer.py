@@ -84,7 +84,7 @@ class TestWatchdog:
 
         # Verify stop was called (check interventions)
         assert any(
-            i["type"] == "watchdog_triggered" for i in enforcer.interventions
+            i["type"] == "watchdog_estop" for i in enforcer.interventions
         )
 
     def test_watchdog_start_stop(self, enforcer: SafetyEnforcer) -> None:

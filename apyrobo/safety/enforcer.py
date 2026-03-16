@@ -781,7 +781,7 @@ class SafetyEnforcer:
                 divergence, self._policy.watchdog_tolerance,
             )
             intervention = {
-                "type": "watchdog_triggered",
+                "type": "watchdog_estop",
                 "divergence_m": divergence,
                 "tolerance_m": self._policy.watchdog_tolerance,
                 "commanded": self._last_commanded_position,
