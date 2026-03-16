@@ -877,7 +877,8 @@ class Agent:
 
     def execute(self, task: str, robot: Robot,
                 on_event: Any = None, parallel: bool = False,
-                urgency: str | None = None) -> TaskResult:
+                urgency: str | None = None,
+                state_store: Any = None) -> TaskResult:
         """
         Plan and execute a task end-to-end.
 
@@ -890,6 +891,7 @@ class Agent:
             on_event: Optional callback for execution events
             parallel: If True, run independent skills concurrently
             urgency: Urgency level ("high", "normal", "low") for routing
+            state_store: Optional StorageBackend for crash recovery (OB-02)
 
         Returns:
             TaskResult with outcome summary
@@ -913,7 +915,7 @@ class Agent:
 
             # Execute with shared state
             state = ExecutionState()
-            executor = SkillExecutor(robot, state=state)
+            executor = SkillExecutor(robot, state=state, state_store=state_store)
             if on_event:
                 executor.on_event(on_event)
 

@@ -717,3 +717,51 @@ class RedisStateStore(StorageBackend):
 
     def __repr__(self) -> str:
         return f"<RedisStateStore prefix={self._prefix} tasks={self.task_count}>"
+
+
+# ---------------------------------------------------------------------------
+# Factory function
+# ---------------------------------------------------------------------------
+
+def create_state_store(backend: str = "json", **kwargs: Any) -> StorageBackend:
+    """
+    Create a state store instance by backend name.
+
+    Args:
+        backend: "json", "sqlite", or "redis"
+        **kwargs: Passed to the backend constructor (e.g. path=, host=, port=)
+
+    Returns:
+        A StorageBackend instance.
+
+    Usage:
+        store = create_state_store("json", path="/data/state.json")
+        store = create_state_store("sqlite", path="/data/state.db")
+        store = create_state_store("redis", host="redis", port=6379)
+    """
+    if backend == "json":
+        return StateStore(**kwargs)
+    elif backend == "sqlite":
+        return SQLiteStateStore(**kwargs)
+    elif backend == "redis":
+        return RedisStateStore(**kwargs)
+    else:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. Available: 'json', 'sqlite', 'redis'"
+        )
+
+
+def recover_interrupted_tasks(store: StorageBackend) -> list[TaskJournalEntry]:
+    """
+    Check for interrupted tasks on startup and log them.
+
+    Returns the list of interrupted tasks for the caller to handle.
+    """
+    interrupted = store.get_interrupted_tasks()
+    if interrupted:
+        logger.warning(
+            "Found %d interrupted task(s) from previous session: %s",
+            len(interrupted),
+            [t.task_id for t in interrupted],
+        )
+    return interrupted
