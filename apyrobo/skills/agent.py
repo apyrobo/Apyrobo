@@ -375,18 +375,45 @@ class ToolCallingProvider(AgentProvider):
             + json.dumps(capabilities)
         )
 
-        response = litellm.completion(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": task},
-            ],
-            tools=tools,
-            tool_choice="auto",
-            temperature=0.1,
-        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": task},
+        ]
+
+        # Try with tool_choice='auto'; fall back if model doesn't support it
+        try:
+            response = litellm.completion(
+                model=self._model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.1,
+            )
+        except litellm.exceptions.BadRequestError:
+            logger.warning(
+                "ToolCallingProvider: model %s does not support tool_choice, "
+                "falling back to text mode",
+                self._model,
+            )
+            return self._plan_from_text(task, available_skills, capabilities, messages)
 
         # Extract tool calls from response
+        plan = self._extract_tool_calls(response)
+
+        # If model returned text instead of tool calls, parse as fallback
+        if not plan:
+            content = getattr(response.choices[0].message, "content", "") or ""
+            if content.strip():
+                logger.warning(
+                    "ToolCallingProvider: model returned text instead of tool calls, "
+                    "attempting text parse fallback",
+                )
+                plan = self._parse_text_plan(content)
+
+        return plan
+
+    def _extract_tool_calls(self, response: Any) -> list[dict[str, Any]]:
+        """Extract skill steps from tool call response."""
         plan = []
         msg = response.choices[0].message
         if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -399,8 +426,66 @@ class ToolCallingProvider(AgentProvider):
                     "skill_id": tc.function.name,
                     "parameters": params,
                 })
-
         return plan
+
+    def _plan_from_text(
+        self, task: str, available_skills: list[dict[str, Any]],
+        capabilities: list[str], messages: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        """Retry as text-only when tool calling is not supported."""
+        import litellm
+
+        skill_names = [s["skill_id"] for s in available_skills]
+        text_messages = messages + [{
+            "role": "system",
+            "content": (
+                "Respond ONLY with a JSON array of skill steps. "
+                "Each element must have \"skill_id\" and \"parameters\". "
+                f"Available skills: {json.dumps(skill_names)}"
+            ),
+        }]
+
+        response = litellm.completion(
+            model=self._model,
+            messages=text_messages,
+            temperature=0.1,
+        )
+        content = getattr(response.choices[0].message, "content", "") or ""
+        return self._parse_text_plan(content)
+
+    @staticmethod
+    def _parse_text_plan(text: str) -> list[dict[str, Any]]:
+        """Parse a JSON plan from free-form text content."""
+        # Try to find a JSON array in the text
+        text = text.strip()
+
+        # Try direct parse first
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [
+                    {"skill_id": step.get("skill_id", ""), "parameters": step.get("parameters", {})}
+                    for step in parsed
+                    if isinstance(step, dict) and step.get("skill_id")
+                ]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Try extracting JSON array from markdown code blocks or surrounding text
+        match = re.search(r'\[.*\]', text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, list):
+                    return [
+                        {"skill_id": step.get("skill_id", ""), "parameters": step.get("parameters", {})}
+                        for step in parsed
+                        if isinstance(step, dict) and step.get("skill_id")
+                    ]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return []
 
 
 # ---------------------------------------------------------------------------
