@@ -23,6 +23,7 @@ from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import TaskResult
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
 from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent, ExecutionState, SkillStatus
+from apyrobo.skills.registry import SkillRegistry, DEFAULT_REGISTRY_DIR
 from apyrobo.observability import trace_context, emit_event
 
 logger = logging.getLogger(__name__)
@@ -623,6 +624,11 @@ class Agent:
         # With urgency (IN-01):
         result = agent.execute(task="obstacle! reroute", robot=robot, urgency="high")
 
+        # With a skill registry (SK-02 — idiomatic production usage):
+        from apyrobo.skills.registry import SkillRegistry
+        reg = SkillRegistry()
+        agent = Agent(provider="rule", registry=reg)
+
         # With a skill library for custom skills:
         from apyrobo.skills.library import SkillLibrary
         lib = SkillLibrary("/workspace/skills")
@@ -633,7 +639,23 @@ class Agent:
 
     def __init__(self, provider: str = "auto", **kwargs: Any) -> None:
         self._library = kwargs.pop("library", None)
+        self._registry: SkillRegistry | None = kwargs.pop("registry", None)
         self._use_constrained_prompt = kwargs.pop("constrained_prompt", False)
+
+        # Auto-discover default registry if none provided
+        if self._registry is None and DEFAULT_REGISTRY_DIR.exists():
+            try:
+                self._registry = SkillRegistry()
+                if self._registry.package_count > 0:
+                    logger.info(
+                        "Auto-discovered registry with %d packages",
+                        self._registry.package_count,
+                    )
+                else:
+                    self._registry = None
+            except Exception:
+                logger.debug("Could not load default registry, skipping")
+                self._registry = None
 
         if provider == "routed":
             # Use the inference router
@@ -663,10 +685,17 @@ class Agent:
         self._last_state: ExecutionState | None = None
 
     def _get_skill_catalog(self) -> dict[str, Skill]:
-        """Get the merged skill catalog (built-in + library custom skills)."""
+        """
+        Get the merged skill catalog.
+
+        Priority (highest wins): library > registry > built-in.
+        """
+        catalog = dict(BUILTIN_SKILLS)
+        if self._registry is not None:
+            catalog.update(self._registry.all_skills())
         if self._library is not None:
-            return self._library.all_skills()
-        return dict(BUILTIN_SKILLS)
+            catalog.update(self._library.all_skills())
+        return catalog
 
     def plan(self, task: str, robot: Robot, urgency: str | None = None) -> SkillGraph:
         """
