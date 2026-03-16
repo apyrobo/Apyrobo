@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)" rx="8"/>
+  <!-- Terminal window chrome -->
+  <rect x="40" y="30" width="560" height="300" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+  <circle cx="62" cy="48" r="6" fill="#ff5f56"/>
+  <circle cx="82" cy="48" r="6" fill="#ffbd2e"/>
+  <circle cx="102" cy="48" r="6" fill="#27c93f"/>
+  <text x="300" y="52" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="12">apyrobo demo</text>
+  <!-- Terminal content -->
+  <text x="60" y="85" fill="#7ee787" font-family="monospace" font-size="13">$ pip install apyrobo</text>
+  <text x="60" y="110" fill="#8b949e" font-family="monospace" font-size="13">Successfully installed apyrobo-0.1.0</text>
+  <text x="60" y="145" fill="#7ee787" font-family="monospace" font-size="13">$ python</text>
+  <text x="60" y="170" fill="#79c0ff" font-family="monospace" font-size="13">&gt;&gt;&gt; from apyrobo import Robot, Agent</text>
+  <text x="60" y="195" fill="#79c0ff" font-family="monospace" font-size="13">&gt;&gt;&gt; robot = Robot.discover("mock://turtlebot4")</text>
+  <text x="60" y="220" fill="#79c0ff" font-family="monospace" font-size="13">&gt;&gt;&gt; agent = Agent(provider="rule")</text>
+  <text x="60" y="245" fill="#79c0ff" font-family="monospace" font-size="13">&gt;&gt;&gt; result = agent.execute(</text>
+  <text x="60" y="265" fill="#79c0ff" font-family="monospace" font-size="13">...     "deliver package to dock 3", robot)</text>
+  <text x="60" y="290" fill="#7ee787" font-family="monospace" font-size="13">&gt;&gt;&gt; print(result.status)</text>
+  <text x="60" y="310" fill="#f0f6fc" font-family="monospace" font-size="13" font-weight="bold">completed</text>
+</svg>
