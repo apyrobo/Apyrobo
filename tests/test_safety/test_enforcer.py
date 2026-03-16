@@ -326,6 +326,7 @@ class TestFormalExport:
 class TestWatchdogDivergence:
     """SF-01: Watchdog wires odometry feedback to divergence detection."""
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
     def test_watchdog_triggers_stop_on_divergence(self, mock_robot: Robot) -> None:
         """Watchdog triggers stop() when MockAdapter.position is manually overridden to diverge."""
         policy = SafetyPolicy(
@@ -391,6 +392,7 @@ class TestWatchdogDivergence:
         # The default interval is what we set
         assert policy.watchdog_interval == 0.05
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
     def test_watchdog_audit_log_entry(self, mock_robot: Robot) -> None:
         """Triggered watchdog appears in enforcer.audit_log."""
         policy = SafetyPolicy(

@@ -743,7 +743,10 @@ class SafetyEnforcer:
             self._interventions.append(intervention)
             self._record_audit("watchdog_triggered", intervention)
             self._watchdog_active = False
-            return
+            raise SafetyViolation(
+                f"Divergence {dist:.2f}m > tolerance "
+                f"{self._policy.watchdog_tolerance}m"
+            )
 
         self._reschedule_watchdog()
 
