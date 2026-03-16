@@ -11,4 +11,14 @@ Key components:
     - router: InferenceRouter with multi-tier fallback
     - Urgency levels: HIGH (edge), NORMAL (cloud preferred), LOW (batch OK)
     - Health tracking: per-provider latency, error rate, availability
+    - TokenBudget: per-tier and global token budget tracking
+    - BudgetExceeded: raised when budget limit is hit
 """
+
+from apyrobo.inference.router import (  # noqa: F401
+    BudgetExceeded,
+    InferenceRouter,
+    InferenceTier,
+    TokenBudget,
+    Urgency,
+)

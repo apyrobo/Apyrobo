@@ -69,6 +69,7 @@ from enum import Enum
 from typing import Any, Generator
 
 from apyrobo.skills.agent import AgentProvider, RuleBasedProvider, LLMProvider
+from apyrobo.observability import emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,23 @@ class Urgency(str, Enum):
     HIGH = "high"       # Reactive: obstacle avoidance, emergency reroute (<500ms)
     NORMAL = "normal"   # Standard planning: task decomposition (~1-5s OK)
     LOW = "low"         # Background: plan optimisation, learning (latency tolerant)
+
+
+# ---------------------------------------------------------------------------
+# Budget exceeded exception
+# ---------------------------------------------------------------------------
+
+class BudgetExceeded(Exception):
+    """Raised when a tier's token budget has been exceeded."""
+
+    def __init__(self, used: int, limit: int, tier: str = "") -> None:
+        self.used = used
+        self.limit = limit
+        self.tier = tier
+        msg = f"{used}/{limit} tokens used"
+        if tier:
+            msg = f"[{tier}] {msg}"
+        super().__init__(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +275,13 @@ class TokenBudget:
         self._alerts_sent: set[str] = set()
         self._callbacks: list[Any] = []
 
+    def check(self, estimated: int = 0) -> None:
+        """Raise BudgetExceeded if budget is already exceeded or would be with estimated tokens."""
+        if self.total_tokens >= self.monthly_limit or self.total_tokens + estimated > self.monthly_limit:
+            raise BudgetExceeded(
+                used=self.total_tokens, limit=self.monthly_limit,
+            )
+
     def record(self, tier_name: str, input_tokens: int = 0, output_tokens: int = 0,
                cost: float = 0.0) -> None:
         """Record token usage for a tier."""
@@ -273,6 +298,7 @@ class TokenBudget:
                 "Token budget alert: %.0f%% used (%d/%d tokens)",
                 pct, total_usage, self.monthly_limit,
             )
+            emit_event("budget_alert", pct=pct, used=total_usage, limit=self.monthly_limit)
             for cb in self._callbacks:
                 try:
                     cb("budget_warning", pct, total_usage)
@@ -285,6 +311,7 @@ class TokenBudget:
                 "Token budget EXCEEDED: %d/%d tokens",
                 total_usage, self.monthly_limit,
             )
+            emit_event("budget_exceeded", pct=100.0, used=total_usage, limit=self.monthly_limit)
             for cb in self._callbacks:
                 try:
                     cb("budget_exceeded", 100.0, total_usage)
@@ -452,6 +479,7 @@ class InferenceTier:
         recovery_timeout: float = 30.0,
         is_vlm: bool = False,
         is_edge: bool = False,
+        budget: TokenBudget | None = None,
     ) -> None:
         self.name = name
         self.provider = provider
@@ -465,6 +493,7 @@ class InferenceTier:
         )
         self.is_vlm = is_vlm      # IN-08: vision-language model tier
         self.is_edge = is_edge    # IN-10: fine-tuned edge model
+        self.budget = budget      # IN-02: per-tier token budget
 
     def __repr__(self) -> str:
         tags = []
@@ -528,6 +557,7 @@ class InferenceRouter(AgentProvider):
         recovery_timeout: float = 30.0,
         is_vlm: bool = False,
         is_edge: bool = False,
+        budget: TokenBudget | None = None,
     ) -> None:
         """Add an inference tier. Lower priority = preferred."""
         if priority is None:
@@ -540,6 +570,7 @@ class InferenceRouter(AgentProvider):
             recovery_timeout=recovery_timeout,
             is_vlm=is_vlm,
             is_edge=is_edge,
+            budget=budget,
         )
         self._tiers.append(tier)
         self._tiers.sort(key=lambda t: t.priority)
@@ -640,6 +671,18 @@ class InferenceRouter(AgentProvider):
 
         # Try each eligible tier
         for tier in eligible:
+            # IN-02: Check per-tier budget before attempting
+            if tier.budget is not None:
+                try:
+                    tier.budget.check()
+                except BudgetExceeded:
+                    logger.warning(
+                        "Router: tier %s over budget, skipping to next tier",
+                        tier.name,
+                    )
+                    emit_event("budget_exceeded", tier=tier.name)
+                    continue
+
             result = self._try_tier(tier, task, available_skills, capabilities)
             if result is not None:
                 # IN-07: Cache the result
@@ -755,6 +798,11 @@ class InferenceRouter(AgentProvider):
             self._token_budget.record(tier.name, input_tokens=estimated_tokens,
                                        output_tokens=estimated_tokens // 2)
 
+            # IN-02: Record usage on per-tier budget
+            if tier.budget is not None:
+                tier.budget.record(tier.name, input_tokens=estimated_tokens,
+                                   output_tokens=estimated_tokens // 2)
+
             # Check latency budget
             if latency_ms > tier.max_latency_ms:
                 logger.warning(
@@ -846,6 +894,18 @@ class InferenceRouter(AgentProvider):
     @property
     def token_budget(self) -> TokenBudget:
         return self._token_budget
+
+    def get_budget_status(self) -> dict[str, Any]:
+        """Return budget status for dashboard exposure."""
+        status = self._token_budget.to_dict()
+        # Include per-tier budgets
+        tier_budgets = {}
+        for t in self._tiers:
+            if t.budget is not None:
+                tier_budgets[t.name] = t.budget.to_dict()
+        if tier_budgets:
+            status["tier_budgets"] = tier_budgets
+        return status
 
     # ------------------------------------------------------------------
     # IN-07: Plan cache access
