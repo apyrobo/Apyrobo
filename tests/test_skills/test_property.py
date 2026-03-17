@@ -10,23 +10,13 @@ from typing import Any
 
 import pytest
 
-try:
-    from hypothesis import given, settings, assume, HealthCheck
-    from hypothesis import strategies as st
-
-    HAS_HYPOTHESIS = True
-except ImportError:
-    HAS_HYPOTHESIS = False
+hypothesis = pytest.importorskip("hypothesis")
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
 
 from apyrobo.skills.skill import Skill, SkillStatus
 from apyrobo.skills.executor import SkillGraph
 from apyrobo.core.schemas import CapabilityType
-
-
-pytestmark = pytest.mark.skipif(
-    not HAS_HYPOTHESIS,
-    reason="hypothesis not installed",
-)
 
 
 # ---------------------------------------------------------------------------
