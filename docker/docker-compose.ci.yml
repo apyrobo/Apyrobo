@@ -1,0 +1,15 @@
+# Lightweight Docker Compose for CI — uses Dockerfile.ci (no ROS)
+# Validates that the container builds and tests pass.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.ci.yml build
+#   docker compose -f docker/docker-compose.ci.yml run --rm apyrobo python3 run_tests.py
+
+services:
+  apyrobo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ci
+    container_name: apyrobo-ci
+    working_dir: /workspace
+    command: python3 -m pytest tests/ -v --timeout=120
