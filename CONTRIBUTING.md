@@ -2,15 +2,41 @@
 
 Thanks for your interest in APYROBO! We're currently building privately toward our MVP demo. Once the repository goes public, we'll actively welcome contributions.
 
-## When We Open Up
+## Where to Start
 
-After the v0.1.0-mvp release, we'll accept contributions in these areas:
+Check the [ROADMAP.md](ROADMAP.md) for the full list of contribution opportunities. Items are labeled:
 
-- **New capability adapters** — support for additional robot platforms
-- **Skill definitions** — reusable skill JSON files for common tasks
+- ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) — Well-scoped, mentored, great for newcomers
+- ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) — Community contributions welcome, may require domain expertise
+
+### Good First Issues
+
+| Task | Milestone | Difficulty |
+|------|-----------|------------|
+| Increase test coverage to 90% (voice, handlers, edge cases) | v0.2.0 | Easy |
+| Create a new skill package (e.g. patrol, inspection) | v0.2.0 | Easy |
+| Add Gazebo adapter improvements (spawn/delete/reset) | v0.2.0 | Easy-Medium |
+| Write v0.x → v1.0 migration guide | v1.0.0 | Easy |
+| Add Kubernetes deployment template | v0.4.0 | Easy-Medium |
+
+### Help Wanted
+
+| Task | Milestone | Difficulty |
+|------|-----------|------------|
+| Voice adapter — Whisper STT + Piper TTS | v0.2.0 | Medium |
+| VLM integration — camera-informed planning | v0.3.0 | Hard |
+| MuJoCo simulation adapter | v0.3.0 | Medium |
+| Formal safety verification proofs | v0.3.0 | Hard |
+| Nav2 / MoveIt ROS 2 adapters | v0.2.0 | Medium-Hard |
+
+### Other Contributions
+
+We also welcome:
+
 - **Bug reports and fixes**
 - **Documentation improvements**
-- **Test coverage improvements**
+- **New capability adapters** for additional robot platforms
+- **Skill definitions** — reusable skill JSON files for common tasks
 
 ## Development Setup
 
