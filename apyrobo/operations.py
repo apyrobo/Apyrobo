@@ -586,16 +586,95 @@ class WebhookEmitter:
 # =====================================================================
 
 
-class ScheduledTaskRunner:
-    """OP-06: cron-like periodic task runner for skill/task callbacks."""
+def _parse_cron_to_seconds(expr: str) -> float:
+    """Parse a simple cron expression and return the interval in seconds.
 
-    def __init__(self) -> None:
+    Supported patterns:
+        '*/N * * * *'  -> every N minutes
+        '0 N * * *'    -> every 24 hours (daily at hour N)
+        '0 */N * * *'  -> every N hours
+        '* * * * *'    -> every 60 seconds (every minute)
+    Falls back to 3600 (1 hour) for unrecognised expressions.
+    """
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return 3600.0
+
+    minute, hour = parts[0], parts[1]
+
+    # */N * * * * -> every N minutes
+    if minute.startswith("*/") and hour == "*":
+        try:
+            return float(minute[2:]) * 60
+        except ValueError:
+            return 3600.0
+
+    # 0 */N * * * -> every N hours
+    if minute == "0" and hour.startswith("*/"):
+        try:
+            return float(hour[2:]) * 3600
+        except ValueError:
+            return 3600.0
+
+    # 0 N * * * -> daily (every 24h)
+    if minute == "0" and hour.isdigit():
+        return 86400.0
+
+    # * * * * * -> every minute
+    if minute == "*" and hour == "*":
+        return 60.0
+
+    return 3600.0
+
+
+class ScheduledTaskRunner:
+    """OP-06: cron-like periodic task runner for skill/task callbacks.
+
+    Supports two registration modes:
+        - ``add_interval_job(name, interval_s, fn)`` — run a plain callable
+          on a fixed interval (simple mode, no agent needed).
+        - ``add_task(name, cron_expr, task_description, robot, agent)`` —
+          run ``agent.execute(task_description, robot)`` on a cron schedule,
+          storing results in an optional StateStore.
+    """
+
+    def __init__(self, state_store: Any | None = None) -> None:
         self._jobs: list[dict[str, Any]] = []
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._state_store = state_store
+
+    # -- simple interval jobs (backwards-compatible) -------------------------
 
     def add_interval_job(self, name: str, interval_s: float, fn: Callable[[], None]) -> None:
-        self._jobs.append({"name": name, "interval_s": interval_s, "fn": fn, "next": time.time() + interval_s})
+        self._jobs.append({
+            "name": name, "interval_s": interval_s, "fn": fn,
+            "next": time.time() + interval_s, "mode": "fn",
+        })
+
+    # -- agent-based cron tasks (OP-02) --------------------------------------
+
+    def add_task(
+        self,
+        name: str,
+        cron_expr: str,
+        task_description: str,
+        robot: Any,
+        agent: Any,
+    ) -> None:
+        """Register a periodic task that runs ``agent.execute(task_description, robot)``."""
+        interval_s = _parse_cron_to_seconds(cron_expr)
+        self._jobs.append({
+            "name": name,
+            "interval_s": interval_s,
+            "task": task_description,
+            "robot": robot,
+            "agent": agent,
+            "next": time.time() + interval_s,
+            "mode": "agent",
+        })
+
+    # -- lifecycle -----------------------------------------------------------
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -607,27 +686,82 @@ class ScheduledTaskRunner:
                 now = time.time()
                 for job in self._jobs:
                     if now >= job["next"]:
-                        try:
-                            job["fn"]()
-                        except Exception as e:
-                            logger.warning("Scheduled job %s failed: %s", job["name"], e)
+                        self._execute(job, now)
                         job["next"] = now + float(job["interval_s"])
-                time.sleep(0.1)
+                self._stop.wait(0.1)
 
         self._thread = threading.Thread(target=_loop, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    # -- internal execution --------------------------------------------------
+
+    def _execute(self, job: dict[str, Any], now: float) -> None:
+        from apyrobo.observability import emit_event
+
+        name = job["name"]
+        if job["mode"] == "fn":
+            try:
+                job["fn"]()
+                emit_event("scheduled_task_run", task_name=name, status="success")
+            except Exception as e:
+                logger.warning("Scheduled job %s failed: %s", name, e)
+                emit_event("scheduled_task_run", task_name=name, status="error", error=str(e))
+        else:
+            # agent mode
+            try:
+                result = job["agent"].execute(job["task"], job["robot"])
+                if self._state_store and hasattr(self._state_store, "set"):
+                    self._state_store.set(f"scheduled:{name}:last_result", {
+                        "status": getattr(result, "status", "completed"),
+                        "timestamp": now,
+                    })
+                emit_event(
+                    "scheduled_task_run",
+                    task_name=name,
+                    status="success",
+                    result_status=getattr(result, "status", "completed"),
+                )
+            except Exception as e:
+                logger.warning("Scheduled task %s failed: %s", name, e)
+                emit_event("scheduled_task_run", task_name=name, status="error", error=str(e))
 
 
 class OperationsApiServer:
-    """OP-08: lightweight REST API (POST /tasks, GET /robots, GET /health)."""
+    """OP-08: REST API server for fleet operations.
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8081) -> None:
+    Endpoints:
+        GET  /health        → {"status": "ok"}
+        GET  /robots        → list of robots with capabilities
+        POST /tasks         → submit a task (returns 202 with task_id)
+        GET  /tasks/{id}    → task status
+        DELETE /tasks/{id}  → cancel a task
+
+    Supports optional API key authentication via ``auth_manager``,
+    SwarmBus integration for robot discovery, and StateStore for
+    persisting task state.
+    """
+
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8081,
+        auth_manager: Any | None = None,
+        swarm_bus: Any | None = None,
+        state_store: Any | None = None,
+        agent: Any | None = None,
+    ) -> None:
         self.host = host
         self.port = port
-        self._tasks: list[dict[str, Any]] = []
+        self._auth = auth_manager
+        self._bus = swarm_bus
+        self._store = state_store
+        self._agent = agent
+        self._tasks: dict[str, dict[str, Any]] = {}
         self._robots: list[dict[str, Any]] = []
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -635,7 +769,75 @@ class OperationsApiServer:
     def set_robots(self, robots: list[dict[str, Any]]) -> None:
         self._robots = robots
 
+    def _get_robots_list(self) -> list[dict[str, Any]]:
+        """Return robots from SwarmBus if available, else static list."""
+        if self._bus:
+            result = []
+            for rid in self._bus.robot_ids:
+                entry: dict[str, Any] = {"id": rid}
+                try:
+                    cap = self._bus.get_capabilities(rid)
+                    entry["capabilities"] = cap.model_dump() if hasattr(cap, "model_dump") else cap.dict()
+                except Exception:
+                    entry["capabilities"] = {}
+                result.append(entry)
+            return result
+        return list(self._robots)
+
+    def _check_auth(self, handler: Any) -> bool:
+        """Return True if request is authorised (or no auth configured)."""
+        if not self._auth:
+            return True
+        api_key = handler.headers.get("X-API-Key", "")
+        if not api_key:
+            return False
+        user = self._auth.authenticate(api_key)
+        return user is not None
+
+    def _get_task_status(self, task_id: str) -> dict[str, Any] | None:
+        """Look up task in memory, falling back to StateStore."""
+        if task_id in self._tasks:
+            return self._tasks[task_id]
+        if self._store and hasattr(self._store, "get_task"):
+            entry = self._store.get_task(task_id)
+            if entry:
+                return entry.to_dict() if hasattr(entry, "to_dict") else {"task_id": task_id}
+        return None
+
+    def _run_task_background(self, task_id: str, task_desc: str, robot_id: str | None) -> None:
+        """Execute a task via the agent in a background thread."""
+        self._tasks[task_id]["status"] = "running"
+        if self._store and hasattr(self._store, "begin_task"):
+            self._store.begin_task(task_id, {"task": task_desc, "robot_id": robot_id})
+
+        try:
+            robot = None
+            if robot_id and self._bus:
+                try:
+                    robot = self._bus.get_robot(robot_id)
+                except KeyError:
+                    pass
+
+            if self._agent and robot:
+                result = self._agent.execute(task_desc, robot, state_store=self._store)
+                self._tasks[task_id]["status"] = getattr(result, "status", "completed")
+                self._tasks[task_id]["result"] = getattr(result, "to_dict", lambda: {})()
+            else:
+                # No agent or robot — just mark accepted (manual processing)
+                self._tasks[task_id]["status"] = "completed"
+
+            if self._store and hasattr(self._store, "complete_task"):
+                self._store.complete_task(task_id, self._tasks[task_id].get("result"))
+        except Exception as e:
+            logger.warning("Background task %s failed: %s", task_id, e)
+            self._tasks[task_id]["status"] = "failed"
+            self._tasks[task_id]["error"] = str(e)
+            if self._store and hasattr(self._store, "fail_task"):
+                self._store.fail_task(task_id, str(e))
+
     def start(self) -> None:
+        import uuid
+
         outer = self
 
         class _Handler(BaseHTTPRequestHandler):
@@ -647,27 +849,80 @@ class OperationsApiServer:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _read_body(self) -> dict[str, Any]:
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length) if length else b"{}"
+                try:
+                    return json.loads(raw.decode("utf-8"))
+                except Exception:
+                    return {}
+
             def do_GET(self):  # noqa: N802
+                if not outer._check_auth(self):
+                    self._send(401, {"error": "unauthorized"})
+                    return
+
                 if self.path == "/health":
                     self._send(200, {"status": "ok"})
                 elif self.path == "/robots":
-                    self._send(200, {"robots": outer._robots})
+                    self._send(200, {"robots": outer._get_robots_list()})
+                elif self.path.startswith("/tasks/"):
+                    task_id = self.path[len("/tasks/"):]
+                    info = outer._get_task_status(task_id)
+                    if info:
+                        self._send(200, info)
+                    else:
+                        self._send(404, {"error": "task_not_found"})
                 else:
                     self._send(404, {"error": "not_found"})
 
             def do_POST(self):  # noqa: N802
+                if not outer._check_auth(self):
+                    self._send(401, {"error": "unauthorized"})
+                    return
+
                 if self.path != "/tasks":
                     self._send(404, {"error": "not_found"})
                     return
-                length = int(self.headers.get("Content-Length", "0"))
-                raw = self.rfile.read(length) if length else b"{}"
-                try:
-                    payload = json.loads(raw.decode("utf-8"))
-                except Exception:
-                    payload = {}
-                payload["received_at"] = time.time()
-                outer._tasks.append(payload)
-                self._send(202, {"accepted": True, "task": payload})
+
+                payload = self._read_body()
+                task_id = uuid.uuid4().hex[:10]
+                task_desc = payload.get("task", "")
+                robot_id = payload.get("robot_id")
+
+                outer._tasks[task_id] = {
+                    "task_id": task_id,
+                    "task": task_desc,
+                    "robot_id": robot_id,
+                    "status": "queued",
+                    "received_at": time.time(),
+                }
+
+                # Run in background thread
+                t = threading.Thread(
+                    target=outer._run_task_background,
+                    args=(task_id, task_desc, robot_id),
+                    daemon=True,
+                )
+                t.start()
+
+                self._send(202, {"task_id": task_id, "status": "queued"})
+
+            def do_DELETE(self):  # noqa: N802
+                if not outer._check_auth(self):
+                    self._send(401, {"error": "unauthorized"})
+                    return
+
+                if not self.path.startswith("/tasks/"):
+                    self._send(404, {"error": "not_found"})
+                    return
+
+                task_id = self.path[len("/tasks/"):]
+                if task_id in outer._tasks:
+                    outer._tasks[task_id]["status"] = "cancelled"
+                    self._send(200, {"task_id": task_id, "status": "cancelled"})
+                else:
+                    self._send(404, {"error": "task_not_found"})
 
             def log_message(self, fmt: str, *args: Any) -> None:  # silence std logging
                 return

@@ -269,6 +269,89 @@ from apyrobo.persistence import StateStore, SQLiteStateStore, RedisStateStore
 
 ---
 
+## REST API (OperationsApiServer)
+
+### Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| `GET` | `/health` | Health check | Optional |
+| `GET` | `/robots` | List robots with capabilities | Optional |
+| `POST` | `/tasks` | Submit a task (returns 202) | Optional |
+| `GET` | `/tasks/{id}` | Get task status | Optional |
+| `DELETE` | `/tasks/{id}` | Cancel a task | Optional |
+
+### Authentication
+
+When an `AuthManager` is provided, all endpoints require an `X-API-Key` header.
+Requests without a valid key receive `401 Unauthorized`.
+
+### Usage
+
+```python
+from apyrobo.operations import OperationsApiServer
+from apyrobo.auth import AuthManager
+
+auth = AuthManager()
+auth.add_user("admin", role="admin", api_key="my-secret-key")
+
+server = OperationsApiServer(
+    port=8081,
+    auth_manager=auth,
+    swarm_bus=bus,       # optional: auto-discover robots
+    state_store=store,   # optional: persist task state
+    agent=agent,         # optional: execute tasks via Agent
+)
+server.start()
+```
+
+### `POST /tasks` Request/Response
+
+```json
+// Request
+{"task": "deliver package to room 3", "robot_id": "tb4"}
+
+// Response (202)
+{"task_id": "a1b2c3d4e5", "status": "queued"}
+```
+
+---
+
+## Scheduled Tasks (ScheduledTaskRunner)
+
+### `ScheduledTaskRunner`
+
+```python
+from apyrobo.operations import ScheduledTaskRunner
+```
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `add_interval_job()` | `(name, interval_s, fn)` | Register a periodic callable |
+| `add_task()` | `(name, cron_expr, task_description, robot, agent)` | Register an agent-based cron task |
+| `start()` | `()` | Start the background scheduler thread |
+| `stop()` | `()` | Stop the scheduler and join thread |
+
+### Cron Expressions
+
+| Expression | Interval |
+|------------|----------|
+| `*/30 * * * *` | Every 30 minutes |
+| `0 2 * * *` | Daily at 2:00 AM |
+| `0 */4 * * *` | Every 4 hours |
+| `* * * * *` | Every minute |
+
+### Usage
+
+```python
+runner = ScheduledTaskRunner(state_store=store)
+runner.add_task("patrol", "*/30 * * * *", "patrol warehouse", robot, agent)
+runner.add_interval_job("heartbeat", 60, lambda: print("alive"))
+runner.start()
+```
+
+---
+
 ## Generating Full API Docs
 
 To generate browsable HTML docs from docstrings:
