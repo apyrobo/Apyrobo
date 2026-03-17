@@ -2,7 +2,7 @@
 
 Public roadmap for the APYROBO project. Items are grouped by milestone and roughly ordered by priority within each group.
 
-**Legend:** :white_check_mark: Done | :construction: In Progress | :clipboard: Planned | :bulb: Exploring
+**Legend:** :white_check_mark: Done | :construction: In Progress | :clipboard: Planned | :bulb: Exploring | :beginner: Good First Issue | :raising_hand: Help Wanted
 
 ---
 
@@ -29,16 +29,16 @@ Core framework with mock adapter support and offline planning.
 
 Focus: reliability, performance, and real hardware support.
 
-| Status | Item | Description | Contribution Welcome? |
-|--------|------|-------------|----------------------|
-| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | Yes |
-| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | Yes |
-| :clipboard: | Gazebo adapter improvements | Spawn/delete models, reset world, sensor streams | Yes |
-| :clipboard: | Connection resilience | Auto-reconnect, connection pooling, health probes | Yes |
-| :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | No |
-| :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | No |
-| :clipboard: | Config file support | YAML/TOML config for policies, adapters, inference | Yes |
-| :clipboard: | Performance profiling | Identify and fix bottlenecks in executor hot path | Yes |
+| Status | Item | Description | Labels |
+|--------|------|-------------|--------|
+| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | :raising_hand: Help Wanted |
+| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | :raising_hand: Help Wanted |
+| :clipboard: | Gazebo adapter improvements | Spawn/delete models, reset world, sensor streams | :raising_hand: Help Wanted |
+| :clipboard: | Connection resilience | Auto-reconnect, connection pooling, health probes | :raising_hand: Help Wanted |
+| :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | |
+| :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | |
+| :clipboard: | Config file support | YAML/TOML config for policies, adapters, inference | :beginner: Good First Issue |
+| :clipboard: | Performance profiling | Identify and fix bottlenecks in executor hot path | :raising_hand: Help Wanted |
 
 ---
 
@@ -46,16 +46,17 @@ Focus: reliability, performance, and real hardware support.
 
 Focus: smarter planning, learning from execution, multi-modal input.
 
-| Status | Item | Description | Contribution Welcome? |
-|--------|------|-------------|----------------------|
-| :clipboard: | Plan caching | Cache and reuse LLM-generated plans for repeated tasks | No |
-| :clipboard: | Plan validation | LLM plans checked against capability model before execution | No |
-| :clipboard: | Multi-turn agent | Clarification dialogue when task is ambiguous | No |
-| :clipboard: | Tool-calling agent | Function-calling LLM directly invokes skills | No |
-| :clipboard: | Vision integration | Camera feeds as context for LLM planning | Yes |
-| :clipboard: | Execution feedback loop | Feed execution results back to planner for re-planning | No |
-| :clipboard: | Skill discovery | Agents discover available skills at runtime | Yes |
-| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | Yes |
+| Status | Item | Description | Labels |
+|--------|------|-------------|--------|
+| :clipboard: | Plan caching | Cache and reuse LLM-generated plans for repeated tasks | |
+| :clipboard: | Plan validation | LLM plans checked against capability model before execution | |
+| :clipboard: | Multi-turn agent | Clarification dialogue when task is ambiguous | |
+| :clipboard: | Tool-calling agent | Function-calling LLM directly invokes skills | |
+| :clipboard: | Vision integration (VLM) | Camera feeds as context for LLM planning | :raising_hand: Help Wanted |
+| :clipboard: | Voice adapter | Speech-to-text command input for hands-free operation | :raising_hand: Help Wanted |
+| :clipboard: | Execution memory | Feed execution history back to planner for re-planning | |
+| :clipboard: | Skill discovery | Agents discover available skills at runtime | :beginner: Good First Issue |
+| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | :raising_hand: Help Wanted |
 
 ---
 
@@ -63,16 +64,18 @@ Focus: smarter planning, learning from execution, multi-modal input.
 
 Focus: multi-robot fleet management, cloud deployment, enterprise features.
 
-| Status | Item | Description | Contribution Welcome? |
-|--------|------|-------------|----------------------|
-| :clipboard: | Fleet manager | Centralized fleet dashboard with task queue | Yes |
-| :clipboard: | Cloud deployment | Docker Compose / Kubernetes deployment templates | Yes |
-| :clipboard: | REST API gateway | HTTP API for external systems to submit tasks | Yes |
-| :clipboard: | Role-based access | Per-robot and per-task permission model | No |
-| :clipboard: | Audit trail | Immutable log of all commands, decisions, and violations | No |
-| :clipboard: | Multi-site support | Coordinate robots across separate physical locations | No |
-| :bulb: | Edge inference | Run small models on robot hardware for low-latency decisions | Yes |
-| :bulb: | Digital twin sync | Sync physical robot state to simulation in real-time | Yes |
+| Status | Item | Description | Labels |
+|--------|------|-------------|--------|
+| :clipboard: | Fleet manager | Centralized fleet dashboard with task queue | :raising_hand: Help Wanted |
+| :clipboard: | Cloud deployment | Docker Compose / Kubernetes deployment templates | :beginner: Good First Issue |
+| :clipboard: | REST API gateway | HTTP API for external systems to submit tasks | :raising_hand: Help Wanted |
+| :clipboard: | Role-based access | Per-robot and per-task permission model | |
+| :clipboard: | Audit trail | Immutable log of all commands, decisions, and violations | |
+| :clipboard: | Multi-site support | Coordinate robots across separate physical locations | |
+| :bulb: | Edge inference | Run small models on robot hardware for low-latency decisions | :raising_hand: Help Wanted |
+| :bulb: | Digital twin sync | Sync physical robot state to simulation in real-time | :raising_hand: Help Wanted |
+| :bulb: | MuJoCo integration | MuJoCo simulation adapter for manipulation research | :raising_hand: Help Wanted |
+| :bulb: | Formal verification | Safety property proofs for critical code paths | :raising_hand: Help Wanted |
 
 ---
 
@@ -92,9 +95,31 @@ Focus: API stability, backwards compatibility, comprehensive documentation.
 
 ## How to Contribute
 
-### Pick an Item
+### :beginner: Good First Issues
 
-Items marked **"Contribution Welcome? Yes"** are good candidates for community contributions. To get started:
+These items are self-contained and well-documented — ideal for your first contribution:
+
+- **Config file support** (v0.2) — Add YAML/TOML configuration loader for policies and adapters
+- **Skill discovery** (v0.3) — Agents query available skills at runtime instead of hard-coding
+- **Cloud deployment templates** (v0.4) — Docker Compose and Kubernetes manifests for cloud hosting
+- **Increase test coverage** — Add tests for uncovered code paths (target 90%+)
+- **Improve docstrings** — Add/improve docstrings on public APIs in `apyrobo/core/` and `apyrobo/skills/`
+
+See issues labelled [`good first issue`](https://github.com/apyrobo/apyrobo/labels/good%20first%20issue) on GitHub.
+
+### :raising_hand: Help Wanted
+
+These are larger items where we'd love community expertise:
+
+- **Voice adapter** (v0.3) — Speech-to-text command input
+- **MuJoCo integration** (v0.4) — Simulation adapter for manipulation research
+- **Formal verification** (v0.4) — Safety property proofs for critical paths
+- **Vision integration / VLM** (v0.3) — Camera feeds as LLM context
+- **Nav2 / MoveIt adapters** (v0.2) — Real ROS 2 hardware integration
+
+See issues labelled [`help wanted`](https://github.com/apyrobo/apyrobo/labels/help%20wanted) on GitHub.
+
+### Pick an Item
 
 1. Open an issue referencing the roadmap item
 2. Discuss your approach in the issue before writing code

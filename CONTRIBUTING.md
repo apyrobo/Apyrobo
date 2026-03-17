@@ -2,15 +2,28 @@
 
 Thanks for your interest in APYROBO! We're currently building privately toward our MVP demo. Once the repository goes public, we'll actively welcome contributions.
 
-## When We Open Up
+## Where to Start
 
-After the v0.1.0-mvp release, we'll accept contributions in these areas:
+Check out our **[ROADMAP.md](ROADMAP.md)** for the full list of milestones and contribution opportunities.
+
+### :beginner: Good First Issues
+
+These are self-contained tasks ideal for first-time contributors:
+
+- **Config file support** — YAML/TOML configuration for policies and adapters ([roadmap](ROADMAP.md#v02--production-hardening))
+- **Skill discovery** — Agents query available skills at runtime ([roadmap](ROADMAP.md#v03--intelligence))
+- **Cloud deployment templates** — Docker Compose / K8s manifests ([roadmap](ROADMAP.md#v04--fleet--cloud))
+- **Increase test coverage** — Add tests for uncovered code paths
+- **Improve docstrings** — Add/improve docstrings on public APIs
+
+Browse all [`good first issue`](https://github.com/apyrobo/apyrobo/labels/good%20first%20issue) and [`help wanted`](https://github.com/apyrobo/apyrobo/labels/help%20wanted) issues on GitHub.
+
+### Other Contribution Areas
 
 - **New capability adapters** — support for additional robot platforms
 - **Skill definitions** — reusable skill JSON files for common tasks
 - **Bug reports and fixes**
 - **Documentation improvements**
-- **Test coverage improvements**
 
 ## Development Setup
 
