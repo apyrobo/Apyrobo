@@ -4,11 +4,15 @@ Public roadmap for the APYROBO project. Items are grouped by milestone and rough
 
 **Legend:** :white_check_mark: Done | :construction: In Progress | :clipboard: Planned | :bulb: Exploring
 
+**Contribution labels:**
+- ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) — Great for newcomers; well-scoped, mentored
+- ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) — Community contributions welcome; may require domain expertise
+
 ---
 
-## v0.1 — Foundation (Current)
+## v0.1.0 — Foundation (Current Release)
 
-Core framework with mock adapter support and offline planning.
+Core framework with mock adapter support, offline planning, and safety enforcement.
 
 | Status | Item | Description |
 |--------|------|-------------|
@@ -25,81 +29,110 @@ Core framework with mock adapter support and offline planning.
 
 ---
 
-## v0.2 — Production Hardening
+## v0.2.0 — Handler Registry + Voice
 
-Focus: reliability, performance, and real hardware support.
+Focus: dynamic skill handler dispatch, voice control, reliability, and real hardware support.
 
-| Status | Item | Description | Contribution Welcome? |
-|--------|------|-------------|----------------------|
-| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | Yes |
-| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | Yes |
-| :clipboard: | Gazebo adapter improvements | Spawn/delete models, reset world, sensor streams | Yes |
-| :clipboard: | Connection resilience | Auto-reconnect, connection pooling, health probes | Yes |
-| :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | No |
-| :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | No |
-| :clipboard: | Config file support | YAML/TOML config for policies, adapters, inference | Yes |
-| :clipboard: | Performance profiling | Identify and fix bottlenecks in executor hot path | Yes |
-
----
-
-## v0.3 — Intelligence
-
-Focus: smarter planning, learning from execution, multi-modal input.
-
-| Status | Item | Description | Contribution Welcome? |
-|--------|------|-------------|----------------------|
-| :clipboard: | Plan caching | Cache and reuse LLM-generated plans for repeated tasks | No |
-| :clipboard: | Plan validation | LLM plans checked against capability model before execution | No |
-| :clipboard: | Multi-turn agent | Clarification dialogue when task is ambiguous | No |
-| :clipboard: | Tool-calling agent | Function-calling LLM directly invokes skills | No |
-| :clipboard: | Vision integration | Camera feeds as context for LLM planning | Yes |
-| :clipboard: | Execution feedback loop | Feed execution results back to planner for re-planning | No |
-| :clipboard: | Skill discovery | Agents discover available skills at runtime | Yes |
-| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | Yes |
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :construction: | Handler registry | Dynamic `@skill_handler` registration and dispatch ([#1][i1]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :construction: | Voice adapter layer | STT/TTS integration — Whisper, Piper, OpenAI ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | Gazebo adapter improvements | Spawn/delete models, reset world, sensor streams | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | Connection resilience | Auto-reconnect, connection pooling, health probes | |
+| :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | |
+| :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | |
+| :clipboard: | Increase test coverage to 90% | Add unit tests for voice, handler registry, and edge cases ([#3][i3]) | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | Config file support | YAML/TOML config for policies, adapters, inference | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 
 ---
 
-## v0.4 — Fleet & Cloud
+## v0.3.0 — Memory + VLM
+
+Focus: persistent agent memory, vision-language model integration, smarter planning.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | Episodic + semantic memory | Persistent agent memory with TTL and search ([#4][i4]) | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | VLM integration | Vision-language models for camera-informed planning ([#5][i5]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | Plan caching | Cache and reuse LLM-generated plans for repeated tasks | |
+| :clipboard: | Plan validation | LLM plans checked against capability model before execution | |
+| :clipboard: | Multi-turn agent | Clarification dialogue when task is ambiguous | |
+| :clipboard: | Tool-calling agent | Function-calling LLM directly invokes skills | |
+| :clipboard: | Execution feedback loop | Feed execution results back to planner for re-planning | |
+| :clipboard: | Skill discovery | Agents discover available skills at runtime | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | MuJoCo integration | Lightweight sim adapter for MuJoCo physics ([#6][i6]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :bulb: | Formal safety verification | Export safety proofs for regulatory compliance | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
+## v0.4.0 — Fleet & Cloud
 
 Focus: multi-robot fleet management, cloud deployment, enterprise features.
 
-| Status | Item | Description | Contribution Welcome? |
-|--------|------|-------------|----------------------|
-| :clipboard: | Fleet manager | Centralized fleet dashboard with task queue | Yes |
-| :clipboard: | Cloud deployment | Docker Compose / Kubernetes deployment templates | Yes |
-| :clipboard: | REST API gateway | HTTP API for external systems to submit tasks | Yes |
-| :clipboard: | Role-based access | Per-robot and per-task permission model | No |
-| :clipboard: | Audit trail | Immutable log of all commands, decisions, and violations | No |
-| :clipboard: | Multi-site support | Coordinate robots across separate physical locations | No |
-| :bulb: | Edge inference | Run small models on robot hardware for low-latency decisions | Yes |
-| :bulb: | Digital twin sync | Sync physical robot state to simulation in real-time | Yes |
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | Fleet manager | Centralized fleet dashboard with task queue | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | Cloud deployment | Docker Compose / Kubernetes deployment templates | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | REST API gateway | HTTP API for external systems to submit tasks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | Role-based access | Per-robot and per-task permission model | |
+| :clipboard: | Audit trail | Immutable log of all commands, decisions, and violations | |
+| :clipboard: | Multi-site support | Coordinate robots across separate physical locations | |
+| :bulb: | Edge inference | Run small models on robot hardware for low-latency decisions | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :bulb: | Digital twin sync | Sync physical robot state to simulation in real-time | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 
-## v1.0 — Stable Release
+## v1.0.0 — Hosted Registry & Stable Release
 
-Focus: API stability, backwards compatibility, comprehensive documentation.
+Focus: API stability, hosted skill/adapter registry, backwards compatibility, comprehensive documentation.
 
-| Status | Item | Description |
-|--------|------|-------------|
-| :clipboard: | API freeze | No breaking changes to public API |
-| :clipboard: | Migration guide | v0.x to v1.0 upgrade documentation |
-| :clipboard: | Certification support | Export safety proofs for regulatory compliance |
-| :clipboard: | Plugin system | Third-party skills, adapters, and providers as pip packages |
-| :clipboard: | Long-term support | 12-month security and bug fix window |
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | Hosted skill registry | Public registry for sharing skill packages and adapters | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | API freeze | No breaking changes to public API | |
+| :clipboard: | Migration guide | v0.x to v1.0 upgrade documentation | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | Certification support | Export safety proofs for regulatory compliance | |
+| :clipboard: | Plugin system | Third-party skills, adapters, and providers as pip packages | |
+| :clipboard: | Long-term support | 12-month security and bug fix window | |
 
 ---
 
-## How to Contribute
+## Where to Start Contributing
 
-### Pick an Item
+### Good First Issues
 
-Items marked **"Contribution Welcome? Yes"** are good candidates for community contributions. To get started:
+These items are well-scoped, have clear acceptance criteria, and include mentoring:
 
-1. Open an issue referencing the roadmap item
-2. Discuss your approach in the issue before writing code
-3. Submit a PR against the `main` branch
-4. Include tests and update relevant documentation
+| Item | Milestone | Issue |
+|------|-----------|-------|
+| Increase test coverage to 90% | v0.2.0 | [#3][i3] |
+| Document memory system APIs | v0.3.0 | [#4][i4] |
+| Add Kubernetes deployment template | v0.4.0 | — |
+| Write v0.x → v1.0 migration guide | v1.0.0 | — |
+| Create new skill package (e.g. patrol, inspection) | v0.2.0 | [#7][i7] |
+
+### Help Wanted
+
+These items need domain expertise (ROS 2, simulation, speech, computer vision):
+
+| Item | Milestone | Issue |
+|------|-----------|-------|
+| Voice adapter — Whisper STT + Piper TTS | v0.2.0 | [#2][i2] |
+| VLM integration — camera-informed planning | v0.3.0 | [#5][i5] |
+| MuJoCo simulation adapter | v0.3.0 | [#6][i6] |
+| Formal safety verification proofs | v0.3.0 | — |
+| Nav2 / MoveIt adapter | v0.2.0 | — |
+
+### How to Pick Up an Item
+
+1. Check the [issues list](https://github.com/apyrobo/apyrobo/issues) for the matching issue
+2. Comment on the issue to claim it
+3. Discuss your approach before writing code
+4. Submit a PR against `main` with tests and docs
+5. See [CONTRIBUTING.md](CONTRIBUTING.md) for code style and setup instructions
 
 ### Suggest New Items
 
@@ -110,7 +143,7 @@ Have an idea not on this roadmap? Open a **Feature Request** issue with:
 
 ### Priority Requests
 
-If a planned item is critical for your use case, comment on or react to the relevant issue. Community demand influences prioritization.
+If a planned item is critical for your use case, comment on or :+1: the relevant issue. Community demand influences prioritization.
 
 ---
 
@@ -122,3 +155,14 @@ Things APYROBO intentionally does **not** aim to do:
 - **Be a simulator** — Use Gazebo, Isaac Sim, or Webots for simulation; APYROBO connects to them via adapters
 - **Train models** — APYROBO orchestrates pre-trained LLMs; training happens elsewhere
 - **Hardware drivers** — Write ROS 2 drivers for new hardware; APYROBO adapts the semantic layer above them
+
+---
+
+<!-- Issue references — run scripts/create_roadmap_issues.sh then update numbers -->
+[i1]: https://github.com/apyrobo/apyrobo/issues
+[i2]: https://github.com/apyrobo/apyrobo/issues
+[i3]: https://github.com/apyrobo/apyrobo/issues
+[i4]: https://github.com/apyrobo/apyrobo/issues
+[i5]: https://github.com/apyrobo/apyrobo/issues
+[i6]: https://github.com/apyrobo/apyrobo/issues
+[i7]: https://github.com/apyrobo/apyrobo/issues

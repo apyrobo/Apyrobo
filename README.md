@@ -204,18 +204,15 @@ Write your own: see the [Adapter Authoring Guide](docs/adapter_authoring.md).
 
 ## Roadmap
 
-| Phase | Module | Status |
-|-------|--------|--------|
-| 1 | Core — Capability Abstraction Layer | Done |
-| 2 | Skills — Skill Graph + Agent Integration | Done |
-| 3 | Execution + Safety Enforcement | Done |
-| 4 | Swarm — Multi-Robot Coordination | Done |
-| 5 | Sensor Pipelines + Inference Routing | Done |
-| 6 | Observability + Persistence | Done |
-| 7 | CI/CD + Testing Infrastructure | Done |
-| 8 | Documentation + Developer Experience | In progress |
-| 9 | MVP Demo + Launch | Planned |
+| Milestone | Focus | Status |
+|-----------|-------|--------|
+| **v0.1.0** | Foundation — core abstractions, skill graph, safety, swarm, observability | :white_check_mark: Done |
+| **v0.2.0** | Handler registry + voice — dynamic dispatch, STT/TTS, Nav2, MoveIt | :construction: In Progress |
+| **v0.3.0** | Memory + VLM — episodic/semantic memory, vision-language models, MuJoCo | :clipboard: Planned |
+| **v0.4.0** | Fleet & Cloud — fleet manager, Kubernetes, REST API | :clipboard: Planned |
+| **v1.0.0** | Hosted registry & stable release — API freeze, plugin system, LTS | :clipboard: Planned |
 
+We have items marked **good first issue** and **help wanted** across every milestone.
 See [ROADMAP.md](ROADMAP.md) for the full technical roadmap with contribution opportunities.
 
 ---
