@@ -60,7 +60,7 @@ jobs:
           path: coverage.xml
 
   # ------------------------------------------------------------------
-  # CI-05: Docker container test job
+  # CI-05: Docker container test job (exercises docker-compose.yml)
   # ------------------------------------------------------------------
   docker-test:
     name: Docker Container Tests
@@ -69,14 +69,58 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.docker-cache
+          key: docker-ci-${{ hashFiles('docker/Dockerfile.ci') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: docker-ci-
+
+      - name: Build CI Docker image
         run: |
-          docker build -t apyrobo:test -f docker/Dockerfile.ci .
+          docker build \
+            --cache-from type=local,src=/tmp/.docker-cache \
+            -t apyrobo:test \
+            -f docker/Dockerfile.ci .
+          docker save apyrobo:test | gzip > /tmp/.docker-cache/apyrobo-ci.tar.gz || true
+        env:
+          DOCKER_BUILDKIT: 1
 
       - name: Run tests in container
         run: |
           docker run --rm apyrobo:test python3 -c "from apyrobo import Robot; print('Import OK')"
           docker run --rm apyrobo:test python3 run_tests.py
+
+  # ------------------------------------------------------------------
+  # CI-05: Docker Compose validation (exercises docker-compose.yml)
+  # ------------------------------------------------------------------
+  docker-compose-test:
+    name: Docker Compose Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.docker-cache
+          key: docker-compose-${{ hashFiles('docker/Dockerfile', 'docker/docker-compose.yml') }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: docker-compose-
+
+      - name: Build with docker compose
+        run: docker compose -f docker/docker-compose.yml build
+
+      - name: Run tests via docker compose
+        run: |
+          docker compose -f docker/docker-compose.yml run --rm apyrobo \
+            python3 -c "from apyrobo import Robot; print('Import OK')"
+          docker compose -f docker/docker-compose.yml run --rm apyrobo \
+            python3 run_tests.py
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v
 
   # ------------------------------------------------------------------
   # CI-12: mypy type checking (strict mode)
