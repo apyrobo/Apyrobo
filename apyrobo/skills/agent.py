@@ -140,9 +140,44 @@ class RuleBasedProvider(AgentProvider):
                 logger.info("RuleBasedProvider: planned %d steps for %r", len(plan), task)
                 return plan
 
-        # Fallback: just report status
+        # Fallback: check available_skills catalog for a name/description match
+        match = self._match_available_skill(task_lower, available_skills)
+        if match is not None:
+            logger.info(
+                "RuleBasedProvider: matched catalog skill %r for %r",
+                match["skill_id"], task,
+            )
+            return [{"skill_id": match["skill_id"], "parameters": dict(match.get("parameters", {}))}]
+
+        # Last resort: just report status
         logger.warning("RuleBasedProvider: no matching pattern for %r, returning status", task)
         return [{"skill_id": "report_status", "parameters": {}}]
+
+    @staticmethod
+    def _match_available_skill(
+        task_lower: str, available_skills: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """Find the best matching skill from the catalog by name/description keywords."""
+        best: dict[str, Any] | None = None
+        best_score = 0
+        for skill in available_skills:
+            score = 0
+            sid = skill.get("skill_id", "")
+            name = skill.get("name", "").lower()
+            desc = skill.get("description", "").lower()
+            # Tokenise the skill name/id into keywords
+            tokens = set(sid.replace("_", " ").split()) | set(name.split())
+            for token in tokens:
+                if len(token) >= 3 and token in task_lower:
+                    score += 1
+            # Also check if description words appear in the task
+            for word in desc.split():
+                if len(word) >= 4 and word in task_lower:
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best = skill
+        return best if best_score > 0 else None
 
     @staticmethod
     def _extract_coordinates(text: str) -> list[dict[str, float]]:
