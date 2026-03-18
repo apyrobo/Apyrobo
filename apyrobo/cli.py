@@ -18,6 +18,7 @@ import logging
 import sys
 import os
 import time
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -524,13 +525,6 @@ def main() -> None:
     p_pkg_validate = pkg_sub.add_parser("validate", help="Validate a package directory")
     p_pkg_validate.add_argument("directory", help="Package directory")
 
-    args = parser.parse_args()
-
-    if args.verbose:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.WARNING)
-
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -542,6 +536,13 @@ def main() -> None:
                          help="Start interactive voice demo")
     p_voice.add_argument("--max-turns", type=int, default=None,
                          help="Maximum conversation turns")
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.WARNING)
 
     if args.command is None:
         parser.print_help()

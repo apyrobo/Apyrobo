@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apyrobo"
-version = "0.1.0-dev"
+version = "0.1.0"
 description = "Open-source AI orchestration layer for robotics, built on ROS 2"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [{ name = "APYROBO Contributors" }]
 keywords = ["robotics", "ros2", "ai", "llm", "swarm", "orchestration"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
@@ -45,6 +45,9 @@ ros = [
     # ROS 2 deps are installed system-wide via apt in Docker
     # This is a placeholder for any pip-installable ROS bridges
 ]
+
+[project.scripts]
+apyrobo = "apyrobo.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/apyrobo/apyrobo"
