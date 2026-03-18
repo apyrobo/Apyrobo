@@ -19,8 +19,9 @@ from unittest.mock import patch
 import pytest
 
 from apyrobo.core.robot import Robot
-from apyrobo.core.schemas import CapabilityType
-from apyrobo.skills.agent import Agent
+from apyrobo.core.schemas import CapabilityType, TaskStatus
+from apyrobo.skills.agent import Agent, RuleBasedProvider
+from apyrobo.skills.handlers import UnknownSkillError
 from apyrobo.skills.package import SkillPackage
 from apyrobo.skills.registry import SkillRegistry
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
@@ -214,3 +215,77 @@ class TestAgentRegistryAutoDiscovery:
         catalog = agent._get_skill_catalog()
         assert "explicit_skill" in catalog
         assert agent._registry is explicit_reg
+
+
+# ===========================================================================
+# GAP-1 / GAP-2: Custom skills planned, dispatched, and error on unknown
+# ===========================================================================
+
+
+class TestRuleBasedProviderCatalogLookup:
+    """RuleBasedProvider falls back to available_skills when no pattern matches."""
+
+    def test_matches_custom_skill_by_name(self) -> None:
+        """Custom skill matched via name/id tokens in the task string."""
+        provider = RuleBasedProvider()
+        available = [
+            {"skill_id": "warehouse_sweep", "name": "Warehouse Sweep",
+             "description": "Sweep the warehouse floor",
+             "required_capability": "custom", "parameters": {"zone": "A1"}},
+        ]
+        plan = provider.plan("sweep the warehouse", available, ["custom"])
+        assert len(plan) == 1
+        assert plan[0]["skill_id"] == "warehouse_sweep"
+
+    def test_no_match_falls_back_to_status(self) -> None:
+        """When nothing matches, still fall back to report_status."""
+        provider = RuleBasedProvider()
+        available = [
+            {"skill_id": "warehouse_sweep", "name": "Warehouse Sweep",
+             "description": "Sweep the warehouse floor",
+             "required_capability": "custom", "parameters": {}},
+        ]
+        plan = provider.plan("xyzzy frobulate", available, ["custom"])
+        assert plan[0]["skill_id"] == "report_status"
+
+    def test_hardcoded_pattern_takes_priority(self) -> None:
+        """Hardcoded TASK_PATTERNS still win over catalog matching."""
+        provider = RuleBasedProvider()
+        available = [
+            {"skill_id": "custom_navigate", "name": "Custom Navigate",
+             "description": "Navigate somewhere", "required_capability": "navigate",
+             "parameters": {}},
+        ]
+        plan = provider.plan("navigate to (3, 4)", available, ["navigate"])
+        # Should match the hardcoded "navigate" pattern, not the custom skill
+        assert plan[0]["skill_id"] == "navigate_to"
+
+
+class TestCustomSkillDispatchUnknownError:
+    """
+    GAP-1: A custom skill that has no registered handler must raise
+    UnknownSkillError (propagated as FAILED), not silently succeed.
+    """
+
+    def test_execute_custom_skill_without_handler_fails(
+        self, tmp_path: Path, tmp_registry: SkillRegistry, mock_robot: Robot,
+    ) -> None:
+        """
+        Install a custom skill with no handler_module. When the planner
+        includes it and the executor dispatches it, the result must be FAILED.
+        """
+        custom_skill = Skill(
+            skill_id="warehouse_sweep",
+            name="Warehouse Sweep",
+            description="Sweep the warehouse floor",
+            required_capability=CapabilityType.CUSTOM,
+            parameters={"zone": "A1"},
+        )
+        pkg_dir = _make_package(tmp_path, "sweep-pkg", [custom_skill])
+        tmp_registry.install(pkg_dir)
+
+        agent = Agent(provider="rule", registry=tmp_registry)
+        # "sweep warehouse" should match the custom skill via catalog lookup
+        result = agent.execute("sweep the warehouse", mock_robot)
+        # No handler registered → UnknownSkillError → FAILED
+        assert result.status == TaskStatus.FAILED
