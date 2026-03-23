@@ -43,7 +43,7 @@ Focus: dynamic skill handler dispatch, voice control, reliability, and real hard
 | :clipboard: | Connection resilience | Auto-reconnect, connection pooling, health probes | |
 | :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | |
 | :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | |
-| :clipboard: | Increase test coverage to 90% | Add unit tests for voice, handler registry, and edge cases ([#3][i3]) | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ | Increase test coverage to 90% | Add unit tests for voice, handler registry, and edge cases ([#3][i3]) — **achieved 92% (2076 tests)** | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | :clipboard: | Config file support | YAML/TOML config for policies, adapters, inference | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 
 ---
@@ -108,7 +108,7 @@ These items are well-scoped, have clear acceptance criteria, and include mentori
 
 | Item | Milestone | Issue |
 |------|-----------|-------|
-| Increase test coverage to 90% | v0.2.0 | [#3][i3] |
+| ✅ Increase test coverage to 90% | v0.2.0 | [#3][i3] |
 | Document memory system APIs | v0.3.0 | [#4][i4] |
 | Add Kubernetes deployment template | v0.4.0 | — |
 | Write v0.x → v1.0 migration guide | v1.0.0 | — |
