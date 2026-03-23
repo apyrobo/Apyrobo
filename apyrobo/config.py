@@ -22,6 +22,15 @@ from typing import Any
 
 import yaml
 
+# TOML support: tomllib is built-in from Python 3.11; fall back to tomli on 3.10
+try:
+    import tomllib as _tomllib  # type: ignore[import]
+except ModuleNotFoundError:
+    try:
+        import tomli as _tomllib  # type: ignore[import,no-redef]
+    except ModuleNotFoundError:
+        _tomllib = None  # type: ignore[assignment]
+
 from apyrobo.safety.enforcer import SafetyPolicy
 
 logger = logging.getLogger(__name__)
@@ -97,6 +106,58 @@ DEFAULT_CONFIG = {
 
 
 # ---------------------------------------------------------------------------
+# Minimal TOML serialiser (no external deps required)
+# ---------------------------------------------------------------------------
+
+def _simple_toml_dumps(data: dict, _prefix: str = "") -> str:
+    """
+    Minimal TOML serialiser for the config data types used by ApyroboConfig.
+
+    Handles: str, int, float, bool, None (omitted), list of scalars,
+    and nested dicts (rendered as TOML tables).  For complex structures
+    install ``tomli_w``.
+    """
+    lines: list[str] = []
+    deferred_tables: list[tuple[str, dict]] = []
+
+    for key, value in data.items():
+        full_key = f"{_prefix}.{key}" if _prefix else key
+        if value is None:
+            continue
+        elif isinstance(value, bool):
+            lines.append(f"{key} = {str(value).lower()}")
+        elif isinstance(value, (int, float)):
+            lines.append(f"{key} = {value}")
+        elif isinstance(value, str):
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            lines.append(f'{key} = "{escaped}"')
+        elif isinstance(value, list):
+            items = []
+            for item in value:
+                if isinstance(item, bool):
+                    items.append(str(item).lower())
+                elif isinstance(item, (int, float)):
+                    items.append(str(item))
+                elif isinstance(item, str):
+                    escaped = item.replace("\\", "\\\\").replace('"', '\\"')
+                    items.append(f'"{escaped}"')
+                else:
+                    items.append(str(item))
+            lines.append(f"{key} = [{', '.join(items)}]")
+        elif isinstance(value, dict):
+            deferred_tables.append((full_key, value))
+        else:
+            lines.append(f'{key} = "{value}"')
+
+    result = "\n".join(lines)
+    for table_key, table_val in deferred_tables:
+        section = _simple_toml_dumps(table_val, _prefix=table_key)
+        header = f"\n[{table_key}]"
+        result = result + header + "\n" + section if section else result + header
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Config class
 # ---------------------------------------------------------------------------
 
@@ -112,25 +173,72 @@ class ApyroboConfig:
         self._data = self._deep_merge(DEFAULT_CONFIG, data or {})
 
     @classmethod
-    def from_file(cls, path: str | Path) -> ApyroboConfig:
-        """Load configuration from a YAML file."""
+    def from_file(cls, path: str | Path) -> "ApyroboConfig":
+        """
+        Load configuration from a YAML or TOML file.
+
+        The format is inferred from the file extension:
+        ``.yaml`` / ``.yml`` → YAML, ``.toml`` → TOML.
+        """
         path = Path(path)
         if not path.exists():
             logger.warning("Config file %s not found — using defaults", path)
             return cls()
+        suffix = path.suffix.lower()
+        if suffix == ".toml":
+            return cls.from_toml_file(path)
+        # Default: YAML
         with open(path) as f:
             data = yaml.safe_load(f) or {}
         logger.info("Loaded config from %s", path)
         return cls(data)
 
     @classmethod
-    def from_env(cls) -> ApyroboConfig:
+    def from_yaml_file(cls, path: str | Path) -> "ApyroboConfig":
+        """Load configuration explicitly from a YAML file."""
+        path = Path(path)
+        if not path.exists():
+            logger.warning("Config file %s not found — using defaults", path)
+            return cls()
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        logger.info("Loaded YAML config from %s", path)
+        return cls(data)
+
+    @classmethod
+    def from_toml_file(cls, path: str | Path) -> "ApyroboConfig":
+        """
+        Load configuration from a TOML file.
+
+        Requires Python 3.11+ (built-in ``tomllib``) or the ``tomli`` package
+        on Python 3.10.  Raises ``ImportError`` if neither is available.
+        """
+        if _tomllib is None:
+            raise ImportError(
+                "TOML support requires Python 3.11+ or the 'tomli' package. "
+                "Install it with: pip install tomli"
+            )
+        path = Path(path)
+        if not path.exists():
+            logger.warning("Config file %s not found — using defaults", path)
+            return cls()
+        with open(path, "rb") as f:
+            data = _tomllib.load(f)
+        logger.info("Loaded TOML config from %s", path)
+        return cls(data)
+
+    @classmethod
+    def from_env(cls) -> "ApyroboConfig":
         """Load config from APYROBO_CONFIG env var, or use defaults."""
         config_path = os.environ.get("APYROBO_CONFIG")
         if config_path:
             return cls.from_file(config_path)
-        # Check common locations
-        for candidate in ["apyrobo.yaml", "config.yaml", "config/apyrobo.yaml"]:
+        # Check common locations (YAML and TOML)
+        for candidate in [
+            "apyrobo.yaml", "apyrobo.yml", "apyrobo.toml",
+            "config.yaml", "config.yml", "config.toml",
+            "config/apyrobo.yaml", "config/apyrobo.toml",
+        ]:
             if Path(candidate).exists():
                 return cls.from_file(candidate)
         return cls()
@@ -248,12 +356,33 @@ class ApyroboConfig:
         """Serialise to YAML string."""
         return yaml.dump(self._data, default_flow_style=False, sort_keys=False)
 
+    def to_toml(self) -> str:
+        """
+        Serialise to TOML string.
+
+        Uses ``tomli_w`` if installed; falls back to a simple hand-rolled
+        serialiser for basic types (str, int, float, bool, list, dict).
+        Raises ``ImportError`` if complex types prevent serialisation.
+        """
+        try:
+            import tomli_w  # type: ignore[import]
+            return tomli_w.dumps(self._data)
+        except ModuleNotFoundError:
+            return _simple_toml_dumps(self._data)
+
     def save(self, path: str | Path) -> None:
-        """Write config to a YAML file."""
+        """
+        Write config to a file.  Format is inferred from the extension:
+        ``.toml`` → TOML, anything else → YAML.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            yaml.dump(self._data, f, default_flow_style=False, sort_keys=False)
+        if path.suffix.lower() == ".toml":
+            with open(path, "w") as f:
+                f.write(self.to_toml())
+        else:
+            with open(path, "w") as f:
+                yaml.dump(self._data, f, default_flow_style=False, sort_keys=False)
         logger.info("Saved config to %s", path)
 
     # ------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 from apyrobo.sim.adapters import (
     GazeboNativeAdapter,
+    GazeboNotRunningError,
+    JointState,
     MuJoCoAdapter,
     IsaacSimAdapter,
     DomainRandomizationConfig,
@@ -12,6 +14,8 @@ from apyrobo.sim.adapters import (
 
 __all__ = [
     "GazeboNativeAdapter",
+    "GazeboNotRunningError",
+    "JointState",
     "MuJoCoAdapter",
     "IsaacSimAdapter",
     "DomainRandomizationConfig",
