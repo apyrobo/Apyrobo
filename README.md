@@ -28,7 +28,7 @@
 ```
 
 <p align="center">
-  <img src="docs/demo.svg" alt="APYROBO demo — pip install, discover robot, deliver task" width="640">
+  <img src="docs/demo.gif" alt="APYROBO demo — pip install, discover robot, deliver task" width="640">
 </p>
 
 ### 30-Second Demo
