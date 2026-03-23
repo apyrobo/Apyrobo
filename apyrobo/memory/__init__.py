@@ -1,15 +1,33 @@
 """
-Agent Memory — episodic log + semantic fact store for long-term autonomy.
+APYROBO Memory — agent episodic + semantic memory and plan caching.
 
-VC-02: Provides AgentMemory with two subsystems:
-    - EpisodicMemory: records (task, plan, result, timestamp) as episodes
-    - SemanticMemory: key-value facts with TTL-based expiry
+This package provides:
+    - AgentMemory (EpisodicMemory + SemanticMemory): in-memory agent state
+    - EpisodicStore: SQLite-backed task execution history
+    - SemanticStore: key-value fact store with vector similarity recall
+    - PlanCache: TTL-based cache for skill graphs, with hit/miss metrics
 
-Memory enables agents to:
-    - Remember previous tasks and their outcomes
-    - Build a map of object locations and world knowledge
-    - Improve planning over time with historical context
-    - Persist knowledge across sessions via persist()/load()
+Quickstart::
+
+    from apyrobo.memory import AgentMemory, EpisodicStore, SemanticStore, PlanCache
+
+    # Lightweight in-memory agent memory (existing API — unchanged)
+    mem = AgentMemory()
+    mem.record_episode("deliver package", result={"status": "success"})
+
+    # SQLite-backed episode history
+    store = EpisodicStore("~/.apyrobo/episodes.db")
+    store.record(Episode(task="patrol", robot_id="bot1", outcome="success"))
+
+    # Semantic fact store
+    facts = SemanticStore()
+    facts.remember("object:red_box", {"location": (2, 3)})
+    facts.recall("red_box")
+
+    # Plan cache
+    cache = PlanCache(ttl_s=3600)
+    cache.store(task="go to room 3", plan=[...])
+    result = cache.lookup(task="go to room 3")
 """
 
 from __future__ import annotations
@@ -318,3 +336,22 @@ class AgentMemory:
             f"<AgentMemory episodes={self.episodes.count} "
             f"facts={self.facts.count}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# Re-export new submodule classes for convenient package-level imports
+# ---------------------------------------------------------------------------
+
+from apyrobo.memory.episodic import EpisodicStore, Episode  # noqa: E402
+from apyrobo.memory.semantic import SemanticStore  # noqa: E402
+from apyrobo.memory.plan_cache import PlanCache  # noqa: E402
+
+__all__ = [
+    "AgentMemory",
+    "EpisodicMemory",
+    "SemanticMemory",
+    "EpisodicStore",
+    "Episode",
+    "SemanticStore",
+    "PlanCache",
+]

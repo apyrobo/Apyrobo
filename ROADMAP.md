@@ -35,16 +35,16 @@ Focus: dynamic skill handler dispatch, voice control, reliability, and real hard
 
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
-| :construction: | Handler registry | Dynamic `@skill_handler` registration and dispatch ([#1][i1]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Handler registry | Dynamic `@skill_handler` registration and dispatch — `HandlerRegistry` class with decorator, `dispatch`, introspection ([#1][i1]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :construction: | Voice adapter layer | STT/TTS integration — Whisper, Piper, OpenAI ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | Gazebo adapter improvements | Spawn/delete models, reset world, sensor streams | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
-| :clipboard: | Connection resilience | Auto-reconnect, connection pooling, health probes | |
+| ✅ | Gazebo adapter improvements | Spawn/despawn models, reset world, joint states, apply forces, error handling | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ | Connection resilience | Auto-reconnect with exponential backoff, disconnect/reconnect hooks, observability events | |
 | :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | |
 | :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | |
 | ✅ | Increase test coverage to 90% | Add unit tests for voice, handler registry, and edge cases ([#3][i3]) — **achieved 92% (2076 tests)** | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
-| :clipboard: | Config file support | YAML/TOML config for policies, adapters, inference | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ | Config file support | YAML/TOML config for policies, adapters, inference — auto-detect format, `from_toml_file()`, `to_toml()` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 
 ---
 
@@ -54,9 +54,10 @@ Focus: persistent agent memory, vision-language model integration, smarter plann
 
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
-| :clipboard: | Episodic + semantic memory | Persistent agent memory with TTL and search ([#4][i4]) | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ | Episodic memory | SQLite-backed task execution history — `EpisodicStore`, queryable by time/robot/outcome ([#4][i4]) | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ | Semantic memory | Key-value fact store with cosine similarity vector recall — `SemanticStore` with numpy embeddings | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | :clipboard: | VLM integration | Vision-language models for camera-informed planning ([#5][i5]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | Plan caching | Cache and reuse LLM-generated plans for repeated tasks | |
+| ✅ | Plan caching | TTL-based plan cache with hit/miss metrics — `PlanCache` (memory + SQLite) | |
 | :clipboard: | Plan validation | LLM plans checked against capability model before execution | |
 | :clipboard: | Multi-turn agent | Clarification dialogue when task is ambiguous | |
 | :clipboard: | Tool-calling agent | Function-calling LLM directly invokes skills | |

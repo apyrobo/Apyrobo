@@ -23,7 +23,7 @@ import logging
 import math
 import time
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from apyrobo.core.schemas import (
     Capability,
@@ -93,6 +93,10 @@ class CapabilityAdapter(abc.ABC):
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         self.robot_name = robot_name
         self._state = AdapterState.DISCONNECTED
+        self._reconnect_attempts: int = 0
+        self._last_disconnect_time: float | None = None
+        self._disconnect_handlers: list[Callable[[], None]] = []
+        self._reconnect_handlers: list[Callable[[], None]] = []
 
     # ------------------------------------------------------------------
     # Required — every adapter must implement these
@@ -205,7 +209,7 @@ class CapabilityAdapter(abc.ABC):
         """
         Establish connection to the robot/platform.
 
-        Default sets state to CONNECTED.
+        Default sets state to CONNECTED and notifies reconnect handlers.
         """
         self._state = AdapterState.CONNECTED
         logger.info("%s: connected to %s", type(self).__name__, self.robot_name)
@@ -214,9 +218,13 @@ class CapabilityAdapter(abc.ABC):
         """
         Cleanly disconnect from the robot/platform.
 
-        Default sets state to DISCONNECTED.
+        Default sets state to DISCONNECTED and notifies disconnect handlers.
         """
+        was_connected = self._state == AdapterState.CONNECTED
         self._state = AdapterState.DISCONNECTED
+        if was_connected:
+            self._last_disconnect_time = time.time()
+            self._notify_disconnect()
         logger.info("%s: disconnected from %s", type(self).__name__, self.robot_name)
 
     @property
@@ -227,6 +235,113 @@ class CapabilityAdapter(abc.ABC):
     @property
     def state(self) -> AdapterState:
         return self._state
+
+    # ------------------------------------------------------------------
+    # Connection resilience (AD-06)
+    # ------------------------------------------------------------------
+
+    def on_disconnect(self, handler: Callable[[], None]) -> None:
+        """Register a callback invoked when the adapter disconnects."""
+        self._disconnect_handlers.append(handler)
+
+    def on_reconnect(self, handler: Callable[[], None]) -> None:
+        """Register a callback invoked when the adapter successfully reconnects."""
+        self._reconnect_handlers.append(handler)
+
+    def _notify_disconnect(self) -> None:
+        """Emit disconnect observability event and call registered handlers."""
+        try:
+            from apyrobo.observability import emit_event
+            emit_event(
+                "adapter.disconnect",
+                robot=self.robot_name,
+                adapter=type(self).__name__,
+                timestamp=time.time(),
+            )
+        except Exception:
+            pass
+        for handler in self._disconnect_handlers:
+            try:
+                handler()
+            except Exception:
+                logger.exception("%s: disconnect handler raised", type(self).__name__)
+
+    def _notify_reconnect(self) -> None:
+        """Emit reconnect observability event and call registered handlers."""
+        try:
+            from apyrobo.observability import emit_event
+            emit_event(
+                "adapter.reconnect",
+                robot=self.robot_name,
+                adapter=type(self).__name__,
+                attempts=self._reconnect_attempts,
+                timestamp=time.time(),
+            )
+        except Exception:
+            pass
+        for handler in self._reconnect_handlers:
+            try:
+                handler()
+            except Exception:
+                logger.exception("%s: reconnect handler raised", type(self).__name__)
+
+    def reconnect_with_backoff(
+        self,
+        max_attempts: int = 5,
+        initial_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        max_delay: float = 60.0,
+    ) -> bool:
+        """
+        Attempt to reconnect with exponential backoff.
+
+        Calls ``connect()`` up to *max_attempts* times, sleeping between
+        attempts with delays: ``initial_delay * backoff_factor^attempt``,
+        capped at *max_delay*.
+
+        Emits ``adapter.disconnect`` / ``adapter.reconnect`` observability
+        events on transitions.
+
+        Returns:
+            True if connection was re-established, False if all attempts failed.
+        """
+        if self.is_connected:
+            return True
+
+        self._state = AdapterState.CONNECTING
+        delay = initial_delay
+
+        for attempt in range(1, max_attempts + 1):
+            self._reconnect_attempts += 1
+            logger.info(
+                "%s: reconnect attempt %d/%d to %s (delay=%.1fs)",
+                type(self).__name__, attempt, max_attempts, self.robot_name, delay,
+            )
+            try:
+                self.connect()
+                if self.is_connected:
+                    logger.info(
+                        "%s: reconnected to %s after %d attempt(s)",
+                        type(self).__name__, self.robot_name, attempt,
+                    )
+                    self._notify_reconnect()
+                    return True
+            except Exception as exc:
+                logger.warning(
+                    "%s: reconnect attempt %d failed: %s",
+                    type(self).__name__, attempt, exc,
+                )
+
+            if attempt < max_attempts:
+                time.sleep(delay)
+                delay = min(delay * backoff_factor, max_delay)
+
+        self._state = AdapterState.ERROR
+        logger.error(
+            "%s: failed to reconnect to %s after %d attempts",
+            type(self).__name__, self.robot_name, max_attempts,
+        )
+        return False
 
 
 # ---------------------------------------------------------------------------

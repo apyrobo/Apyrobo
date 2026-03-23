@@ -1,12 +1,12 @@
 {
   "test_throughput_100_tasks": {
     "tasks": 100,
-    "elapsed_s": 0.038,
-    "tasks_per_sec": 2651.4
+    "elapsed_s": 0.015,
+    "tasks_per_sec": 6672.03
   },
   "test_parallel_swarm_throughput": {
-    "sequential_s": 0.004,
-    "parallel_s": 0.01,
-    "speedup": 0.4
+    "sequential_s": 0.001,
+    "parallel_s": 0.003,
+    "speedup": 0.5
   }
 }
