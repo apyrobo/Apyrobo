@@ -22,3 +22,10 @@ from apyrobo.inference.router import (  # noqa: F401
     TokenBudget,
     Urgency,
 )
+from apyrobo.inference.edge import (  # noqa: F401
+    EdgeInferenceAdapter,
+    MockEdgeInferenceAdapter,
+    EdgeInferenceRouter,
+    EdgeModelConfig,
+    EdgeInferenceResult,
+)
