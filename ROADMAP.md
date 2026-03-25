@@ -41,8 +41,8 @@ Focus: dynamic skill handler dispatch, voice control, reliability, and real hard
 | :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ | Gazebo adapter improvements | Spawn/despawn models, reset world, joint states, apply forces, error handling | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ | Connection resilience | Auto-reconnect with exponential backoff, disconnect/reconnect hooks, observability events | |
-| :clipboard: | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill | |
-| :clipboard: | Execution checkpointing | Resume skill graphs from last successful step | |
+| ✅ Done | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill — `RetryStrategy`, `RetryPolicy`, `CircuitBreaker`, `RetryExecutor` in `apyrobo/skills/retry.py` | |
+| ✅ Done | Execution checkpointing | Resume skill graphs from last successful step — `CheckpointEntry`, `CheckpointStore`, `CheckpointedExecutor` in `apyrobo/skills/checkpoint.py` | |
 | ✅ | Increase test coverage to 90% | Add unit tests for voice, handler registry, and edge cases ([#3][i3]) — **achieved 92% (2076 tests)** | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ | Config file support | YAML/TOML config for policies, adapters, inference — auto-detect format, `from_toml_file()`, `to_toml()` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 
@@ -58,7 +58,7 @@ Focus: persistent agent memory, vision-language model integration, smarter plann
 | ✅ | Semantic memory | Key-value fact store with cosine similarity vector recall — `SemanticStore` with numpy embeddings | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | VLM integration | Vision-language models for camera-informed planning — `VLMAdapter`, `LiteLLMVLMAdapter`, `MockVLMAdapter`, `VLMRouter`, `InferenceRouter.route_vision()` ([#5][i5]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ | Plan caching | TTL-based plan cache with hit/miss metrics — `PlanCache` (memory + SQLite) | |
-| :clipboard: | Plan validation | LLM plans checked against capability model before execution | |
+| ✅ Done | Plan validation | LLM plans checked against capability model before execution — `ValidationIssue`, `ValidationResult`, `PlanValidator` in `apyrobo/skills/plan_validator.py` | |
 | ✅ Done | Multi-turn agent | Clarification dialogue when task is ambiguous — `ConversationMessage`, `ConversationHistory`, `MultiTurnAgent` with token-aware context truncation | |
 | ✅ Done | Tool-calling agent | Function-calling LLM directly invokes skills — `SkillTool`, `ToolCallingAgent` with mock fallback | |
 | ✅ Done | Execution feedback loop | Feed execution results back to planner for re-planning — `ExecutionResult`, `FeedbackCollector`, `AdaptiveExecutor` | |
