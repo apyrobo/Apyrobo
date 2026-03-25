@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: apyrobo-api
+  namespace: apyrobo
+  labels:
+    app.kubernetes.io/name: apyrobo
+    app.kubernetes.io/component: api
+  annotations:
+    # Remove this annotation if not using a cloud load balancer
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+spec:
+  type: LoadBalancer
+  selector:
+    app: apyrobo-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
