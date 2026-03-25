@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apyrobo-worker
+  namespace: apyrobo
+  labels:
+    app.kubernetes.io/name: apyrobo
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: apyrobo-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: apyrobo-worker
+        app.kubernetes.io/name: apyrobo
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: apyrobo:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "apyrobo.cli", "worker"]
+          envFrom:
+            - configMapRef:
+                name: apyrobo-config
+            - secretRef:
+                name: apyrobo-secret
+          env:
+            - name: APYROBO_WORKER_MODE
+              value: "true"
+          volumeMounts:
+            - name: skill-data
+              mountPath: /app/data/skills
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: skill-data
+          emptyDir: {}

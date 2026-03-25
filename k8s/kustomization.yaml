@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: apyrobo
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment-api.yaml
+  - deployment-worker.yaml
+  - service.yaml
+  - service-lb.yaml
+  - pvc.yaml
+  - hpa.yaml
+
+commonLabels:
+  app.kubernetes.io/name: apyrobo
+  app.kubernetes.io/version: "1.0.0"
+
+images:
+  - name: apyrobo
+    newTag: latest

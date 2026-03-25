@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apyrobo-config
+  namespace: apyrobo
+  labels:
+    app.kubernetes.io/name: apyrobo
+    app.kubernetes.io/component: config
+data:
+  APYROBO_LOG_LEVEL: "INFO"
+  APYROBO_AUDIT_DB: "/app/data/audit/audit.db"
+  APYROBO_WORKER_MODE: "false"

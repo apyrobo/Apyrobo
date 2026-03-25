@@ -76,7 +76,7 @@ Focus: multi-robot fleet management, cloud deployment, enterprise features.
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
 | ✅ Done | Fleet manager | Centralized fleet dashboard with task queue — `RobotInfo`, `FleetManager` with load-balanced assignment and offline detection | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | Cloud deployment | Docker Compose / Kubernetes deployment templates | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ Done | Cloud deployment | Docker Compose / Kubernetes deployment templates — multi-stage `docker/Dockerfile`, `docker/docker-compose.yml`, full `k8s/` manifests with HPA, `docs/deployment.md` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | REST API gateway | HTTP API for external systems to submit tasks — FastAPI app with task/robot endpoints and API-key auth | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ Done | Role-based access | Per-robot and per-task permission model — `RBACRole`, `ROLE_PERMISSIONS`, `RBACManager` added to `auth.py` | |
 | ✅ Done | Audit trail | Immutable log of all commands, decisions, and violations — `AuditEvent`, `AuditTrail` with SHA-256 hash chain integrity verification | |
@@ -113,7 +113,7 @@ These items are well-scoped, have clear acceptance criteria, and include mentori
 |------|-----------|-------|
 | ✅ Increase test coverage to 90% | v0.2.0 | [#3][i3] |
 | Document memory system APIs | v0.3.0 | [#4][i4] |
-| Add Kubernetes deployment template | v0.4.0 | — |
+| ✅ Add Kubernetes deployment template | v0.4.0 | — |
 | Write v0.x → v1.0 migration guide | v1.0.0 | — |
 | Create new skill package (e.g. patrol, inspection) | v0.2.0 | [#7][i7] |
 

@@ -1,68 +1,131 @@
 # =============================================================================
-# APYROBO Docker Compose — Full MVP Environment
+# APYROBO Docker Compose — Production / Cloud Environment
 #
 # Quick start:
-#   docker compose -f docker/docker-compose.yml build
+#   cp docker/.env.example docker/.env
 #   docker compose -f docker/docker-compose.yml up -d
-#   docker compose -f docker/docker-compose.yml exec apyrobo bash
 #
-# GUI (Gazebo) on macOS:
-#   1. Install XQuartz: brew install --cask xquartz
-#   2. Open XQuartz → Preferences → Security → "Allow network clients" ✓
-#   3. Restart XQuartz
-#   4. Run: xhost +localhost
-#   5. Then: docker compose up -d
+# With Redis:
+#   docker compose -f docker/docker-compose.yml --profile redis up -d
 #
-# GUI on Linux:
-#   1. Run: xhost +local:docker
-#   2. Then: docker compose up -d
+# With monitoring:
+#   docker compose -f docker/docker-compose.yml --profile monitoring up -d
 #
+# Scale workers:
+#   docker compose -f docker/docker-compose.yml up -d --scale apyrobo-worker=4
 # =============================================================================
 
 services:
-  apyrobo:
+  # ---------------------------------------------------------------------------
+  # REST API gateway
+  # ---------------------------------------------------------------------------
+  apyrobo-api:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: apyrobo-dev
-    stdin_open: true
-    tty: true
-    privileged: true
-
-    # Mount source for live editing (code changes reflected immediately)
-    volumes:
-      - ..:/workspace
-      # Persist Gazebo models so they don't re-download every run
-      - gazebo_models:/root/.gazebo/models
-      # Recordings output
-      - ../recordings:/workspace/recordings
-
+      target: runtime
+    image: apyrobo:latest
+    container_name: apyrobo-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
     environment:
-      # GUI forwarding
-      - DISPLAY=${DISPLAY:-host.docker.internal:0}
-      - QT_X11_NO_MITSHM=1
-      - LIBGL_ALWAYS_SOFTWARE=1
-      # ROS 2
-      - ROS_DOMAIN_ID=0
-      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      - RCUTILS_COLORIZED_OUTPUT=1
-      # Gazebo
-      - GAZEBO_MODEL_PATH=/opt/ros/humble/share/turtlebot4_gazebo/models
-      - IGN_PARTITION=apyrobo
+      APYROBO_API_KEY: ${APYROBO_API_KEY:-changeme}
+      APYROBO_LOG_LEVEL: ${APYROBO_LOG_LEVEL:-INFO}
+      APYROBO_REDIS_URL: ${APYROBO_REDIS_URL:-}
+      APYROBO_AUDIT_DB: /app/data/audit/audit.db
+    volumes:
+      - audit_data:/app/data/audit
+      - skill_data:/app/data/skills
+    networks:
+      - apyrobo-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: false
 
-    # Network: host mode for ROS 2 DDS multicast discovery
-    network_mode: host
+  # ---------------------------------------------------------------------------
+  # Skill executor workers (stateless — scale freely)
+  # ---------------------------------------------------------------------------
+  apyrobo-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    image: apyrobo:latest
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    environment:
+      APYROBO_API_KEY: ${APYROBO_API_KEY:-changeme}
+      APYROBO_LOG_LEVEL: ${APYROBO_LOG_LEVEL:-INFO}
+      APYROBO_REDIS_URL: ${APYROBO_REDIS_URL:-}
+      APYROBO_WORKER_MODE: "true"
+    volumes:
+      - skill_data:/app/data/skills
+    networks:
+      - apyrobo-net
+    command: ["python", "-m", "apyrobo.cli", "worker"]
 
-    # GPU access (for Gazebo rendering — comment out if no NVIDIA GPU)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+  # ---------------------------------------------------------------------------
+  # Redis — optional state persistence (profile: redis)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: apyrobo-redis
+    restart: unless-stopped
+    profiles:
+      - redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - apyrobo-net
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
-    command: bash
+  # ---------------------------------------------------------------------------
+  # Prometheus — metrics scraping (profile: monitoring)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: apyrobo-prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - apyrobo-net
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
 
 volumes:
-  gazebo_models:
+  audit_data:
+    driver: local
+  skill_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+
+networks:
+  apyrobo-net:
+    driver: bridge
