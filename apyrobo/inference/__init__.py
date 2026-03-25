@@ -13,6 +13,7 @@ Key components:
     - Health tracking: per-provider latency, error rate, availability
     - TokenBudget: per-tier and global token budget tracking
     - BudgetExceeded: raised when budget limit is hit
+    - edge: EdgeInferenceAdapter for on-robot model execution
 """
 
 from apyrobo.inference.router import (  # noqa: F401
@@ -21,4 +22,11 @@ from apyrobo.inference.router import (  # noqa: F401
     InferenceTier,
     TokenBudget,
     Urgency,
+)
+from apyrobo.inference.edge import (  # noqa: F401
+    EdgeInferenceAdapter,
+    EdgeInferenceResult,
+    EdgeInferenceRouter,
+    EdgeModelConfig,
+    MockEdgeInferenceAdapter,
 )

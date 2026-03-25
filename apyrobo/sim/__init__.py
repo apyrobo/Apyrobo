@@ -11,6 +11,12 @@ from apyrobo.sim.adapters import (
     RealityGapCalibrator,
     SimToRealTransferPipeline,
 )
+from apyrobo.sim.twin import (
+    DigitalTwinSync,
+    MockPhysicalSource,
+    TwinState,
+    TwinSyncConfig,
+)
 
 __all__ = [
     "GazeboNativeAdapter",
@@ -22,4 +28,8 @@ __all__ = [
     "DomainRandomizer",
     "RealityGapCalibrator",
     "SimToRealTransferPipeline",
+    "DigitalTwinSync",
+    "MockPhysicalSource",
+    "TwinState",
+    "TwinSyncConfig",
 ]
