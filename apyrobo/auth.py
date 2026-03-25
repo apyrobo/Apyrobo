@@ -30,6 +30,7 @@ import hashlib
 import logging
 import secrets
 import time
+from enum import Enum
 from typing import Any
 
 from apyrobo.core.robot import Robot
@@ -183,6 +184,82 @@ class AuthManager:
 
     def __repr__(self) -> str:
         return f"<AuthManager users={len(self._users)} audit_entries={len(self._audit)}>"
+
+
+# ---------------------------------------------------------------------------
+# RBAC — Role-Based Access Control
+# ---------------------------------------------------------------------------
+
+
+class RBACRole(Enum):
+    """Roles for the RBAC system."""
+
+    ADMIN = "admin"       # all permissions
+    OPERATOR = "operator" # execute skills, register robots, submit/read tasks
+    VIEWER = "viewer"     # read-only
+
+
+ROLE_PERMISSIONS: dict[RBACRole, set[str]] = {
+    RBACRole.ADMIN: {"*"},
+    RBACRole.OPERATOR: {
+        "skill:execute",
+        "robot:register",
+        "task:submit",
+        "task:read",
+    },
+    RBACRole.VIEWER: {
+        "task:read",
+        "robot:list",
+    },
+}
+
+
+class RBACManager:
+    """
+    Simple RBAC manager for granting and checking permissions.
+
+    Usage:
+        rbac = RBACManager()
+        rbac.assign_role("alice", RBACRole.OPERATOR)
+        rbac.check_permission("alice", "skill:execute")   # True
+        rbac.require_permission("alice", "admin:delete")  # raises PermissionError
+    """
+
+    def __init__(self) -> None:
+        self._roles: dict[str, RBACRole] = {}
+
+    def assign_role(self, user_id: str, role: RBACRole) -> None:
+        """Assign a role to a user (replaces any previous role)."""
+        self._roles[user_id] = role
+        logger.info("RBAC: assigned role %s to user %s", role.value, user_id)
+
+    def get_role(self, user_id: str) -> RBACRole | None:
+        """Return the role assigned to *user_id*, or None."""
+        return self._roles.get(user_id)
+
+    def check_permission(self, user_id: str, permission: str) -> bool:
+        """Return True if *user_id* has *permission*."""
+        role = self._roles.get(user_id)
+        if role is None:
+            return False
+        allowed = ROLE_PERMISSIONS.get(role, set())
+        return "*" in allowed or permission in allowed
+
+    def require_permission(self, user_id: str, permission: str) -> None:
+        """Raise PermissionError if *user_id* does not have *permission*."""
+        if not self.check_permission(user_id, permission):
+            role = self._roles.get(user_id)
+            raise PermissionError(
+                f"User {user_id!r} (role={role.value if role else 'none'}) "
+                f"lacks permission {permission!r}"
+            )
+
+    def permissions_for(self, user_id: str) -> set[str]:
+        """Return the full set of permissions granted to *user_id*."""
+        role = self._roles.get(user_id)
+        if role is None:
+            return set()
+        return set(ROLE_PERMISSIONS.get(role, set()))
 
 
 class GuardedRobot:

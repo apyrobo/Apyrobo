@@ -957,6 +957,49 @@ class InferenceRouter(AgentProvider):
     # Dunder
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # IN-08: VLM vision routing
+    # ------------------------------------------------------------------
+
+    def route_vision(self, image_data: bytes, prompt: str) -> str:
+        """
+        Route a vision query to the best available VLM tier.
+
+        Falls back to the VLMRouter (MockVLMAdapter) if no VLM tier is
+        configured or all VLM tiers are unhealthy.
+
+        Args:
+            image_data: Raw image bytes (JPEG, PNG, etc.).
+            prompt:     Question or instruction about the image.
+
+        Returns:
+            String response from the VLM.
+        """
+        from apyrobo.inference.vlm import VLMRouter, LiteLLMVLMAdapter  # local import to avoid cycle
+
+        # Find the best healthy VLM tier
+        vlm_tiers = [t for t in self._tiers if t.is_vlm and t.health.is_healthy]
+        if vlm_tiers:
+            tier = min(vlm_tiers, key=lambda t: t.health.avg_latency_ms)
+            adapter = LiteLLMVLMAdapter(model=tier.provider.model if hasattr(tier.provider, "model") else "gpt-4o")
+            router = VLMRouter(adapter=adapter)
+        else:
+            logger.debug("route_vision: no healthy VLM tier — using mock adapter")
+            router = VLMRouter()
+
+        t0 = time.time()
+        try:
+            result = router.route_vision(image_data, prompt)
+            self._log_route(
+                "vlm", (time.time() - t0) * 1000, True, note="vision"
+            )
+            return result
+        except Exception as exc:
+            self._log_route(
+                "vlm", (time.time() - t0) * 1000, False, error=str(exc), note="vision"
+            )
+            raise
+
     def __repr__(self) -> str:
         healthy = sum(1 for t in self._tiers if t.health.is_healthy)
         return (

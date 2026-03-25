@@ -56,13 +56,13 @@ Focus: persistent agent memory, vision-language model integration, smarter plann
 |--------|------|-------------|-------|
 | ✅ | Episodic memory | SQLite-backed task execution history — `EpisodicStore`, queryable by time/robot/outcome ([#4][i4]) | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ | Semantic memory | Key-value fact store with cosine similarity vector recall — `SemanticStore` with numpy embeddings | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
-| :clipboard: | VLM integration | Vision-language models for camera-informed planning ([#5][i5]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ Done | VLM integration | Vision-language models for camera-informed planning — `VLMAdapter`, `LiteLLMVLMAdapter`, `MockVLMAdapter`, `VLMRouter`, `InferenceRouter.route_vision()` ([#5][i5]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ | Plan caching | TTL-based plan cache with hit/miss metrics — `PlanCache` (memory + SQLite) | |
 | :clipboard: | Plan validation | LLM plans checked against capability model before execution | |
-| :clipboard: | Multi-turn agent | Clarification dialogue when task is ambiguous | |
-| :clipboard: | Tool-calling agent | Function-calling LLM directly invokes skills | |
-| :clipboard: | Execution feedback loop | Feed execution results back to planner for re-planning | |
-| :clipboard: | Skill discovery | Agents discover available skills at runtime | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ Done | Multi-turn agent | Clarification dialogue when task is ambiguous — `ConversationMessage`, `ConversationHistory`, `MultiTurnAgent` with token-aware context truncation | |
+| ✅ Done | Tool-calling agent | Function-calling LLM directly invokes skills — `SkillTool`, `ToolCallingAgent` with mock fallback | |
+| ✅ Done | Execution feedback loop | Feed execution results back to planner for re-planning — `ExecutionResult`, `FeedbackCollector`, `AdaptiveExecutor` | |
+| ✅ Done | Skill discovery | Agents discover available skills at runtime — `SkillManifest`, `SkillDiscovery`, `DiscoveryRegistry` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | :clipboard: | MuJoCo integration | Lightweight sim adapter for MuJoCo physics ([#6][i6]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :bulb: | Formal safety verification | Export safety proofs for regulatory compliance | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :bulb: | Learning from demonstrations | Record human teleoperation as new skills | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
@@ -75,11 +75,11 @@ Focus: multi-robot fleet management, cloud deployment, enterprise features.
 
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
-| :clipboard: | Fleet manager | Centralized fleet dashboard with task queue | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ Done | Fleet manager | Centralized fleet dashboard with task queue — `RobotInfo`, `FleetManager` with load-balanced assignment and offline detection | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :clipboard: | Cloud deployment | Docker Compose / Kubernetes deployment templates | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
-| :clipboard: | REST API gateway | HTTP API for external systems to submit tasks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | Role-based access | Per-robot and per-task permission model | |
-| :clipboard: | Audit trail | Immutable log of all commands, decisions, and violations | |
+| ✅ Done | REST API gateway | HTTP API for external systems to submit tasks — FastAPI app with task/robot endpoints and API-key auth | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ Done | Role-based access | Per-robot and per-task permission model — `RBACRole`, `ROLE_PERMISSIONS`, `RBACManager` added to `auth.py` | |
+| ✅ Done | Audit trail | Immutable log of all commands, decisions, and violations — `AuditEvent`, `AuditTrail` with SHA-256 hash chain integrity verification | |
 | :clipboard: | Multi-site support | Coordinate robots across separate physical locations | |
 | :bulb: | Edge inference | Run small models on robot hardware for low-latency decisions | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :bulb: | Digital twin sync | Sync physical robot state to simulation in real-time | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
