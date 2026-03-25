@@ -91,12 +91,14 @@ Focus: API stability, hosted skill/adapter registry, backwards compatibility, co
 
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
-| :clipboard: | Hosted skill registry | Public registry for sharing skill packages and adapters | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | API freeze | No breaking changes to public API | |
-| :clipboard: | Migration guide | v0.x to v1.0 upgrade documentation | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
-| :clipboard: | Certification support | Export safety proofs for regulatory compliance | |
-| :clipboard: | Plugin system | Third-party skills, adapters, and providers as pip packages | |
-| :clipboard: | Long-term support | 12-month security and bug fix window | |
+| ✅ | Hosted skill registry | `apyrobo/registry/` — FastAPI server + `SkillRegistryClient` for discovering and publishing skills | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | API freeze | `API_STABILITY.md` — public API surface frozen for v1.x | |
+| ✅ | Migration guide | `MIGRATION.md` — v0.x to v1.0 upgrade documentation | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| ✅ | Certification support | `apyrobo/audit.py` — immutable audit trail with SHA-256 hash chain for regulatory compliance | |
+| ✅ | Plugin system | `apyrobo/plugins/` — third-party skills and adapters as pip packages via entry-points | |
+| ✅ | Long-term support | `apyrobo/lts/` — LTS policy, EOL tracking, `VersionChecker`, security advisories | |
+| ✅ | Changelog | `CHANGELOG.md` — complete release history from v0.1.0 to v1.0.0 | |
+| ✅ | Versioning tools | `apyrobo/versioning/` — changelog parser, migration guide generator, deprecated API scanner | |
 
 ---
 
