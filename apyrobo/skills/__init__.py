@@ -19,8 +19,11 @@ import apyrobo.skills.builtins as _builtins  # noqa: F401
 import apyrobo.skills.builtins_extended as _builtins_ext  # noqa: F401
 
 from apyrobo.skills.demonstrations import (  # noqa: F401
+    DemonstrationStep,
+    Demonstration,
     DemonstrationRecorder,
     DemonstrationStore,
     DemonstrationReplayer,
+    LearnedPattern,
     SkillLearner,
 )

@@ -1,228 +1,423 @@
 """
-Learning from demonstrations — record, store, replay, and learn from teleoperation.
+Learning from demonstrations — record, store, replay, and learn skills from
+human teleoperation sessions.
+
+Components:
+    - DemonstrationStep: single action snapshot within a demo
+    - Demonstration: ordered sequence of steps with metadata
+    - DemonstrationRecorder: capture live teleoperation
+    - DemonstrationStore: persist/load demos as JSON files
+    - DemonstrationReplayer: replay a stored demo via the skill executor
+    - SkillLearner: extract reusable skill patterns from demo sets
 """
+
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------------
 
 @dataclass
 class DemonstrationStep:
-    timestamp: float
+    """A single action captured during a demonstration."""
     skill_name: str
-    params: dict
-    state_before: dict
-    state_after: dict
+    parameters: dict[str, Any] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.time)
+    duration_s: float = 0.0
+    state_before: dict[str, Any] = field(default_factory=dict)
+    state_after: dict[str, Any] = field(default_factory=dict)
     success: bool = True
+    notes: str = ""
 
 
 @dataclass
 class Demonstration:
-    demo_id: str
-    robot_id: str
-    steps: list[DemonstrationStep]
-    metadata: dict
-    recorded_at: datetime
+    """An ordered sequence of steps recorded from a single demonstration session."""
+    name: str
+    steps: list[DemonstrationStep] = field(default_factory=list)
+    demo_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    start_time: float = field(default_factory=time.time)
+    end_time: Optional[float] = None
+    operator: str = ""
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def duration_s(self) -> float:
+        if self.end_time is None:
+            return 0.0
+        return max(0.0, self.end_time - self.start_time)
+
+    @property
+    def step_count(self) -> int:
+        return len(self.steps)
+
+    @property
+    def skill_sequence(self) -> list[str]:
+        return [s.skill_name for s in self.steps]
+
+    def successful_steps(self) -> list[DemonstrationStep]:
+        return [s for s in self.steps if s.success]
+
+
+# ---------------------------------------------------------------------------
+# DemonstrationRecorder
+# ---------------------------------------------------------------------------
 
 class DemonstrationRecorder:
-    def __init__(self) -> None:
-        self._demo_id: Optional[str] = None
-        self._robot_id: Optional[str] = None
-        self._steps: list[DemonstrationStep] = []
-        self._started_at: Optional[datetime] = None
+    """
+    Captures a live teleoperation session as a Demonstration.
 
-    def start_recording(self, robot_id: str) -> str:
-        self._demo_id = str(uuid.uuid4())
-        self._robot_id = robot_id
-        self._steps = []
-        self._started_at = datetime.now(timezone.utc)
-        return self._demo_id
+    Usage::
+
+        recorder = DemonstrationRecorder()
+        demo = recorder.start("pick_and_place")
+        recorder.record_step("navigate_to", {"x": 1.0, "y": 2.0})
+        recorder.record_step("pick_object", {"object_id": "box_1"})
+        demo = recorder.stop()
+    """
+
+    def __init__(self) -> None:
+        self._demo: Optional[Demonstration] = None
+
+    @property
+    def is_recording(self) -> bool:
+        return self._demo is not None
+
+    def start(self, name: str, operator: str = "", description: str = "") -> Demonstration:
+        """Begin a new demonstration recording session."""
+        if self._demo is not None:
+            raise RuntimeError("Already recording. Call stop() first.")
+        self._demo = Demonstration(
+            name=name,
+            operator=operator,
+            description=description,
+            start_time=time.time(),
+        )
+        logger.info("DemonstrationRecorder: started %r (%s)", name, self._demo.demo_id)
+        return self._demo
 
     def record_step(
         self,
         skill_name: str,
-        params: dict,
-        state_before: dict,
-        state_after: dict,
+        parameters: Optional[dict[str, Any]] = None,
+        duration_s: float = 0.0,
+        state_before: Optional[dict[str, Any]] = None,
+        state_after: Optional[dict[str, Any]] = None,
         success: bool = True,
-    ) -> None:
-        if not self.is_recording():
-            raise RuntimeError("Not currently recording. Call start_recording first.")
-        import time
+        notes: str = "",
+    ) -> DemonstrationStep:
+        """Append a step to the current demonstration."""
+        if self._demo is None:
+            raise RuntimeError("Not recording. Call start() first.")
         step = DemonstrationStep(
-            timestamp=time.time(),
             skill_name=skill_name,
-            params=params,
-            state_before=state_before,
-            state_after=state_after,
+            parameters=parameters or {},
+            timestamp=time.time(),
+            duration_s=duration_s,
+            state_before=state_before or {},
+            state_after=state_after or {},
             success=success,
+            notes=notes,
         )
-        self._steps.append(step)
+        self._demo.steps.append(step)
+        logger.debug("DemonstrationRecorder: step %r params=%s", skill_name, parameters)
+        return step
 
-    def stop_recording(self) -> Demonstration:
-        if not self.is_recording():
-            raise RuntimeError("Not currently recording.")
-        demo = Demonstration(
-            demo_id=self._demo_id,
-            robot_id=self._robot_id,
-            steps=list(self._steps),
-            metadata={},
-            recorded_at=self._started_at,
+    def stop(self) -> Demonstration:
+        """Finish recording and return the completed Demonstration."""
+        if self._demo is None:
+            raise RuntimeError("Not recording. Call start() first.")
+        self._demo.end_time = time.time()
+        demo, self._demo = self._demo, None
+        logger.info(
+            "DemonstrationRecorder: stopped %r (%d steps, %.1fs)",
+            demo.name, demo.step_count, demo.duration_s,
         )
-        self._demo_id = None
-        self._robot_id = None
-        self._steps = []
-        self._started_at = None
         return demo
 
-    def is_recording(self) -> bool:
-        return self._demo_id is not None
+    def current_demo(self) -> Optional[Demonstration]:
+        """Return the in-progress Demonstration, or None if not recording."""
+        return self._demo
 
+
+# ---------------------------------------------------------------------------
+# DemonstrationStore
+# ---------------------------------------------------------------------------
 
 class DemonstrationStore:
-    def save(self, demo: Demonstration, path: str) -> None:
-        data = {
-            "demo_id": demo.demo_id,
-            "robot_id": demo.robot_id,
-            "recorded_at": demo.recorded_at.isoformat(),
-            "metadata": demo.metadata,
-            "steps": [asdict(s) for s in demo.steps],
-        }
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
+    """
+    JSON-backed persistence layer for Demonstration objects.
 
-    def load(self, path: str) -> Demonstration:
-        with open(path) as f:
-            data = json.load(f)
-        steps = [DemonstrationStep(**s) for s in data["steps"]]
-        return Demonstration(
-            demo_id=data["demo_id"],
-            robot_id=data["robot_id"],
-            steps=steps,
-            metadata=data.get("metadata", {}),
-            recorded_at=datetime.fromisoformat(data["recorded_at"]),
-        )
+    Each demonstration is saved as ``<demo_id>.json`` under the store directory.
+    """
 
-    def list_demos(self, directory: str) -> list[str]:
-        try:
-            entries = os.listdir(directory)
-        except FileNotFoundError:
-            return []
-        return sorted(
-            os.path.join(directory, e) for e in entries if e.endswith(".json")
-        )
+    def __init__(self, directory: str = "demonstrations") -> None:
+        self._dir = Path(directory)
+        self._dir.mkdir(parents=True, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # Write
+    # ------------------------------------------------------------------
+
+    def save(self, demo: Demonstration) -> Path:
+        """Persist a demonstration to disk. Returns the file path."""
+        path = self._dir / f"{demo.demo_id}.json"
+        data = _demo_to_dict(demo)
+        path.write_text(json.dumps(data, indent=2))
+        logger.info("DemonstrationStore: saved %r to %s", demo.name, path)
+        return path
+
+    def delete(self, demo_id: str) -> bool:
+        """Delete a demonstration. Returns True if it existed."""
+        path = self._dir / f"{demo_id}.json"
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
+
+    def load(self, demo_id: str) -> Demonstration:
+        """Load a demonstration by its ID."""
+        path = self._dir / f"{demo_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Demonstration {demo_id!r} not found in {self._dir}"
+            )
+        return _demo_from_dict(json.loads(path.read_text()))
+
+    def load_by_name(self, name: str) -> list[Demonstration]:
+        """Load all demonstrations with the given name."""
+        return [d for d in self.list_all() if d.name == name]
+
+    def list_all(self) -> list[Demonstration]:
+        """Return all stored demonstrations, sorted by start_time."""
+        demos = []
+        for path in sorted(self._dir.glob("*.json")):
+            try:
+                demos.append(_demo_from_dict(json.loads(path.read_text())))
+            except Exception as exc:
+                logger.warning("DemonstrationStore: skipping %s: %s", path, exc)
+        demos.sort(key=lambda d: d.start_time)
+        return demos
+
+    def list_ids(self) -> list[str]:
+        return [p.stem for p in sorted(self._dir.glob("*.json"))]
+
+    def count(self) -> int:
+        return len(list(self._dir.glob("*.json")))
+
+
+def _demo_to_dict(demo: Demonstration) -> dict[str, Any]:
+    return asdict(demo)
+
+
+def _demo_from_dict(data: dict[str, Any]) -> Demonstration:
+    steps_raw = data.pop("steps", [])
+    demo = Demonstration(**data)
+    demo.steps = [DemonstrationStep(**s) for s in steps_raw]
+    return demo
+
+
+# ---------------------------------------------------------------------------
+# DemonstrationReplayer
+# ---------------------------------------------------------------------------
 
 class DemonstrationReplayer:
+    """
+    Replays a Demonstration by dispatching each step through a skill executor.
+
+    The executor must expose a ``dispatch(skill_name, **parameters)`` method.
+    """
+
     def __init__(self, executor: Any) -> None:
         self._executor = executor
 
-    def replay(self, demo: Demonstration, speed: float = 1.0) -> list[dict]:
-        results = []
-        for step in demo.steps:
-            result = self.replay_step(step)
-            results.append(result)
-        return results
+    def replay(
+        self,
+        demo: Demonstration,
+        skip_failed: bool = True,
+        speed_factor: float = 1.0,
+    ) -> list[dict[str, Any]]:
+        """
+        Execute each step in the demonstration.
 
-    def replay_step(self, step: DemonstrationStep) -> dict:
-        return self._executor.execute_skill(step.skill_name, step.params)
+        Returns a list of per-step records with keys ``skill``, ``result``, ``error``.
+        """
+        records: list[dict[str, Any]] = []
+        for step in demo.steps:
+            if skip_failed and not step.success:
+                records.append({
+                    "skill": step.skill_name, "result": None, "skipped": True
+                })
+                continue
+            records.append(self.replay_step(step))
+        return records
+
+    def replay_step(self, step: DemonstrationStep) -> dict[str, Any]:
+        """Replay a single step and return a record dict."""
+        try:
+            result = self._executor.dispatch(step.skill_name, **step.parameters)
+            return {"skill": step.skill_name, "result": result, "error": None}
+        except Exception as exc:
+            logger.warning(
+                "DemonstrationReplayer: step %r failed: %s", step.skill_name, exc
+            )
+            return {"skill": step.skill_name, "result": None, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# SkillLearner
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LearnedPattern:
+    """A skill pattern extracted from a set of demonstrations."""
+    skill_sequence: list[str]
+    frequency: int
+    avg_duration_s: float
+    common_parameters: dict[str, Any]
+    source_demo_ids: list[str]
 
 
 class SkillLearner:
-    def __init__(self) -> None:
-        self._training_demos: list[Demonstration] = []
+    """
+    Extracts reusable skill patterns from a collection of demonstrations.
 
-    def learn_from_demonstrations(self, demos: list[Demonstration]) -> dict:
-        self._training_demos = list(demos)
+    Uses frequency analysis over skill sequences to surface the most common
+    sub-sequences that could become standalone reusable skills.
+    """
 
-        skill_counts: dict[str, int] = defaultdict(int)
-        skill_successes: dict[str, int] = defaultdict(int)
-        sequences: list[list[str]] = []
+    def __init__(self, min_frequency: int = 2) -> None:
+        self.min_frequency = min_frequency
+        self._patterns: list[LearnedPattern] = []
 
+    def learn(self, demos: list[Demonstration]) -> list[LearnedPattern]:
+        """Analyse demos and return patterns meeting the frequency threshold."""
+        if not demos:
+            return []
+
+        sequence_map: dict[tuple[str, ...], list[str]] = {}
         for demo in demos:
-            seq = []
-            for step in demo.steps:
-                skill_counts[step.skill_name] += 1
-                if step.success:
-                    skill_successes[step.skill_name] += 1
-                seq.append(step.skill_name)
-            if seq:
-                sequences.append(seq)
+            seq = demo.skill_sequence
+            seen: set[tuple[str, ...]] = set()
+            for length in range(2, len(seq) + 1):
+                for start in range(len(seq) - length + 1):
+                    sub = tuple(seq[start : start + length])
+                    if sub not in seen:
+                        sequence_map.setdefault(sub, []).append(demo.demo_id)
+                        seen.add(sub)
 
-        success_rates = {
-            skill: skill_successes[skill] / skill_counts[skill]
-            for skill in skill_counts
-        }
+        patterns = []
+        for seq, demo_ids in sequence_map.items():
+            if len(demo_ids) < self.min_frequency:
+                continue
+            source_demos = [d for d in demos if d.demo_id in set(demo_ids)]
+            patterns.append(LearnedPattern(
+                skill_sequence=list(seq),
+                frequency=len(demo_ids),
+                avg_duration_s=self._avg_duration(seq, source_demos),
+                common_parameters=self._common_params(seq, source_demos),
+                source_demo_ids=sorted(set(demo_ids)),
+            ))
 
-        # Find the most frequent bigrams across all demo sequences.
-        bigram_counts: dict[tuple[str, str], int] = defaultdict(int)
-        for seq in sequences:
-            for a, b in zip(seq, seq[1:]):
-                bigram_counts[(a, b)] += 1
-        top_sequences = sorted(bigram_counts.items(), key=lambda x: -x[1])[:10]
+        patterns.sort(key=lambda p: (-p.frequency, -len(p.skill_sequence)))
+        self._patterns = patterns
+        return patterns
 
+    def most_common_sequence(self, demos: list[Demonstration]) -> list[str]:
+        """Return the single most frequently repeated skill sequence."""
+        patterns = self.learn(demos)
+        return patterns[0].skill_sequence if patterns else []
+
+    def extract_unique_skills(self, demos: list[Demonstration]) -> list[str]:
+        """Return all distinct skill names observed across the demo set."""
+        skills: set[str] = set()
+        for demo in demos:
+            skills.update(demo.skill_sequence)
+        return sorted(skills)
+
+    def summarise(self, demos: list[Demonstration]) -> dict[str, Any]:
+        """Return high-level stats about the demo set."""
+        if not demos:
+            return {"demos": 0, "total_steps": 0, "unique_skills": 0, "patterns": 0}
+        patterns = self.learn(demos)
+        total_steps = sum(d.step_count for d in demos)
         return {
-            "skill_counts": dict(skill_counts),
-            "success_rates": success_rates,
-            "top_sequences": [
-                {"from": a, "to": b, "count": c} for (a, b), c in top_sequences
-            ],
-            "demo_count": len(demos),
+            "demos": len(demos),
+            "total_steps": total_steps,
+            "unique_skills": len(self.extract_unique_skills(demos)),
+            "patterns": len(patterns),
+            "avg_steps_per_demo": total_steps / len(demos),
         }
-
-    def extract_skill_template(
-        self, skill_name: str, demos: list[Demonstration]
-    ) -> dict:
-        all_params: list[dict] = []
-        for demo in demos:
-            for step in demo.steps:
-                if step.skill_name == skill_name:
-                    all_params.append(step.params)
-
-        if not all_params:
-            return {}
-
-        # Collect all numeric keys and average them; keep last value for non-numeric.
-        aggregated: dict = {}
-        numeric_sums: dict[str, float] = defaultdict(float)
-        numeric_counts: dict[str, int] = defaultdict(int)
-
-        for p in all_params:
-            for k, v in p.items():
-                if isinstance(v, (int, float)):
-                    numeric_sums[k] += v
-                    numeric_counts[k] += 1
-                else:
-                    aggregated[k] = v
-
-        for k in numeric_sums:
-            aggregated[k] = numeric_sums[k] / numeric_counts[k]
-
-        return aggregated
 
     def suggest_next_step(
-        self, current_state: dict, history: list[DemonstrationStep]
+        self, last_skill: str, demos: list[Demonstration]
     ) -> Optional[str]:
-        if not history or not self._training_demos:
-            return None
-
-        last_skill = history[-1].skill_name
-
-        # Count which skills follow last_skill in training demos.
+        """Suggest the most likely next skill given the last executed skill."""
         follow_counts: dict[str, int] = defaultdict(int)
-        for demo in self._training_demos:
-            skills = [s.skill_name for s in demo.steps]
+        for demo in demos:
+            skills = demo.skill_sequence
             for i, skill in enumerate(skills[:-1]):
                 if skill == last_skill:
                     follow_counts[skills[i + 1]] += 1
-
         if not follow_counts:
             return None
         return max(follow_counts, key=lambda k: follow_counts[k])
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _avg_duration(
+        self, seq: tuple[str, ...], demos: list[Demonstration]
+    ) -> float:
+        durations: list[float] = []
+        for demo in demos:
+            demo_seq = demo.skill_sequence
+            for start in range(len(demo_seq) - len(seq) + 1):
+                if tuple(demo_seq[start : start + len(seq)]) == seq:
+                    durations.append(
+                        sum(demo.steps[start + i].duration_s for i in range(len(seq)))
+                    )
+        return sum(durations) / len(durations) if durations else 0.0
+
+    def _common_params(
+        self, seq: tuple[str, ...], demos: list[Demonstration]
+    ) -> dict[str, Any]:
+        param_sets: list[list[dict[str, Any]]] = []
+        for demo in demos:
+            demo_seq = demo.skill_sequence
+            for start in range(len(demo_seq) - len(seq) + 1):
+                if tuple(demo_seq[start : start + len(seq)]) == seq:
+                    param_sets.append(
+                        [demo.steps[start + i].parameters for i in range(len(seq))]
+                    )
+        if not param_sets:
+            return {}
+        common: dict[str, Any] = {}
+        for step_idx, step_params in enumerate(param_sets[0]):
+            for key, val in step_params.items():
+                if all(
+                    step_idx < len(ps) and ps[step_idx].get(key) == val
+                    for ps in param_sets
+                ):
+                    common[f"{seq[step_idx]}.{key}"] = val
+        return common
