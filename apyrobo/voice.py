@@ -17,9 +17,45 @@ import io
 import logging
 import tempfile
 import wave
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Config and result types
+# ---------------------------------------------------------------------------
+
+@dataclass
+class VoiceConfig:
+    """Configuration for a voice adapter backend."""
+    backend: str = "stub"
+    model_name: str = "base"
+    tts_voice: str = "alloy"
+    sample_rate: int = 16000
+    timeout_s: float = 5.0
+    language: str = "en"
+
+
+@dataclass
+class TranscriptionResult:
+    """Result of a speech-to-text transcription."""
+    text: str
+    confidence: float = 1.0
+    duration_s: float = 0.0
+    language: str = "en"
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SynthesisResult:
+    """Result of a text-to-speech synthesis."""
+    success: bool
+    audio_path: str = ""
+    audio_bytes: bytes = b""
+    duration_s: float = 0.0
+    message: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -379,3 +415,57 @@ def voice_loop(
         turn_count += 1
 
     return turns
+
+
+# ---------------------------------------------------------------------------
+# StubVoiceAdapter — offline no-op adapter for CI and unit tests
+# ---------------------------------------------------------------------------
+
+class StubVoiceAdapter(VoiceAdapter):
+    """
+    Minimal no-op adapter that never blocks or requires audio hardware.
+
+    listen_with_result() and speak_with_result() return rich result objects
+    while remaining fully synchronous and dependency-free.
+    """
+
+    def __init__(self, config: VoiceConfig | None = None) -> None:
+        self.config = config or VoiceConfig(backend="stub")
+        self._listen_queue: list[str] = []
+        self.transcriptions: list[TranscriptionResult] = []
+        self.syntheses: list[SynthesisResult] = []
+
+    def enqueue(self, *texts: str) -> None:
+        """Pre-load texts that listen() will return in order."""
+        self._listen_queue.extend(texts)
+
+    def listen(self, timeout_s: float | None = None) -> str:
+        result = self.listen_with_result(timeout_s=timeout_s or self.config.timeout_s)
+        return result.text
+
+    def listen_with_result(self, timeout_s: float | None = None) -> TranscriptionResult:
+        text = self._listen_queue.pop(0) if self._listen_queue else ""
+        result = TranscriptionResult(
+            text=text,
+            confidence=1.0,
+            duration_s=timeout_s or self.config.timeout_s,
+            language=self.config.language,
+        )
+        self.transcriptions.append(result)
+        return result
+
+    def speak(self, text: str) -> None:
+        self.speak_with_result(text)
+
+    def speak_with_result(self, text: str) -> SynthesisResult:
+        result = SynthesisResult(
+            success=True,
+            message=f"stub: {text[:50]}",
+            duration_s=len(text) * 0.05,
+        )
+        self.syntheses.append(result)
+        logger.debug("StubVoiceAdapter.speak: %r", text)
+        return result
+
+    def is_available(self) -> bool:
+        return True
