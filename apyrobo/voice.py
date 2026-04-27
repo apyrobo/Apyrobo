@@ -320,6 +320,141 @@ class MockVoiceAdapter(VoiceAdapter):
 # voice_loop — interactive listen-plan-execute-speak cycle
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Config-based STT/TTS adapter (ROS 2 / dataclass API)
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class VoiceConfig:
+    stt_backend: str = "stub"  # "whisper" | "openai" | "stub"
+    tts_backend: str = "stub"  # "piper" | "openai" | "stub"
+    language: str = "en"
+    whisper_model: str = "base"
+    openai_api_key: str = ""
+
+
+@dataclass
+class TranscriptionResult:
+    text: str
+    confidence: float
+    language: str
+    duration_ms: float
+
+
+@dataclass
+class SynthesisResult:
+    audio_bytes: bytes
+    duration_ms: float
+    text: str
+
+
+class SpeechAdapter:
+    """Config-driven STT/TTS adapter.  Uses stubs when backends are absent."""
+
+    def __init__(self, config: VoiceConfig | None = None) -> None:
+        self.config = config or VoiceConfig()
+
+    def transcribe(self, audio_bytes: bytes) -> TranscriptionResult:
+        if self.config.stt_backend == "openai" and self.config.openai_api_key:
+            return self._transcribe_openai(audio_bytes)
+        return TranscriptionResult(
+            text="stub transcription",
+            confidence=1.0,
+            language=self.config.language,
+            duration_ms=0.0,
+        )
+
+    def _transcribe_openai(self, audio_bytes: bytes) -> TranscriptionResult:
+        import io
+        try:
+            import openai as _openai
+            client = _openai.OpenAI(api_key=self.config.openai_api_key)
+            buf = io.BytesIO(audio_bytes)
+            buf.name = "audio.wav"
+            result = client.audio.transcriptions.create(
+                model="whisper-1", file=buf, language=self.config.language
+            )
+            return TranscriptionResult(
+                text=result.text.strip(),
+                confidence=1.0,
+                language=self.config.language,
+                duration_ms=0.0,
+            )
+        except Exception as exc:
+            logger.warning("OpenAI transcription failed: %s", exc)
+            return TranscriptionResult(
+                text="", confidence=0.0,
+                language=self.config.language, duration_ms=0.0,
+            )
+
+    def synthesize(self, text: str) -> SynthesisResult:
+        if self.config.tts_backend == "openai" and self.config.openai_api_key:
+            return self._synthesize_openai(text)
+        return SynthesisResult(audio_bytes=b"", duration_ms=0.0, text=text)
+
+    def _synthesize_openai(self, text: str) -> SynthesisResult:
+        try:
+            import openai as _openai
+            client = _openai.OpenAI(api_key=self.config.openai_api_key)
+            response = client.audio.speech.create(
+                model="tts-1", voice="alloy", input=text
+            )
+            return SynthesisResult(
+                audio_bytes=response.content, duration_ms=0.0, text=text
+            )
+        except Exception as exc:
+            logger.warning("OpenAI synthesis failed: %s", exc)
+            return SynthesisResult(audio_bytes=b"", duration_ms=0.0, text=text)
+
+    def transcribe_file(self, path: str) -> TranscriptionResult:
+        with open(path, "rb") as fh:
+            return self.transcribe(fh.read())
+
+    def is_available(self) -> bool:
+        if self.config.stt_backend == "stub" or self.config.tts_backend == "stub":
+            return True
+        if self.config.stt_backend == "openai" or self.config.tts_backend == "openai":
+            try:
+                import openai  # noqa: F401
+                return True
+            except ImportError:
+                return False
+        return True
+
+
+class StubVoiceAdapter(SpeechAdapter):
+    """Deterministic adapter for testing — never touches external services."""
+
+    _STUB_TEXT = "hello robot"
+    _STUB_AUDIO = b"\x00\x01\x02\x03"
+
+    def __init__(self) -> None:
+        super().__init__(VoiceConfig(stt_backend="stub", tts_backend="stub"))
+
+    def transcribe(self, audio_bytes: bytes) -> TranscriptionResult:
+        return TranscriptionResult(
+            text=self._STUB_TEXT,
+            confidence=1.0,
+            language="en",
+            duration_ms=10.0,
+        )
+
+    def synthesize(self, text: str) -> SynthesisResult:
+        return SynthesisResult(
+            audio_bytes=self._STUB_AUDIO, duration_ms=10.0, text=text
+        )
+
+    def is_available(self) -> bool:
+        return True
+
+
+# ---------------------------------------------------------------------------
+# voice_loop — interactive listen-plan-execute-speak cycle
+# ---------------------------------------------------------------------------
+
 def voice_loop(
     agent: Any,
     robot: Any,
