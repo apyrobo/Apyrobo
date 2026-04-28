@@ -158,9 +158,9 @@ robot.move(x=1.0, y=2.0, speed=0.5)
 If you prefer manual registration:
 
 ```python
-from apyrobo.core.adapters import register_adapter_class
+from apyrobo.core.adapters import register_adapter
 
-register_adapter_class("myrobot", MyRobotAdapter)
+register_adapter("myrobot")(MyRobotAdapter)
 ```
 
 ---

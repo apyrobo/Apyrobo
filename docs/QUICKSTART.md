@@ -181,3 +181,47 @@ This is what you include in grant applications and the README.
 3. **Publish benchmark results** in the README
 4. **Apply for grants** with the demo video + metrics
 5. **Open the repo** and announce on Discord / Reddit / HN
+
+---
+
+## ROS 2 / Real Robot
+
+To connect to a physical robot or a full ROS 2 environment you need the Docker image — it bundles ROS 2 Humble, Nav2, and all Python dependencies.
+
+**Prerequisites:** Docker Desktop (8 GB RAM minimum).
+
+### Launch the stack
+
+```bash
+# From the repo root
+docker compose -f docker/docker-compose.yml up -d apyrobo-api
+```
+
+This starts the `apyrobo-api` container with ROS 2 sourced and the APYROBO API layer running.
+
+### Connect from Python
+
+Once the container is running, connect using the `ros2://` URI scheme from any Python environment that can reach the container (or from inside it):
+
+```python
+from apyrobo import Robot, Agent
+
+# Connect to the ROS 2 adapter inside Docker
+robot = Robot.discover("ros2://turtlebot4")
+print(robot.capabilities())
+
+agent = Agent(provider="llm", model="claude-sonnet-4-20250514")
+result = agent.execute("navigate to the charging dock", robot)
+print(result.status)
+```
+
+The `ros2://` adapter requires `rclpy` (provided automatically inside the Docker image). Running it outside Docker requires a local ROS 2 Humble installation.
+
+### Open a shell inside the container
+
+```bash
+docker compose -f docker/docker-compose.yml exec apyrobo-api bash
+# Then inside:
+source /opt/ros/humble/setup.bash
+python3 -c "from apyrobo import Robot; print(Robot.discover('ros2://test'))"
+```

@@ -70,6 +70,8 @@ print(result.status)  # → completed
 
 ### Install
 
+> **Requirements:** Python 3.10+, pip 21.3+ (run `pip install --upgrade pip` first if on macOS system Python)
+
 ```bash
 git clone https://github.com/apyrobo/apyrobo.git
 cd apyrobo
@@ -112,8 +114,39 @@ print(f"{result.status.value}: {result.steps_completed}/{result.steps_total} ste
 from apyrobo import Robot, Agent
 
 robot = Robot.discover("mock://turtlebot4")
-agent = Agent(provider="rule")  # or "llm" with any LiteLLM model
+
+# No API key needed
+agent = Agent(provider="rule")
+
+# LLM-backed — any LiteLLM model string
+agent = Agent(provider="llm", model="claude-sonnet-4-20250514")
+
 result = agent.execute("go to 5, 3 then pick up the object", robot)
+```
+
+| Provider | Description | Requires |
+|----------|-------------|---------|
+| `rule` | Built-in rule-based planner | Nothing |
+| `llm` | LiteLLM-backed (any model) | `pip install litellm` + API key |
+| `routed` | Edge/cloud routing via InferenceRouter | `pip install litellm` |
+| `auto` | Picks `llm` if litellm is available, else `rule` | — |
+
+### Custom Skills
+
+```python
+from apyrobo import Skill, SkillLibrary, Robot, Agent, CapabilityType
+
+lib = SkillLibrary()
+lib.register(Skill(
+    skill_id="inspect_shelf",
+    description="Visually inspect a shelf",
+    required_capability=CapabilityType.NAVIGATE,  # use NAVIGATE as stand-in
+    parameters={"shelf_id": "string"},
+))
+
+robot = Robot.discover("mock://arm1")
+agent = Agent(robot=robot, skill_library=lib)
+result = agent.execute("inspect shelf A3")
 ```
 
 See the [full quickstart guide](docs/quickstart_5min.md) for safety enforcement, swarm coordination, and LLM setup.
@@ -184,6 +217,24 @@ APYROBO works with any robot through capability adapters:
 | `HTTPAdapter` | `http://` | REST-based robot APIs |
 
 Write your own: see the [Adapter Authoring Guide](docs/adapter_authoring.md).
+
+---
+
+## Connecting to a Robot
+
+| URI Scheme | What it does | Requires |
+|------------|-------------|---------|
+| `mock://` | Pure Python simulation, no external deps | Nothing |
+| `gazebo://` | Physics-aware mock with simulated delays | Nothing |
+| `gazebo_native://` | Real Gazebo bridge via socket | Gazebo running |
+| `mujoco://` | MuJoCo physics engine | `pip install mujoco` |
+| `ros2://` | Real ROS 2 robot via rclpy | ROS 2 + Docker image |
+
+For your first real robot, use the Docker image which includes ROS 2:
+
+```bash
+docker-compose up apyrobo-api
+```
 
 ---
 
