@@ -39,6 +39,32 @@ class SkillLibrary:
     Built-in skills are always available.
     """
 
+    @classmethod
+    def from_decorated(
+        cls,
+        skills_dir: "str | Path | None" = None,
+        registry: "Any | None" = None,
+    ) -> "SkillLibrary":
+        """Build a library pre-populated with all ``@skill``-decorated skills.
+
+        Scans the global decorated-skill registry and calls ``register()`` for
+        each entry so the library is ready for an Agent without any file I/O.
+
+        Example::
+
+            @skill(description="Inspect the shelf")
+            def inspect_shelf(shelf_id: str) -> None: ...
+
+            lib = SkillLibrary.from_decorated()
+            agent = Agent(provider="rule", library=lib)
+        """
+        from apyrobo.skills.decorators import get_decorated_skills
+
+        instance = cls(skills_dir=skills_dir, registry=registry)
+        for _sid, (skill_def, _fn) in get_decorated_skills().items():
+            instance.register(skill_def)
+        return instance
+
     def __init__(self, skills_dir: str | Path | None = None,
                  registry: Any | None = None) -> None:
         self._custom_skills: dict[str, Skill] = {}

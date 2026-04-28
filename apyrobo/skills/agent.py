@@ -60,6 +60,15 @@ class RuleBasedProvider(AgentProvider):
     Simple keyword-matching planner for demos and testing.
 
     No LLM required — maps common task phrases to skill sequences.
+    Custom regex patterns can be injected via the ``patterns`` constructor
+    argument and are evaluated before the built-in keyword table.
+
+    Example::
+
+        provider = RuleBasedProvider(patterns=[
+            (r"inspect.*shelf", "inspect_shelf"),
+            (r"charge", "go_to_dock"),
+        ])
     """
 
     TASK_PATTERNS: list[tuple[list[str], list[dict[str, Any]]]] = [
@@ -104,9 +113,24 @@ class RuleBasedProvider(AgentProvider):
         ),
     ]
 
+    def __init__(
+        self,
+        patterns: "list[tuple[str, str]] | None" = None,
+    ) -> None:
+        self._extra_patterns: list[tuple[str, str]] = patterns or []
+
     def plan(self, task: str, available_skills: list[dict[str, Any]],
              capabilities: list[str]) -> list[dict[str, Any]]:
         task_lower = task.lower()
+
+        # Check caller-supplied regex patterns first (highest priority).
+        for pattern, skill_id in self._extra_patterns:
+            if re.search(pattern, task_lower):
+                logger.info(
+                    "RuleBasedProvider: custom pattern %r matched %r → %s",
+                    pattern, task, skill_id,
+                )
+                return [{"skill_id": skill_id, "parameters": {}}]
 
         # Try to extract coordinates from the task
         coords = self._extract_coordinates(task_lower)
@@ -761,6 +785,8 @@ class Agent:
         self._library = kwargs.pop("library", None)
         self._registry: SkillRegistry | None = kwargs.pop("registry", None)
         self._use_constrained_prompt = kwargs.pop("constrained_prompt", False)
+        # Extra regex patterns for the rule-based provider.
+        self._rule_patterns: list[tuple[str, str]] = kwargs.pop("patterns", [])
 
         # VC-02: Optional agent memory for episodic + semantic knowledge
         from apyrobo.memory import AgentMemory
@@ -793,6 +819,9 @@ class Agent:
             inner = get_provider(inner_name, **kwargs)
             self._provider = MultiTurnProvider(inner_provider=inner)
             logger.info("Agent using multi-turn provider")
+        elif provider == "rule":
+            self._provider = RuleBasedProvider(patterns=self._rule_patterns)
+            logger.info("Agent using rule-based provider")
         elif provider == "auto":
             # Try LLM first, fall back to rule-based
             try:
@@ -800,7 +829,7 @@ class Agent:
                 self._provider = LLMProvider(**kwargs)
                 logger.info("Agent using LLM provider")
             except ImportError:
-                self._provider = RuleBasedProvider()
+                self._provider = RuleBasedProvider(patterns=self._rule_patterns)
                 logger.info("Agent using rule-based provider (litellm not installed)")
         else:
             self._provider = get_provider(provider, **kwargs)
