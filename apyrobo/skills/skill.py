@@ -102,6 +102,43 @@ class Skill(BaseModel):
     def from_json(cls, json_str: str) -> Skill:
         return cls.from_dict(json.loads(json_str))
 
+    @classmethod
+    def simple(
+        cls,
+        skill_id: str,
+        description: str = "",
+        capability: str = "custom",
+        timeout: float = 60.0,
+        retries: int = 0,
+        **params: Any,
+    ) -> "Skill":
+        """One-liner skill factory for quick authoring.
+
+        Parameter types are inferred from the keyword argument values: pass a
+        string to declare a string parameter, a float for a float parameter, etc.
+
+        Example::
+
+            pick = Skill.simple(
+                "pick_cup",
+                "Pick up a cup",
+                capability="pick",
+                object_id="",   # str parameter, default ""
+                speed=0.5,      # float parameter, default 0.5
+            )
+        """
+        name = skill_id.replace("_", " ").title()
+        cap_type = CapabilityType(capability)
+        return cls(
+            skill_id=skill_id,
+            name=name,
+            description=description,
+            required_capability=cap_type,
+            parameters=dict(params),
+            timeout_seconds=timeout,
+            retry_count=retries,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Built-in skills

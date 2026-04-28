@@ -24,6 +24,7 @@ from apyrobo.skills.agent import (
     build_constrained_prompt,
 )
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
+from apyrobo.skills.decorators import skill, get_decorated_skills
 from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionState, SkillTimeout
 from apyrobo.safety.enforcer import (
     SafetyEnforcer, SafetyPolicy, SafetyViolation, EscalationTimeout,
@@ -116,6 +117,9 @@ __all__ = [
     "__version__",
     "Robot",
     "Agent",
+    "skill",
+    "get_decorated_skills",
+    "SkillLibrary",
     "RobotCapability",
     "TaskRequest",
     "TaskResult",
