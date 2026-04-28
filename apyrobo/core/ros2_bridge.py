@@ -119,8 +119,15 @@ try:
 
     _HAS_ROS2 = True
 except ImportError:
+    import warnings
     _HAS_ROS2 = False
-    logger.debug("rclpy not available — ROS 2 adapters will not register")
+    warnings.warn(
+        "rclpy not found — the ros2:// adapter will not be available. "
+        "Robot.discover('ros2://...') will raise RuntimeError. "
+        "To use ros2://, run APYROBO inside the Docker container: "
+        "docker compose -f docker/docker-compose.yml exec apyrobo bash",
+        stacklevel=1,
+    )
 
 
 # ---------------------------------------------------------------------------

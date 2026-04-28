@@ -34,6 +34,49 @@ from apyrobo.safety.confidence import ConfidenceEstimator
 from apyrobo.config import ApyroboConfig
 
 
+# ---------------------------------------------------------------------------
+# Provider name resolution
+# ---------------------------------------------------------------------------
+
+# Friendly short-names and their (provider, model) translations.
+_PROVIDER_ALIASES: dict[str, tuple[str, str]] = {
+    "anthropic": ("llm", "claude-sonnet-4-20250514"),
+    "claude": ("llm", "claude-sonnet-4-20250514"),
+    "openai": ("llm", "gpt-4o"),
+    "gpt": ("llm", "gpt-4o"),
+    "gpt4": ("llm", "gpt-4o"),
+    "gpt-4": ("llm", "gpt-4o"),
+    "ollama": ("llm", "ollama/llama3"),
+}
+
+_PROVIDER_TABLE = """\
+  Provider name       Equivalent to
+  ─────────────────────────────────────────────────────────────
+  rule                Built-in rule-based planner (no API key)
+  llm                 LiteLLM provider — set --model explicitly
+  tool_calling        LLM with structured tool-calling
+  multi_turn          LLM with clarifying question support
+  anthropic           llm --model claude-sonnet-4-20250514
+  claude              llm --model claude-sonnet-4-20250514
+  openai              llm --model gpt-4o
+  gpt                 llm --model gpt-4o
+  ollama              llm --model ollama/llama3
+
+  For LLM providers, set the matching env var:
+    ANTHROPIC_API_KEY   for Anthropic models
+    OPENAI_API_KEY      for OpenAI models
+"""
+
+
+def _resolve_provider(provider: str, model: str | None = None) -> tuple[str, str | None]:
+    """Expand friendly aliases to (provider, model). Returns (provider, model)."""
+    alias = _PROVIDER_ALIASES.get(provider.lower())
+    if alias:
+        resolved_provider, default_model = alias
+        return resolved_provider, model or default_model
+    return provider, model
+
+
 def cmd_discover(args: argparse.Namespace) -> None:
     """Discover a robot and show its capabilities."""
     robot = Robot.discover(args.uri)
@@ -65,7 +108,12 @@ def cmd_discover(args: argparse.Namespace) -> None:
 def cmd_plan(args: argparse.Namespace) -> None:
     """Plan a task and show the skill graph (without executing)."""
     robot = Robot.discover(args.robot)
-    agent = Agent(provider=args.provider)
+    provider, model = _resolve_provider(args.provider, getattr(args, "model", None))
+    try:
+        agent = Agent(provider=provider, **({"model": model} if model else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}\n\nAvailable providers:\n{_PROVIDER_TABLE}", file=sys.stderr)
+        sys.exit(1)
     graph = agent.plan(args.task, robot)
 
     print(f"Task: {args.task!r}")
@@ -100,7 +148,12 @@ def cmd_execute(args: argparse.Namespace) -> None:
     enforcer = SafetyEnforcer(robot, policy=policy)
 
     # Agent
-    agent = Agent(provider=args.provider)
+    provider, model = _resolve_provider(args.provider, getattr(args, "model", None))
+    try:
+        agent = Agent(provider=provider, **({"model": model} if model else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}\n\nAvailable providers:\n{_PROVIDER_TABLE}", file=sys.stderr)
+        sys.exit(1)
 
     # Confidence check
     graph = agent.plan(args.task, robot)
@@ -376,7 +429,12 @@ def cmd_voice(args: argparse.Namespace) -> None:
     )
 
     robot = Robot.discover(args.robot)
-    agent = Agent(provider=args.provider)
+    provider, model = _resolve_provider(args.provider, getattr(args, "model", None))
+    try:
+        agent = Agent(provider=provider, **({"model": model} if model else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}\n\nAvailable providers:\n{_PROVIDER_TABLE}", file=sys.stderr)
+        sys.exit(1)
 
     adapter_map = {
         "mock": lambda: MockVoiceAdapter(["go to (2, 3)", "stop"]),
