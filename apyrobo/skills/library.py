@@ -47,22 +47,39 @@ class SkillLibrary:
     ) -> "SkillLibrary":
         """Build a library pre-populated with all ``@skill``-decorated skills.
 
-        Scans the global decorated-skill registry and calls ``register()`` for
-        each entry so the library is ready for an Agent without any file I/O.
+        Scans the global decorated-skill registry, registers each Skill's
+        metadata, and wires its execution handler into the global HandlerRegistry
+        so the SkillExecutor can dispatch it at runtime.
 
         Example::
 
             @skill(description="Inspect the shelf")
-            def inspect_shelf(shelf_id: str) -> None: ...
+            def inspect_shelf(shelf_id: str) -> bool: ...
 
             lib = SkillLibrary.from_decorated()
             agent = Agent(provider="rule", library=lib)
         """
+        import inspect as _inspect
         from apyrobo.skills.decorators import get_decorated_skills
+        from apyrobo.skills.handlers import _DEFAULT_REGISTRY
 
         instance = cls(skills_dir=skills_dir, registry=registry)
-        for _sid, (skill_def, _fn) in get_decorated_skills().items():
+        for sid, (skill_def, fn) in get_decorated_skills().items():
             instance.register(skill_def)
+
+            # Build a (robot, params) -> bool handler from the decorated fn.
+            # The fn takes its own keyword args; params is the runtime dict.
+            accepted = set(_inspect.signature(fn).parameters)
+
+            def _make_handler(f: Any, ok: set) -> Any:
+                def _handler(robot: Any, params: dict) -> bool:
+                    filtered = {k: v for k, v in params.items() if k in ok}
+                    result = f(**filtered)
+                    return bool(result) if result is not None else True
+                return _handler
+
+            _DEFAULT_REGISTRY.add(sid, _make_handler(fn, accepted))
+
         return instance
 
     def __init__(self, skills_dir: str | Path | None = None,
