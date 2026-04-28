@@ -134,19 +134,22 @@ result = agent.execute("go to 5, 3 then pick up the object", robot)
 ### Custom Skills
 
 ```python
-from apyrobo import Skill, SkillLibrary, Robot, Agent, CapabilityType
+from apyrobo import Skill, SkillLibrary, Robot, Agent
+from apyrobo.core.schemas import CapabilityType
 
-lib = SkillLibrary()
-lib.register(Skill(
+# Build a skill in memory — no JSON file needed
+skill = Skill(
     skill_id="inspect_shelf",
+    name="inspect_shelf",
     description="Visually inspect a shelf",
-    required_capability=CapabilityType.NAVIGATE,  # use NAVIGATE as stand-in
-    parameters={"shelf_id": "string"},
-))
+    required_capability=CapabilityType.NAVIGATE,  # NAVIGATE works on mock robots; SCAN does not
+)
+lib = SkillLibrary()
+lib.load_json(skill.to_json())  # registers in memory
 
-robot = Robot.discover("mock://arm1")
-agent = Agent(robot=robot, skill_library=lib)
-result = agent.execute("inspect shelf A3")
+robot = Robot.discover("mock://turtlebot4")
+agent = Agent(provider="rule", library=lib)
+result = agent.execute("inspect shelf A3", robot)
 ```
 
 See the [full quickstart guide](docs/quickstart_5min.md) for safety enforcement, swarm coordination, and LLM setup.
