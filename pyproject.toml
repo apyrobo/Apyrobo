@@ -69,6 +69,9 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=apyrobo --cov-report=term-missing -v"
+markers = [
+    "integration: end-to-end tests that require ROS 2 Humble and a running fake robot (opt-in with -m integration)",
+]
 
 [tool.mypy]
 python_version = "3.10"

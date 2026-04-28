@@ -116,6 +116,72 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
 
+  # ---------------------------------------------------------------------------
+  # Integration test — profile: integration
+  #
+  # fake-robot: minimal ROS 2 node that simulates a TurtleBot4.
+  # integration-test: runs pytest -m integration inside the same ROS domain.
+  #
+  # Both containers share ROS_DOMAIN_ID=42 and the ros2-test-net bridge.
+  # FastDDS multicast discovery works on Linux Docker bridge networks.
+  # If discovery fails (e.g. Docker Desktop on Mac), set network_mode: host
+  # on both services and remove the networks: stanza from each.
+  #
+  # Run:
+  #   docker compose -f docker/docker-compose.yml --profile integration \
+  #       up --build --abort-on-container-exit
+  # ---------------------------------------------------------------------------
+  fake-robot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.integration
+    image: apyrobo-integration:latest
+    container_name: apyrobo-fake-robot
+    profiles:
+      - integration
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+    command:
+      - python3
+      - tests/integration/fake_turtlebot4.py
+    healthcheck:
+      # Poll until the node publishes /odom (ros2 topic hz exits 0 if it sees msgs)
+      test:
+        - CMD
+        - bash
+        - -c
+        - "source /opt/ros/humble/setup.bash && ros2 topic hz /odom --once 2>&1 | grep -q 'average rate'"
+      interval: 5s
+      timeout: 8s
+      retries: 6
+      start_period: 10s
+
+  integration-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.integration
+    image: apyrobo-integration:latest
+    container_name: apyrobo-integration-test
+    profiles:
+      - integration
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+      FAKE_ROBOT_EXTERNAL: "1"
+    depends_on:
+      fake-robot:
+        condition: service_healthy
+    command:
+      - pytest
+      - -m
+      - integration
+      - tests/integration/
+      - -v
+      - --tb=short
+
 volumes:
   audit_data:
     driver: local
@@ -128,4 +194,6 @@ volumes:
 
 networks:
   apyrobo-net:
+    driver: bridge
+  ros2-test-net:
     driver: bridge

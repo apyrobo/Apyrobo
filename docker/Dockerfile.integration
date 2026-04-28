@@ -1,0 +1,42 @@
+# =============================================================================
+# APYROBO — Integration test image (ROS 2 Humble + apyrobo + test deps)
+#
+# Used by the 'integration' Docker Compose profile to run tests/integration/.
+#
+# Build:
+#   docker build -f docker/Dockerfile.integration -t apyrobo-integration:latest .
+# =============================================================================
+
+FROM ros:humble-ros-base
+
+# Install ROS 2 message packages needed by the adapter and fake robot
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-nav2-msgs \
+    ros-humble-tf2 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy apyrobo source and install it (includes rclpy bridge deps)
+COPY pyproject.toml .
+COPY apyrobo/ ./apyrobo/
+
+# Install apyrobo + test dependencies
+# pip uses the system Python that ROS 2 uses (/usr/bin/python3)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
+    pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
+
+# Copy integration test files
+COPY tests/ ./tests/
+
+# Source ROS 2 environment for every command via ros_entrypoint.sh
+# The base image already provides /ros_entrypoint.sh
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ROS_DOMAIN_ID=42
+
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["pytest", "-m", "integration", "tests/integration/", "-v", "--tb=short"]
