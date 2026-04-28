@@ -15,7 +15,7 @@ __version__ = "0.1.0"
 from apyrobo.core.robot import Robot
 from apyrobo.core.adapters import (
     CapabilityAdapter, MockAdapter, GazeboAdapter, MQTTAdapter, HTTPAdapter,
-    list_adapters, register_adapter,
+    list_adapters, register_adapter, register_adapter_class,
 )
 from apyrobo.core.schemas import RobotCapability, TaskRequest, TaskResult, AdapterState
 from apyrobo.skills.agent import (
@@ -60,11 +60,57 @@ from apyrobo.sim import (
     SimToRealTransferPipeline,
 )
 
-# Ensure ROS 2 adapter is registered (import triggers @register_adapter)
-try:
-    from apyrobo.core import ros2_bridge as _  # noqa: F401
-except Exception:
-    pass  # ROS 2 not available — that's fine
+# Ensure ROS 2 adapter is registered (import triggers @register_adapter).
+# When rclpy is missing, ros2_bridge emits a warnings.warn and _HAS_ROS2=False,
+# so the real ROS2Adapter is not registered. We register a stub instead so that
+# Robot.discover("ros2://...") raises a clear RuntimeError rather than a cryptic
+# "No adapter registered for scheme 'ros2'" message.
+import warnings as _warnings
+_ros2_loaded = False
+with _warnings.catch_warnings():
+    _warnings.simplefilter("ignore")  # suppress ros2_bridge's own rclpy ImportWarning
+    try:
+        from apyrobo.core import ros2_bridge as _ros2_bridge  # noqa: F401
+        _ros2_loaded = True
+    except Exception:
+        pass
+
+if not _ros2_loaded:
+    _warnings.warn(
+        "ROS 2 adapter not available (rclpy not installed). "
+        "Install inside a ROS 2 environment or use the Docker image. "
+        "Available without ROS 2: mock://, gazebo://, gazebo_native://",
+        stacklevel=2,
+    )
+
+from apyrobo.core.adapters import _ADAPTER_REGISTRY as _REG, CapabilityAdapter as _CA
+
+if "ros2" not in _REG:
+    class _ROS2Unavailable(_CA):
+        """Stub adapter that raises a helpful error when rclpy is not installed."""
+
+        def __init__(self, robot_name: str, **kwargs: object) -> None:
+            raise RuntimeError(
+                "The ros2:// adapter requires rclpy, which is only available inside "
+                "the APYROBO Docker container.\n\n"
+                "Quick fix:\n"
+                "  docker compose -f docker/docker-compose.yml exec apyrobo bash\n\n"
+                "Without Docker, use mock:// for testing or gazebo:// for sim.\n"
+                "See docs/QUICKSTART.md for the full setup guide."
+            )
+
+        def get_capabilities(self):  # type: ignore[override]
+            raise NotImplementedError
+
+        def move(self, x: float, y: float, speed=None) -> None:  # type: ignore[override]
+            raise NotImplementedError
+
+        def stop(self) -> None:
+            raise NotImplementedError
+
+    _REG["ros2"] = _ROS2Unavailable
+
+del _REG, _CA
 
 __all__ = [
     "__version__",
@@ -84,6 +130,7 @@ __all__ = [
     "IsaacSimAdapter",
     "list_adapters",
     "register_adapter",
+    "register_adapter_class",
     "Skill",
     "BUILTIN_SKILLS",
     "SkillGraph",

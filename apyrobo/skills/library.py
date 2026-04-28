@@ -86,6 +86,19 @@ class SkillLibrary:
         self._custom_skills[skill.skill_id] = skill
         return skill
 
+    def register(self, skill: Skill) -> None:
+        """Register a skill in-memory without touching the filesystem.
+
+        Use this to inject custom skills into an Agent's planning context
+        without needing a skills directory on disk.
+
+            lib = SkillLibrary()
+            lib.register(my_skill)
+            agent = Agent(provider="rule", library=lib)
+        """
+        self._custom_skills[skill.skill_id] = skill
+        logger.debug("Registered in-memory skill: %s", skill.skill_id)
+
     def save_skill(self, skill: Skill, path: str | Path | None = None) -> Path:
         """Save a skill to a JSON file."""
         if path is None:

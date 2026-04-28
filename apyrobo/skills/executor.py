@@ -295,7 +295,11 @@ class SkillExecutor:
 
         if skill.required_capability != CapabilityType.CUSTOM:
             if skill.required_capability not in cap_types:
-                return False, f"Robot lacks required capability: {skill.required_capability.value}"
+                available = ", ".join(sorted(c.value for c in cap_types)) or "(none)"
+                return False, (
+                    f"Robot lacks required capability: {skill.required_capability.value}. "
+                    f"Robot '{caps.robot_id}' has: {available}"
+                )
 
         # Check speed constraint
         params = skill.parameters

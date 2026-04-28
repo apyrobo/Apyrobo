@@ -65,6 +65,18 @@ def get_adapter(scheme: str, robot_name: str, **kwargs: Any) -> "CapabilityAdapt
     return cls(robot_name=robot_name, **kwargs)
 
 
+def register_adapter_class(scheme: str, cls: type["CapabilityAdapter"]) -> None:
+    """Register an adapter class for a URI scheme (imperative, non-decorator form).
+
+    Equivalent to decorating the class with @register_adapter(scheme).
+    Useful when the adapter class is defined in third-party code.
+
+        from apyrobo.core.adapters import register_adapter_class
+        register_adapter_class("myrobot", MyRobotAdapter)
+    """
+    _ADAPTER_REGISTRY[scheme] = cls
+
+
 def list_adapters() -> list[str]:
     """Return all registered adapter scheme names."""
     return sorted(_ADAPTER_REGISTRY.keys())
