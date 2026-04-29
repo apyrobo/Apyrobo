@@ -36,9 +36,9 @@ Focus: dynamic skill handler dispatch, voice control, reliability, and real hard
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
 | ✅ | Handler registry | Dynamic `@skill_handler` registration and dispatch — `HandlerRegistry` class with decorator, `dispatch`, introspection ([#1][i1]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :construction: | Voice adapter layer | STT/TTS integration — Whisper, Piper, OpenAI ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Voice adapter layer | STT/TTS integration — `WhisperSTTAdapter`, `OpenAISTTAdapter`, `PiperTTSAdapter`, `OpenAITTSAdapter`, `VoiceAgent`, mock stubs — completed this session ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Nav2 adapter | Full ROS 2 Nav2 integration — `NavigateToPose` action client, `/odom` subscription, stub mode fallback — real code runs when rclpy + nav2_msgs available; offline-testable via `MockNav2Adapter` — completed this session | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | MoveIt adapter | ROS 2 MoveIt 2 integration — `MoveGroup` action client for joint + Cartesian targets, `/joint_states` subscription, stub mode fallback — real code runs when rclpy + moveit_msgs available; offline-testable via `MockMoveItAdapter` — completed this session | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ | Gazebo adapter improvements | Spawn/despawn models, reset world, joint states, apply forces, error handling | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ | Connection resilience | Auto-reconnect with exponential backoff, disconnect/reconnect hooks, observability events | |
 | ✅ Done | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill — `RetryStrategy`, `RetryPolicy`, `CircuitBreaker`, `RetryExecutor` in `apyrobo/skills/retry.py` | |
@@ -65,7 +65,7 @@ Focus: persistent agent memory, vision-language model integration, smarter plann
 | ✅ Done | Skill discovery | Agents discover available skills at runtime — `SkillManifest`, `SkillDiscovery`, `DiscoveryRegistry` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | MuJoCo integration | Lightweight sim adapter for MuJoCo physics — merged PR #38 | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ Done | Formal safety verification | Export safety proofs for regulatory compliance — merged PR #38 | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Learning from demonstrations | `DemonstrationRecorder`, `DemonstrationStore` (JSON), `DemonstrationReplayer`, `SkillLearner` (frequency-based pattern extraction) — completed this session | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 
@@ -123,11 +123,11 @@ These items need domain expertise (ROS 2, simulation, speech, computer vision):
 
 | Item | Milestone | Issue |
 |------|-----------|-------|
-| Voice adapter — Whisper STT + Piper TTS | v0.2.0 | [#2][i2] |
+| ✅ Voice adapter — Whisper STT + Piper TTS | v0.2.0 | [#2][i2] |
 | VLM integration — camera-informed planning | v0.3.0 | [#5][i5] |
 | MuJoCo simulation adapter | v0.3.0 | [#6][i6] |
 | Formal safety verification proofs | v0.3.0 | — |
-| Nav2 / MoveIt adapter | v0.2.0 | — |
+| ✅ Nav2 / MoveIt adapter | v0.2.0 | — |
 
 ### How to Pick Up an Item
 

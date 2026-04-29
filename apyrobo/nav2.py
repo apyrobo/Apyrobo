@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -11,9 +12,11 @@ logger = logging.getLogger(__name__)
 
 try:
     import rclpy  # type: ignore
+    from rclpy.action import ActionClient as RclpyActionClient  # type: ignore
     _RCLPY_AVAILABLE = True
 except ImportError:
     rclpy = None  # type: ignore
+    RclpyActionClient = None  # type: ignore
     _RCLPY_AVAILABLE = False
 
 
@@ -53,6 +56,8 @@ class Nav2Adapter:
         self._current_pose: dict = {"x": 0.0, "y": 0.0, "yaw": 0.0}
         self._node: Any = None
         self._stub_mode = not _RCLPY_AVAILABLE
+        self._goal_handle: Any = None
+        self._odom_sub: Any = None
 
     async def connect(self) -> None:
         if self._stub_mode:
@@ -62,12 +67,35 @@ class Nav2Adapter:
         try:
             rclpy.init()
             self._node = rclpy.create_node("apyrobo_nav2")
+            self._setup_odom_subscription()
             self._connected = True
             logger.info("Nav2Adapter connected (namespace=%s)", self.config.ros_namespace)
         except Exception as exc:
             logger.warning("Nav2 connect failed (%s) — stub mode", exc)
             self._stub_mode = True
             self._connected = True
+
+    def _setup_odom_subscription(self) -> None:
+        """Subscribe to /odom to track current robot pose."""
+        try:
+            from nav_msgs.msg import Odometry  # type: ignore
+            self._odom_sub = self._node.create_subscription(
+                Odometry,
+                "/odom",
+                self._odom_callback,
+                10,
+            )
+        except ImportError:
+            logger.warning("nav_msgs not available — odom tracking disabled")
+
+    def _odom_callback(self, msg: Any) -> None:
+        """Update current pose from /odom topic."""
+        pos = msg.pose.pose.position
+        q = msg.pose.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        self._current_pose = {"x": pos.x, "y": pos.y, "yaw": yaw}
 
     async def disconnect(self) -> None:
         self._navigating = False
@@ -100,20 +128,74 @@ class Nav2Adapter:
                     elapsed_s=elapsed,
                     message="stub navigation complete",
                 )
-            # Real Nav2 action client would go here
-            await asyncio.sleep(0.05)
-            self._current_pose = {"x": goal.x, "y": goal.y, "yaw": goal.yaw}
-            elapsed = time.monotonic() - start
-            return NavigationResult(
-                success=True,
-                final_pose=dict(self._current_pose),
-                elapsed_s=elapsed,
-            )
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._blocking_navigate, goal)
+            return result
         finally:
             self._navigating = False
 
+    def _blocking_navigate(self, goal: NavigationGoal) -> NavigationResult:
+        """Blocking Nav2 NavigateToPose call — runs in thread executor."""
+        from nav2_msgs.action import NavigateToPose  # type: ignore
+        from geometry_msgs.msg import PoseStamped, Quaternion  # type: ignore
+
+        start = time.monotonic()
+        action_client = RclpyActionClient(self._node, NavigateToPose, "navigate_to_pose")
+        if not action_client.wait_for_server(timeout_sec=self.config.timeout_s):
+            action_client.destroy()
+            return NavigationResult(
+                success=False,
+                message="navigate_to_pose action server not available",
+            )
+
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose = PoseStamped()
+        goal_msg.pose.header.frame_id = goal.frame_id
+        goal_msg.pose.header.stamp = self._node.get_clock().now().to_msg()
+        goal_msg.pose.pose.position.x = goal.x
+        goal_msg.pose.pose.position.y = goal.y
+        goal_msg.pose.pose.position.z = goal.z
+        qz = math.sin(goal.yaw / 2.0)
+        qw = math.cos(goal.yaw / 2.0)
+        goal_msg.pose.pose.orientation = Quaternion(x=0.0, y=0.0, z=qz, w=qw)
+
+        send_future = action_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self._node, send_future)
+        goal_handle = send_future.result()
+
+        if not goal_handle.accepted:
+            action_client.destroy()
+            return NavigationResult(success=False, message="goal rejected by Nav2")
+
+        self._goal_handle = goal_handle
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self._node, result_future)
+
+        elapsed = time.monotonic() - start
+        action_client.destroy()
+        self._goal_handle = None
+        return NavigationResult(
+            success=True,
+            final_pose=dict(self._current_pose),
+            elapsed_s=elapsed,
+            message="navigation complete",
+        )
+
     async def cancel_navigation(self) -> None:
         self._navigating = False
+        if self._goal_handle is not None and not self._stub_mode:
+            try:
+                loop = asyncio.get_event_loop()
+                goal_handle = self._goal_handle
+
+                def _cancel() -> None:
+                    future = goal_handle.cancel_goal_async()
+                    rclpy.spin_until_future_complete(self._node, future)
+
+                await loop.run_in_executor(None, _cancel)
+            except Exception as exc:
+                logger.warning("Nav2Adapter: cancel failed: %s", exc)
+            self._goal_handle = None
         logger.info("Nav2Adapter: navigation cancelled")
 
     def get_current_pose(self) -> dict:

@@ -455,6 +455,274 @@ class StubVoiceAdapter(SpeechAdapter):
 # voice_loop — interactive listen-plan-execute-speak cycle
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# WhisperSTTAdapter — local Whisper STT, transcribe(audio) -> str
+# ---------------------------------------------------------------------------
+
+class WhisperSTTAdapter:
+    """
+    Local offline STT using openai-whisper.
+
+    Accepts audio as raw bytes (WAV) or a file path string.
+    Requires: pip install openai-whisper
+    """
+
+    def __init__(self, model_size: str = "base", device: str | None = None) -> None:
+        self._model_size = model_size
+        self._device = device
+        self._model: Any = None
+
+    def _load_model(self) -> Any:
+        if self._model is None:
+            import whisper
+            self._model = whisper.load_model(self._model_size, device=self._device)
+        return self._model
+
+    def transcribe(self, audio: bytes | str) -> str:
+        """Transcribe audio bytes or file path → text string."""
+        import os
+        model = self._load_model()
+        if isinstance(audio, (bytes, bytearray)):
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(audio)
+                tmp_path = f.name
+            try:
+                result = model.transcribe(tmp_path, fp16=False)
+            finally:
+                os.unlink(tmp_path)
+        else:
+            result = model.transcribe(audio, fp16=False)
+        text = result.get("text", "").strip()
+        logger.info("WhisperSTTAdapter.transcribe: %r", text)
+        return text
+
+    def is_available(self) -> bool:
+        try:
+            import whisper  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+
+# ---------------------------------------------------------------------------
+# OpenAISTTAdapter — cloud Whisper API, transcribe(audio) -> str
+# ---------------------------------------------------------------------------
+
+class OpenAISTTAdapter:
+    """
+    Cloud STT via OpenAI Whisper API.
+
+    Accepts audio as raw bytes (WAV/MP3/etc.) or a file path string.
+    Requires: pip install openai; set OPENAI_API_KEY.
+    Falls back gracefully if no API key is configured.
+    """
+
+    def __init__(self, model: str = "whisper-1", api_key: str | None = None) -> None:
+        self._model = model
+        self._api_key = api_key
+        self._client: Any = None
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            import openai
+            kwargs: dict[str, Any] = {}
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+            self._client = openai.OpenAI(**kwargs)
+        return self._client
+
+    def transcribe(self, audio: bytes | str) -> str:
+        """Transcribe audio bytes or file path via OpenAI Whisper API."""
+        client = self._get_client()
+        if isinstance(audio, str):
+            with open(audio, "rb") as fh:
+                raw = fh.read()
+        else:
+            raw = bytes(audio)
+        buf = io.BytesIO(raw)
+        buf.name = "audio.wav"
+        result = client.audio.transcriptions.create(model=self._model, file=buf)
+        text = result.text.strip()
+        logger.info("OpenAISTTAdapter.transcribe: %r", text)
+        return text
+
+    def is_available(self) -> bool:
+        try:
+            import openai  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+
+# ---------------------------------------------------------------------------
+# PiperTTSAdapter — local Piper TTS, synthesize(text) -> bytes
+# ---------------------------------------------------------------------------
+
+class PiperTTSAdapter:
+    """
+    Local offline TTS via piper-tts CLI.
+
+    synthesize(text) returns raw PCM bytes (16-bit LE, 22050 Hz, mono).
+    Returns b"" gracefully if piper is not on PATH.
+    Requires: piper binary on PATH (pip install piper-tts or system install).
+    """
+
+    def __init__(self, voice: str | None = None) -> None:
+        self._voice = voice
+
+    def synthesize(self, text: str) -> bytes:
+        """Synthesize text → raw wav/PCM bytes via piper CLI."""
+        import subprocess
+        cmd = ["piper", "--output_raw"]
+        if self._voice:
+            cmd.extend(["--model", self._voice])
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=text.encode(),
+                capture_output=True,
+                timeout=30,
+            )
+            if proc.returncode == 0:
+                return proc.stdout
+            logger.warning("PiperTTSAdapter: piper exited %d", proc.returncode)
+            return b""
+        except FileNotFoundError:
+            logger.error("PiperTTSAdapter: piper not on PATH — install piper-tts")
+            return b""
+
+    def is_available(self) -> bool:
+        import shutil
+        return shutil.which("piper") is not None
+
+
+# ---------------------------------------------------------------------------
+# OpenAITTSAdapter — cloud OpenAI TTS, synthesize(text) -> bytes
+# ---------------------------------------------------------------------------
+
+class OpenAITTSAdapter:
+    """
+    Cloud TTS via OpenAI TTS API.
+
+    synthesize(text) returns MP3 audio bytes.
+    Requires: pip install openai; set OPENAI_API_KEY.
+    """
+
+    def __init__(
+        self,
+        model: str = "tts-1",
+        voice: str = "alloy",
+        api_key: str | None = None,
+    ) -> None:
+        self._model = model
+        self._voice = voice
+        self._api_key = api_key
+        self._client: Any = None
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            import openai
+            kwargs: dict[str, Any] = {}
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+            self._client = openai.OpenAI(**kwargs)
+        return self._client
+
+    def synthesize(self, text: str) -> bytes:
+        """Synthesize text → MP3 audio bytes via OpenAI TTS API."""
+        client = self._get_client()
+        response = client.audio.speech.create(
+            model=self._model,
+            voice=self._voice,
+            input=text,
+        )
+        return response.content
+
+    def is_available(self) -> bool:
+        try:
+            import openai  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+
+# ---------------------------------------------------------------------------
+# MockSTTAdapter / MockTTSAdapter — deterministic stubs for testing
+# ---------------------------------------------------------------------------
+
+class MockSTTAdapter:
+    """Deterministic STT stub — returns pre-configured responses, no dependencies."""
+
+    def __init__(self, responses: list[str] | None = None) -> None:
+        self._responses = list(responses or ["mock transcription"])
+        self._idx = 0
+
+    def transcribe(self, audio: bytes | str) -> str:
+        text = self._responses[self._idx % len(self._responses)]
+        self._idx += 1
+        return text
+
+    def is_available(self) -> bool:
+        return True
+
+
+class MockTTSAdapter:
+    """Deterministic TTS stub — records synthesize() calls, no dependencies."""
+
+    def __init__(self) -> None:
+        self.synthesized: list[str] = []
+
+    def synthesize(self, text: str) -> bytes:
+        self.synthesized.append(text)
+        return b""
+
+    def is_available(self) -> bool:
+        return True
+
+
+# ---------------------------------------------------------------------------
+# VoiceAgent — wraps Agent with STT input and TTS output
+# ---------------------------------------------------------------------------
+
+class VoiceAgent:
+    """
+    Wraps an existing Agent with a voice interface.
+
+    Transcribes audio input via STT, runs the agent, synthesizes result via TTS.
+    """
+
+    def __init__(self, agent: Any, robot: Any, stt: Any, tts: Any) -> None:
+        self._agent = agent
+        self._robot = robot
+        self._stt = stt
+        self._tts = tts
+
+    def run(self, audio_input: bytes | str) -> str:
+        """
+        Transcribe audio_input → run agent → synthesize result.
+
+        Returns the spoken summary string.
+        """
+        text = self._stt.transcribe(audio_input)
+        if not text:
+            return ""
+        logger.info("VoiceAgent: heard %r", text)
+        result = self._agent.execute(task=text, robot=self._robot)
+        summary = (
+            f"Task {result.status.value}: "
+            f"{result.steps_completed}/{result.steps_total} steps completed"
+        )
+        if result.error:
+            summary += f". Error: {result.error}"
+        self._tts.synthesize(summary)
+        logger.info("VoiceAgent: spoke %r", summary)
+        return summary
+
+
+# ---------------------------------------------------------------------------
+# voice_loop — interactive listen-plan-execute-speak cycle
+# ---------------------------------------------------------------------------
+
 def voice_loop(
     agent: Any,
     robot: Any,
