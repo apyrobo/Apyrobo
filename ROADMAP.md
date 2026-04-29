@@ -36,9 +36,9 @@ Focus: dynamic skill handler dispatch, voice control, reliability, and real hard
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
 | ✅ | Handler registry | Dynamic `@skill_handler` registration and dispatch — `HandlerRegistry` class with decorator, `dispatch`, introspection ([#1][i1]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| ✅ | Voice adapter layer | `WhisperAdapter` (offline STT), `PiperAdapter` (offline TTS), `OpenAIVoiceAdapter` (cloud STT+TTS), `MockVoiceAdapter` (tests), `VoiceAgent` (STT→plan→execute→TTS in one call), `WhisperAdapter.transcribe(bytes\|str)` ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| ✅ | Nav2 adapter | Real `NavigateToPose` action client with odom pose tracking (`/odom`, BEST_EFFORT QoS), `get_position()`, `cancel_navigation()` via goal handle; stub mode when rclpy unavailable. Matches `fake_turtlebot4.py` interface. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| ✅ | MoveIt adapter | `home_arm()`, `get_joint_states()` (live from `/joint_states`), `plan_motion()` / `execute_motion()` separation, `MockMoveItAdapter`; stub mode when rclpy unavailable. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :construction: | Voice adapter layer | STT/TTS integration — Whisper, Piper, OpenAI ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ | Gazebo adapter improvements | Spawn/despawn models, reset world, joint states, apply forces, error handling | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ | Connection resilience | Auto-reconnect with exponential backoff, disconnect/reconnect hooks, observability events | |
 | ✅ Done | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill — `RetryStrategy`, `RetryPolicy`, `CircuitBreaker`, `RetryExecutor` in `apyrobo/skills/retry.py` | |
@@ -65,7 +65,7 @@ Focus: persistent agent memory, vision-language model integration, smarter plann
 | ✅ Done | Skill discovery | Agents discover available skills at runtime — `SkillManifest`, `SkillDiscovery`, `DiscoveryRegistry` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | MuJoCo integration | Lightweight sim adapter for MuJoCo physics — merged PR #38 | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ Done | Formal safety verification | Export safety proofs for regulatory compliance — merged PR #38 | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| ✅ | Learning from demonstrations | `DemonstrationRecorder`, `DemonstrationStore` (JSON), `DemonstrationReplayer`, `SkillLearner` (frequency analysis, next-step prediction) in `apyrobo/skills/demonstrations.py` | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 
@@ -103,6 +103,63 @@ Focus: API stability, hosted skill/adapter registry, backwards compatibility, co
 
 ---
 
+## v1.1.0 — Ship & Discover
+
+Focus: get apyrobo into developers' hands. Today the package version is still `0.1.0` and `pip install apyrobo` returns nothing. This milestone closes that gap and gives real-robot users a first-class diagnostic experience.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **PyPI publish** | Bump version to `1.0.0`, publish wheel to PyPI so `pip install apyrobo` works. Wire `python-package.yml` to fire on version tags. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **`apyrobo doctor`** | CLI command that checks the local environment: Python version, rclpy availability, ROS_DOMAIN_ID, reachable adapters, API keys. Prints a pass/fail checklist with fix suggestions. Single biggest DX win for real-robot onboarding. | |
+| :clipboard: | **Grafana dashboard** | Add a pre-built Grafana dashboard (`docker/grafana/`) wired to the existing Prometheus metrics. Launch with `docker compose --profile observability up`. Covers task throughput, skill latency, fleet status, error rates. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Version alignment** | All version strings (`pyproject.toml`, `apyrobo/__version__.py`, `CHANGELOG.md`, Docker image tags) should reflect the same value. Create a `scripts/bump_version.sh` helper. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **README badges** | Add CI status, PyPI version, coverage, and license badges to README. Makes the project look alive to anyone landing on GitHub. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Worktree cleanup script** | `scripts/clean_worktrees.sh` — prune the 50+ leftover `.claude/worktrees/` branches and merged remote refs that accumulate during development. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+
+---
+
+## v1.2.0 — Real Robot Hardening
+
+Focus: make the `ros2://` path reliable enough that a developer can stake production work on it. The integration test proves it works once; this milestone proves it keeps working.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **Connection health monitor** | Detect `/odom` timeouts, auto-reconnect with exponential backoff, emit `robot.disconnected` / `robot.reconnected` events. Today a silent network drop leaves the adapter stuck. | |
+| :clipboard: | **`apyrobo connect --verify`** | `apyrobo connect ros2://turtlebot4 --verify` — one command that connects, reads battery + position + velocity, prints a latency measurement, and exits 0/1. Replaces the current "write a script and guess" workflow. | |
+| :clipboard: | **Nav2 costmap awareness** | Pass the Nav2 costmap to the planner so it can reject goals inside obstacles before sending them, rather than waiting for Nav2 to fail. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Multi-robot task handoff** | When a robot fails mid-task, automatically reassign the remaining steps to the next available robot in the fleet. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Diagnostics export** | `apyrobo diagnose --robot ros2://turtlebot4 --out diag.json` — capture adapter state, last N tasks, error history, and hardware readings into a portable file for sharing with maintainers. | |
+| :clipboard: | **Hardware-in-the-loop CI** | GitHub Actions workflow that runs the integration suite against a real TurtleBot4 on a self-hosted runner. Triggered on release tags only. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
+## v1.3.0 — Skill Ecosystem
+
+Focus: make it worth publishing skills. Right now the registry infrastructure exists but there are zero community skills and no way to test a skill in isolation.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **`apyrobo-skills-turtlebot4`** | A pip-installable skill package for common TurtleBot4 tasks: `patrol_area`, `dock`, `undock`, `follow_person`, `inspect_room`. The reference implementation for third-party skill packages. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Skill test harness** | `apyrobo test-skill my_skill.py --robot mock://` — runs a skill against a mock robot, checks preconditions/postconditions, prints a test report. Lowers the bar for contributing skills. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Hosted skill registry** | Deploy the `apyrobo/registry/` FastAPI server publicly (e.g. `registry.apyrobo.dev`) so `apyrobo skill search patrol` actually returns results. | |
+| :clipboard: | **Skill composition CLI** | `apyrobo skill compose` — interactive REPL for chaining skills into a graph and testing the result, without writing Python. | :bulb: |
+
+---
+
+## v2.0.0 — Adaptive Intelligence
+
+Focus: the planner gets smarter. Today the LLM produces a static plan and retries on failure; this milestone makes it actually adapt.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **LLM replanning loop** | When a skill fails, send the failure reason back to the LLM and ask it to replan the remaining steps. Not just retry — actually reconsider the approach. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **VLM task verification** | After a skill completes, use the VLM adapter to check camera feed and confirm the expected state ("is the cup actually picked up?"). Flag discrepancies for human review or replan. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Long-horizon planning** | Break a multi-step, multi-hour goal ("restock all shelves") into a plan that spans robots, shifts, and recharges. Requires persistent plan state and checkpoint recovery. | :bulb: |
+| :clipboard: | **Correction learning** | When a user overrides a plan step, record the correction and use it to bias future planning for similar tasks. Builds on the existing demonstrations system. | :bulb: |
+| :clipboard: | **Sim-to-real transfer** | `apyrobo plan --simulate` — run a full task plan in Gazebo first, report any failures, then optionally deploy to the real robot. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
 ## Where to Start Contributing
 
 ### Good First Issues
@@ -112,10 +169,12 @@ These items are well-scoped, have clear acceptance criteria, and include mentori
 | Item | Milestone | Issue |
 |------|-----------|-------|
 | ✅ Increase test coverage to 90% | v0.2.0 | [#3][i3] |
-| Document memory system APIs | v0.3.0 | [#4][i4] |
 | ✅ Add Kubernetes deployment template | v0.4.0 | — |
-| Write v0.x → v1.0 migration guide | v1.0.0 | — |
-| Create new skill package (e.g. patrol, inspection) | v0.2.0 | [#7][i7] |
+| PyPI publish + version bump to 1.0.0 | v1.1.0 | — |
+| README badges (CI, PyPI, coverage) | v1.1.0 | — |
+| Worktree cleanup script | v1.1.0 | — |
+| Skill test harness (`apyrobo test-skill`) | v1.3.0 | — |
+| `apyrobo-skills-turtlebot4` package | v1.3.0 | [#7][i7] |
 
 ### Help Wanted
 
@@ -123,11 +182,12 @@ These items need domain expertise (ROS 2, simulation, speech, computer vision):
 
 | Item | Milestone | Issue |
 |------|-----------|-------|
-| Voice adapter — Whisper STT + Piper TTS | v0.2.0 | [#2][i2] |
-| VLM integration — camera-informed planning | v0.3.0 | [#5][i5] |
-| MuJoCo simulation adapter | v0.3.0 | [#6][i6] |
-| Formal safety verification proofs | v0.3.0 | — |
-| Nav2 / MoveIt adapter | v0.2.0 | — |
+| Grafana dashboard provisioning | v1.1.0 | — |
+| Nav2 costmap awareness | v1.2.0 | — |
+| Hardware-in-the-loop CI (self-hosted runner) | v1.2.0 | — |
+| LLM replanning loop | v2.0.0 | — |
+| VLM task verification | v2.0.0 | [#5][i5] |
+| Sim-to-real transfer | v2.0.0 | [#6][i6] |
 
 ### How to Pick Up an Item
 
