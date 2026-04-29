@@ -147,16 +147,18 @@ services:
       - python3
       - tests/integration/fake_turtlebot4.py
     healthcheck:
-      # Poll until the node publishes /odom (ros2 topic hz exits 0 if it sees msgs)
+      # Receive one /odom message (proves the node is up and publishing).
+      # ros2 topic hz does not support --once; use topic echo --once instead.
+      # timeout 5 ensures the command doesn't hang if the node isn't up yet.
       test:
         - CMD
         - bash
         - -c
-        - "source /opt/ros/humble/setup.bash && ros2 topic hz /odom --once 2>&1 | grep -q 'average rate'"
-      interval: 5s
-      timeout: 8s
-      retries: 6
-      start_period: 10s
+        - "source /opt/ros/humble/setup.bash && timeout 5 ros2 topic echo /odom --once > /dev/null 2>&1"
+      interval: 10s
+      timeout: 15s
+      retries: 8
+      start_period: 30s
 
   integration-test:
     build:

@@ -1,0 +1,71 @@
+name: ROS 2 Integration Tests
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+
+# Cancel an in-progress run for the same ref when a new one starts.
+concurrency:
+  group: ros2-integration-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ros2-integration:
+    name: ROS 2 Adapter Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cache the built integration image between runs.
+      # Key includes Dockerfile.integration and pyproject.toml so any change
+      # to dependencies or the image definition busts the cache.
+      - name: Cache integration Docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.docker-cache
+          key: docker-integration-${{ hashFiles('docker/Dockerfile.integration', 'pyproject.toml') }}
+          restore-keys: docker-integration-
+
+      - name: Load cached image (if available)
+        run: |
+          if [ -f /tmp/.docker-cache/apyrobo-integration.tar.gz ]; then
+            gunzip -c /tmp/.docker-cache/apyrobo-integration.tar.gz | docker load || true
+          fi
+
+      # Build (or reuse cached layers for) the integration image.
+      # Both fake-robot and integration-test share apyrobo-integration:latest.
+      - name: Build integration image
+        run: docker compose -f docker/docker-compose.yml --profile integration build
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Save image to cache
+        run: |
+          mkdir -p /tmp/.docker-cache
+          docker save apyrobo-integration:latest \
+            | gzip > /tmp/.docker-cache/apyrobo-integration.tar.gz
+
+      # --exit-code-from propagates pytest's exit code to this step.
+      # It implies --abort-on-container-exit, so the fake-robot service is
+      # stopped as soon as the integration-test container finishes.
+      - name: Run integration tests
+        run: |
+          docker compose -f docker/docker-compose.yml --profile integration \
+            up \
+            --abort-on-container-exit \
+            --exit-code-from integration-test
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile integration logs
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile integration down --volumes
