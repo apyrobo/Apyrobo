@@ -79,7 +79,6 @@ class SkillLibrary:
                 return _handler
 
             _DEFAULT_REGISTRY.add(sid, _make_handler(fn, accepted))
-
         return instance
 
     def __init__(self, skills_dir: str | Path | None = None,
