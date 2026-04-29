@@ -102,6 +102,28 @@ class WhisperAdapter(VoiceAdapter):
         logger.info("WhisperAdapter.listen_from_file: %r", text)
         return text
 
+    def transcribe(self, audio: bytes | str) -> str:
+        """
+        Transcribe audio from a file path (str) or raw audio bytes.
+
+        This is the preferred API for offline, no-API-key transcription.
+        Bytes are written to a temporary WAV file before transcription.
+        """
+        import os
+
+        if isinstance(audio, str):
+            return self.listen_from_file(audio)
+
+        # Write bytes to a temp file so whisper can read them
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio)
+            tmp_path = f.name
+        try:
+            return self.listen_from_file(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+
     def speak(self, text: str) -> None:
         """Speak using piper TTS via subprocess."""
         import subprocess
@@ -314,6 +336,93 @@ class MockVoiceAdapter(VoiceAdapter):
 
     def is_available(self) -> bool:
         return True
+
+
+# ---------------------------------------------------------------------------
+# VoiceAgent — STT → plan → execute → TTS in one call
+# ---------------------------------------------------------------------------
+
+class VoiceAgent:
+    """
+    End-to-end voice interface: transcribe → plan → execute → speak result.
+
+    Works with any VoiceAdapter for STT and TTS, and any Agent + Robot for
+    task planning and execution.  All backends can be mocked for testing.
+
+    Usage::
+
+        from apyrobo.voice import VoiceAgent, WhisperAdapter, PiperAdapter, MockVoiceAdapter
+        from apyrobo.skills.agent import Agent
+
+        # Production: whisper STT + piper TTS
+        va = VoiceAgent(
+            agent=Agent(provider="rule"),
+            robot=robot,
+            stt=WhisperAdapter(),
+            tts=PiperAdapter(),
+        )
+        summary = va.run("path/to/command.wav")
+
+        # Testing: fully mocked
+        va = VoiceAgent(
+            agent=Agent(provider="rule"),
+            robot=robot,
+            stt=MockVoiceAdapter(responses=["navigate to (1.0, 2.0)"]),
+            tts=MockVoiceAdapter(),
+        )
+        summary = va.run()  # uses stt.listen()
+    """
+
+    def __init__(
+        self,
+        agent: Any,
+        robot: Any,
+        stt: VoiceAdapter,
+        tts: VoiceAdapter | None = None,
+    ) -> None:
+        self._agent = agent
+        self._robot = robot
+        self._stt = stt
+        self._tts = tts if tts is not None else MockVoiceAdapter()
+
+    def run(self, audio_input: bytes | str | None = None) -> str:
+        """
+        STT → plan → execute → TTS.
+
+        Args:
+            audio_input:
+                ``str``   — file path; passed to ``stt.transcribe()`` if available,
+                            else ``stt.listen_from_file()``.
+                ``bytes`` — raw audio bytes; passed to ``stt.transcribe()``.
+                ``None``  — use ``stt.listen()`` (live microphone).
+
+        Returns:
+            Human-readable summary of the execution result (also spoken via TTS).
+        """
+        text = self._transcribe(audio_input)
+        if not text:
+            return ""
+
+        result = self._agent.execute(task=text, robot=self._robot)
+        summary = (
+            f"Task {result.status}: "
+            f"{result.steps_completed}/{result.steps_total} steps completed"
+        )
+        if result.error:
+            summary += f". Error: {result.error}"
+
+        self._tts.speak(summary)
+        logger.info("VoiceAgent.run: %r → %r", text, summary)
+        return summary
+
+    def _transcribe(self, audio_input: bytes | str | None) -> str:
+        if audio_input is None:
+            return self._stt.listen()
+        if hasattr(self._stt, "transcribe"):
+            return self._stt.transcribe(audio_input)
+        if isinstance(audio_input, str) and hasattr(self._stt, "listen_from_file"):
+            return self._stt.listen_from_file(audio_input)
+        return self._stt.listen()
 
 
 # ---------------------------------------------------------------------------
