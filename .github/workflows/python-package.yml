@@ -1,5 +1,12 @@
-# LN-02 step 103: PyPI publish workflow
-# Triggers on version tag push, builds wheel, uploads to TestPyPI first
+# Publish to PyPI on version tag push (v*).
+#
+# Prerequisites (repo owner must configure once on GitHub):
+#   1. Create GitHub Environments named "testpypi" and "pypi".
+#   2. On test.pypi.org and pypi.org, add a Trusted Publisher:
+#        Owner: apyrobo  Repo: Apyrobo  Workflow: python-package.yml
+#   3. No API token secrets are needed — OIDC handles auth automatically.
+#
+# Flow: build → publish to TestPyPI → publish to real PyPI → create GitHub Release
 name: Publish to PyPI
 
 on:
@@ -8,9 +15,13 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: pypi-publish-${{ github.ref }}
+  cancel-in-progress: false  # never cancel an in-flight publish
+
 jobs:
   build:
-    name: Build Distribution
+    name: Build distribution
     runs-on: ubuntu-latest
 
     steps:
@@ -27,7 +38,7 @@ jobs:
       - name: Build wheel and sdist
         run: python -m build
 
-      - name: Check distribution
+      - name: Check distribution metadata
         run: twine check dist/*
 
       - name: Upload dist artifacts
@@ -42,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
-      id-token: write
+      id-token: write  # required for OIDC trusted-publisher auth
 
     steps:
       - name: Download dist artifacts
@@ -62,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write
+      id-token: write  # required for OIDC trusted-publisher auth
 
     steps:
       - name: Download dist artifacts
@@ -73,3 +84,25 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  create-github-release:
+    name: Create GitHub Release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to create releases
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
