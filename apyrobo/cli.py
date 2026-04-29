@@ -18,6 +18,7 @@ import logging
 import subprocess
 import sys
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -427,6 +428,185 @@ def cmd_pkg_validate(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# apyrobo connect — one-command connection test
+# ---------------------------------------------------------------------------
+
+def _connect_with_timeout(uri: str, timeout: float) -> tuple[Any, float, str | None]:
+    """Run Robot.discover + robot.connect in a background thread with a wall-clock timeout.
+
+    Returns (robot, elapsed_s, error_message).
+    On success: (robot, elapsed_s, None).
+    On failure: (None,  elapsed_s, "<reason>").
+    """
+    robot_box: list[Any] = [None]
+    elapsed_box: list[float] = [timeout]
+    error_box: list[str | None] = [None]
+
+    def _attempt() -> None:
+        t0 = time.monotonic()
+        try:
+            r = Robot.discover(uri)
+            r.connect()
+            robot_box[0] = r
+        except Exception as exc:
+            error_box[0] = str(exc)
+        finally:
+            elapsed_box[0] = time.monotonic() - t0
+
+    thread = threading.Thread(target=_attempt, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout)
+
+    if thread.is_alive():
+        return None, timeout, f"Connection timed out after {timeout:.0f}s"
+    return robot_box[0], elapsed_box[0], error_box[0]
+
+
+def cmd_connect(args: argparse.Namespace) -> None:
+    """Connect to a robot and optionally run a verification suite."""
+    uri: str = args.uri
+    timeout: float = getattr(args, "timeout", 10.0)
+    as_json: bool = getattr(args, "json", False)
+    verify: bool = getattr(args, "verify", False)
+
+    if not as_json:
+        print(f"Connecting to {uri}...")
+
+    robot, connect_time, error = _connect_with_timeout(uri, timeout)
+
+    if error:
+        if as_json:
+            print(json.dumps({
+                "uri": uri,
+                "connected": False,
+                "error": error,
+                "connect_time_s": round(connect_time, 3),
+            }))
+        else:
+            print(f"{_icon('fail')} {error}")
+        sys.exit(1)
+
+    if not as_json:
+        print(f"{_icon('pass')} Connected in {connect_time:.1f}s")
+
+    if not verify:
+        if as_json:
+            print(json.dumps({
+                "uri": uri,
+                "connected": True,
+                "connect_time_s": round(connect_time, 3),
+            }))
+        return
+
+    # --verify: run the full check suite
+    checks: list[dict[str, Any]] = []
+
+    if not as_json:
+        print()
+        print(f"apyrobo connect --verify {uri}")
+        print(_RULE)
+
+    # 1. Position
+    try:
+        pos = robot.get_position()
+        checks.append({"name": "position", "status": "pass", "value": list(pos)})
+        if not as_json:
+            print(f"{_icon('pass')} {'Position':<14} ({pos[0]:.2f}, {pos[1]:.2f})")
+    except Exception as exc:
+        checks.append({"name": "position", "status": "fail", "value": None, "error": str(exc)})
+        if not as_json:
+            print(f"{_icon('fail')} {'Position':<14} failed: {exc}")
+
+    # 2. Battery
+    try:
+        health_data = robot.get_health()
+        battery = health_data.get("battery_pct")
+        if battery is not None:
+            status = "warn" if battery < 20 else "pass"
+            checks.append({"name": "battery", "status": status, "value": round(float(battery), 1)})
+            if not as_json:
+                print(f"{_icon(status)} {'Battery':<14} {battery:.0f}%")
+        else:
+            checks.append({"name": "battery", "status": "warn", "value": None})
+            if not as_json:
+                print(f"{_icon('warn')} {'Battery':<14} not available")
+    except Exception:
+        checks.append({"name": "battery", "status": "warn", "value": None})
+        if not as_json:
+            print(f"{_icon('warn')} {'Battery':<14} not available")
+
+    # 3. Capabilities / Skills
+    try:
+        caps = robot.capabilities()
+        cap_list = caps.capabilities
+        names = [c.name for c in cap_list]
+        count = len(names)
+        display = ", ".join(names[:3])
+        if count > 3:
+            display += f", +{count - 3} more"
+        checks.append({"name": "capabilities", "status": "pass", "value": names})
+        if not as_json:
+            print(f"{_icon('pass')} {'Capabilities':<14} {display}  ({count} skills)")
+    except Exception as exc:
+        checks.append({"name": "capabilities", "status": "fail", "value": None, "error": str(exc)})
+        if not as_json:
+            print(f"{_icon('fail')} {'Capabilities':<14} failed: {exc}")
+
+    # 4. Round-trip latency — p50 of 3 calls
+    try:
+        raw: list[float] = []
+        for _ in range(3):
+            t = time.monotonic()
+            robot.get_position()
+            raw.append(time.monotonic() - t)
+        raw.sort()
+        p50_ms = raw[len(raw) // 2] * 1000
+        checks.append({"name": "latency_ms_p50", "status": "pass", "value": round(p50_ms, 1)})
+        if not as_json:
+            print(f"{_icon('pass')} {'Latency':<14} {p50_ms:.0f}ms p50")
+    except Exception as exc:
+        checks.append({"name": "latency_ms_p50", "status": "fail", "value": None, "error": str(exc)})
+        if not as_json:
+            print(f"{_icon('fail')} {'Latency':<14} failed: {exc}")
+
+    # 5. Health monitor — wait 2 s then sample is_healthy (ros2:// only)
+    health_monitor = robot.health
+    if health_monitor is not None:
+        time.sleep(2)
+        is_healthy = health_monitor.is_healthy
+        status = "pass" if is_healthy else "warn"
+        label = "online" if is_healthy else "no odom received"
+        checks.append({"name": "health_monitor", "status": status, "value": is_healthy})
+        if not as_json:
+            print(f"{_icon(status)} {'Health':<14} {label}")
+    else:
+        checks.append({"name": "health_monitor", "status": "pass", "value": None, "note": "not applicable"})
+        if not as_json:
+            print(f"{_icon('pass')} {'Health':<14} not monitored")
+
+    if not as_json:
+        print(_RULE)
+
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    warnings = sum(1 for c in checks if c["status"] == "warn")
+    failures = sum(1 for c in checks if c["status"] == "fail")
+
+    if as_json:
+        print(json.dumps({
+            "uri": uri,
+            "connected": True,
+            "connect_time_s": round(connect_time, 3),
+            "checks": checks,
+            "summary": {"passed": passed, "warnings": warnings, "failures": failures},
+        }, indent=2))
+    else:
+        print(f"{passed} checks passed · {warnings} warnings · {failures} failures")
+
+    if failures > 0:
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # apyrobo doctor — environment diagnostics
 # ---------------------------------------------------------------------------
 
@@ -477,7 +657,8 @@ def _check_rclpy() -> tuple[_CheckResult, bool]:
             "warn", "rclpy not found",
             hint=(
                 "Run inside Docker to use ros2://: "
-                "docker compose -f docker/docker-compose.yml exec apyrobo bash"
+                "docker compose -f docker/docker-compose.yml exec apyrobo bash. "
+                "Once inside, test: apyrobo connect --verify ros2://<robot>"
             ),
         ), False
 
@@ -754,6 +935,16 @@ def main() -> None:
     p_pkg_validate = pkg_sub.add_parser("validate", help="Validate a package directory")
     p_pkg_validate.add_argument("directory", help="Package directory")
 
+    # connect — one-command connection test
+    p_conn = sub.add_parser("connect", help="Test connection to a robot")
+    p_conn.add_argument("uri", help="Robot URI (e.g. ros2://turtlebot4, mock://test)")
+    p_conn.add_argument("--verify", action="store_true",
+                        help="Run full verification suite (position, battery, skills, latency, health)")
+    p_conn.add_argument("--timeout", type=float, default=10.0, metavar="N",
+                        help="Seconds to wait for connection (default 10)")
+    p_conn.add_argument("--json", action="store_true", dest="json",
+                        help="Machine-readable JSON output")
+
     # doctor / diagnose — environment diagnostics
     _doctor_help = "Diagnose the local environment and show fix hints"
     sub.add_parser("doctor", help=_doctor_help)
@@ -793,6 +984,7 @@ def main() -> None:
         "skills": cmd_skills,
         "config": cmd_config,
         "pkg": cmd_pkg,
+        "connect": cmd_connect,
         "doctor": cmd_doctor,
         "diagnose": cmd_doctor,
         "voice": cmd_voice,
