@@ -55,6 +55,30 @@ docker compose -f docker/docker-compose.yml --profile monitoring up -d
 # Metrics endpoint: http://localhost:8080/metrics
 ```
 
+### 4a. Optional: enable full observability stack (Prometheus + Grafana)
+
+```bash
+docker compose -f docker/docker-compose.yml --profile observability up -d
+# Prometheus UI:  http://localhost:9090
+# Grafana:        http://localhost:3000  (admin / apyrobo)
+```
+
+The `observability` profile starts both Prometheus and a pre-configured Grafana instance. The dashboard is provisioned automatically — no manual import needed. It includes panels for:
+
+- **Task throughput** — completed and failed tasks per minute
+- **Skill latency** — average execution time per skill
+- **Task failure rate** — percentage of tasks that failed over the last 5 minutes
+- **Skill retry count** — total retries across all skills
+- **Error rate by skill** — which skills are failing and how often
+
+The `monitoring` profile (Prometheus only) still works as before for setups that don't need Grafana.
+
+To stop and clean up volumes:
+
+```bash
+docker compose -f docker/docker-compose.yml --profile observability down -v
+```
+
 ### 5. Scale workers
 
 ```bash

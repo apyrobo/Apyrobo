@@ -8,8 +8,14 @@
 # With Redis:
 #   docker compose -f docker/docker-compose.yml --profile redis up -d
 #
-# With monitoring:
+# With Prometheus only:
 #   docker compose -f docker/docker-compose.yml --profile monitoring up -d
+#   → Prometheus UI: http://localhost:9090
+#
+# With full observability (Prometheus + Grafana):
+#   docker compose -f docker/docker-compose.yml --profile observability up -d
+#   → Grafana: http://localhost:3000  (admin / apyrobo)
+#   → Prometheus: http://localhost:9090
 #
 # Scale workers:
 #   docker compose -f docker/docker-compose.yml up -d --scale apyrobo-worker=4
@@ -104,6 +110,7 @@ services:
     restart: unless-stopped
     profiles:
       - monitoring
+      - observability
     ports:
       - "9090:9090"
     volumes:
@@ -115,6 +122,34 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboards (profile: observability)
+  #
+  # Provisioned automatically:
+  #   datasource: Prometheus at http://prometheus:9090
+  #   dashboard:  docker/grafana/provisioning/dashboards/apyrobo.json
+  #
+  # Open: http://localhost:3000  (admin / apyrobo)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: apyrobo-grafana
+    restart: unless-stopped
+    profiles:
+      - observability
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: apyrobo
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    networks:
+      - apyrobo-net
+    depends_on:
+      - prometheus
 
   # ---------------------------------------------------------------------------
   # Integration test — profile: integration
@@ -192,6 +227,8 @@ volumes:
   redis_data:
     driver: local
   prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:
