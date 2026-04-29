@@ -13,6 +13,7 @@ Built on ROS 2. Model-agnostic. Hardware-agnostic.
 __version__ = "1.0.0"
 
 from apyrobo.core.robot import Robot
+from apyrobo.core.health import ConnectionHealth
 from apyrobo.core.adapters import (
     CapabilityAdapter, MockAdapter, GazeboAdapter, MQTTAdapter, HTTPAdapter,
     list_adapters, register_adapter, register_adapter_class,

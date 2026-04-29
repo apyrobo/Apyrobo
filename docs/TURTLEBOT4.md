@@ -237,6 +237,59 @@ If you use `@skill` but build the library manually (`SkillLibrary()`), the execu
 
 ---
 
+## Connection Resilience
+
+The `ros2://` adapter automatically monitors the `/odom` subscription for timeouts and recovers from transient failures — network drops, node crashes, or hardware resets — without any extra code.
+
+**Defaults:** 5 s timeout · 1 s initial backoff doubling to 30 s · unlimited retries · ±20% jitter.
+
+### Registering handlers
+
+```python
+robot = Robot.discover("ros2://turtlebot4")
+robot.connect()
+
+robot.health.on_disconnect(lambda: print("Robot lost! Pausing tasks..."))
+robot.health.on_reconnect(lambda: print("Robot back online."))
+```
+
+### Give-up callback
+
+```python
+robot.health.on_give_up(lambda: print("Gave up after all retries — check hardware"))
+```
+
+### Customising the monitor
+
+```python
+from apyrobo.core.health import ConnectionHealth
+
+robot = Robot.discover("ros2://turtlebot4", auto_health=False)
+robot.connect()
+
+health = ConnectionHealth(
+    robot._adapter,
+    timeout_seconds=3.0,
+    backoff_base=0.5,
+    backoff_max=20.0,
+    max_retries=10,
+)
+health.on_disconnect(lambda: logger.warning("Lost contact"))
+health.on_reconnect(lambda: logger.info("Back online"))
+health.on_give_up(lambda: logger.error("Unreachable after 10 attempts"))
+health.start()
+```
+
+### Disabling the monitor
+
+```python
+robot = Robot.discover("ros2://turtlebot4", auto_health=False)
+robot.connect()
+# health property returns None; no background thread runs
+```
+
+---
+
 ## Gazebo alias
 
 `gazebo://` is an alias for `ros2://` — it uses the same adapter. You can swap between real and simulated robots by changing the URI:

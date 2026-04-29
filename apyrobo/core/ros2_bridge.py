@@ -38,6 +38,7 @@ from enum import Enum
 from typing import Any
 
 from apyrobo.core.adapters import CapabilityAdapter, register_adapter
+from apyrobo.core.health import ConnectionHealth
 from apyrobo.core.schemas import (
     Capability,
     CapabilityType,
@@ -302,6 +303,10 @@ if _HAS_ROS2:
             self._current_floor: str | None = None
             self._compat = _ros_compat_layer()
 
+            # Health monitoring (created/started in connect())
+            self._health_monitor: ConnectionHealth | None = kwargs.get("health_monitor")
+            self._auto_health: bool = bool(kwargs.get("auto_health", True))
+
             # --- Publishers ---
             self._cmd_vel_pub = self._node.create_publisher(
                 Twist, self._config["cmd_vel"], 10,
@@ -368,6 +373,8 @@ if _HAS_ROS2:
             self._position = (pos.x, pos.y)
             self._orientation = self._quat_to_yaw(msg.pose.pose.orientation)
             self._has_odom = True
+            if self._health_monitor is not None:
+                self._health_monitor.record_odom()
 
         @staticmethod
         def _quat_to_yaw(q: Quaternion) -> float:
@@ -706,6 +713,29 @@ if _HAS_ROS2:
             """Leave E_STOPPED and return to IDLE."""
             if self._state_machine == RobotState.E_STOPPED:
                 self._state_machine = RobotState.IDLE
+
+        # ==================================================================
+        # Lifecycle — health monitor wiring
+        # ==================================================================
+
+        def connect(self) -> None:
+            """Establish connection and start the connection health monitor."""
+            super().connect()
+            if self._health_monitor is None and self._auto_health:
+                self._health_monitor = ConnectionHealth(self)
+            if self._health_monitor is not None:
+                self._health_monitor.start()
+
+        def disconnect(self) -> None:
+            """Disconnect and stop health monitoring."""
+            if self._health_monitor is not None:
+                self._health_monitor.stop()
+            super().disconnect()
+
+        @property
+        def health(self) -> ConnectionHealth | None:
+            """The ConnectionHealth instance, or None if connect() has not been called."""
+            return self._health_monitor
 
         def set_feedback_handler(self, handler: Any) -> None:
             """RT-08: register callback for Nav2 progress payloads."""

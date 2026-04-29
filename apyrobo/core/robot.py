@@ -131,6 +131,11 @@ class Robot:
         self._adapter.disconnect()
 
     @property
+    def health(self) -> Any:
+        """Connection health monitor, if available (ros2:// adapter only)."""
+        return getattr(self._adapter, "health", None)
+
+    @property
     def is_connected(self) -> bool:
         """Whether the adapter has an active connection."""
         return self._adapter.is_connected
