@@ -36,9 +36,9 @@ Focus: dynamic skill handler dispatch, voice control, reliability, and real hard
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
 | ✅ | Handler registry | Dynamic `@skill_handler` registration and dispatch — `HandlerRegistry` class with decorator, `dispatch`, introspection ([#1][i1]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :construction: | Voice adapter layer | STT/TTS integration — Whisper, Piper, OpenAI ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :construction: | Nav2 adapter | Full ROS 2 Nav2 integration for real navigation stacks | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :construction: | MoveIt adapter | ROS 2 MoveIt 2 integration for manipulation | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Voice adapter layer | `WhisperAdapter` (offline STT), `PiperAdapter` (offline TTS), `OpenAIVoiceAdapter` (cloud STT+TTS), `MockVoiceAdapter` (tests), `VoiceAgent` (STT→plan→execute→TTS in one call), `WhisperAdapter.transcribe(bytes\|str)` ([#2][i2]) | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Nav2 adapter | Real `NavigateToPose` action client with odom pose tracking (`/odom`, BEST_EFFORT QoS), `get_position()`, `cancel_navigation()` via goal handle; stub mode when rclpy unavailable. Matches `fake_turtlebot4.py` interface. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | MoveIt adapter | `home_arm()`, `get_joint_states()` (live from `/joint_states`), `plan_motion()` / `execute_motion()` separation, `MockMoveItAdapter`; stub mode when rclpy unavailable. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ | Gazebo adapter improvements | Spawn/despawn models, reset world, joint states, apply forces, error handling | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ | Connection resilience | Auto-reconnect with exponential backoff, disconnect/reconnect hooks, observability events | |
 | ✅ Done | Skill retry policies | Exponential backoff, jitter, circuit breaker per skill — `RetryStrategy`, `RetryPolicy`, `CircuitBreaker`, `RetryExecutor` in `apyrobo/skills/retry.py` | |
@@ -65,7 +65,7 @@ Focus: persistent agent memory, vision-language model integration, smarter plann
 | ✅ Done | Skill discovery | Agents discover available skills at runtime — `SkillManifest`, `SkillDiscovery`, `DiscoveryRegistry` | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | MuJoCo integration | Lightweight sim adapter for MuJoCo physics — merged PR #38 | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ Done | Formal safety verification | Export safety proofs for regulatory compliance — merged PR #38 | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :bulb: | Learning from demonstrations | Record human teleoperation as new skills | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ | Learning from demonstrations | `DemonstrationRecorder`, `DemonstrationStore` (JSON), `DemonstrationReplayer`, `SkillLearner` (frequency analysis, next-step prediction) in `apyrobo/skills/demonstrations.py` | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 
