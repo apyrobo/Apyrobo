@@ -15,9 +15,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 import os
 import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -422,6 +426,173 @@ def cmd_pkg_validate(args: argparse.Namespace) -> None:
     print(f"  Tags: {', '.join(pkg.tags) or '(none)'}")
 
 
+# ---------------------------------------------------------------------------
+# apyrobo doctor — environment diagnostics
+# ---------------------------------------------------------------------------
+
+_RULE = "─" * 38
+_LLM_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY")
+
+
+@dataclass
+class _CheckResult:
+    status: str        # "pass" | "warn" | "fail"
+    message: str       # single-line detail shown next to the icon
+    hint: str | None = None  # fix hint, indented below on warn/fail
+
+
+def _icon(status: str) -> str:
+    return {"pass": "✅ ", "warn": "⚠️ ", "fail": "❌ "}.get(status, "   ")
+
+
+def _check_python_version() -> _CheckResult:
+    vi = sys.version_info
+    vs = f"{vi[0]}.{vi[1]}.{vi[2]}"
+    if (vi[0], vi[1]) >= (3, 10):
+        return _CheckResult("pass", f"Python {vs}")
+    return _CheckResult(
+        "fail", f"Python {vs} (3.10+ required)",
+        hint="Upgrade Python: https://www.python.org/downloads/",
+    )
+
+
+def _check_apyrobo_install() -> _CheckResult:
+    try:
+        import apyrobo  # noqa: PLC0415
+        return _CheckResult("pass", f"apyrobo {apyrobo.__version__}")
+    except Exception as exc:
+        return _CheckResult(
+            "fail", f"apyrobo not importable: {exc}",
+            hint="pip install apyrobo",
+        )
+
+
+def _check_rclpy() -> tuple[_CheckResult, bool]:
+    """Returns (result, rclpy_available)."""
+    try:
+        import rclpy  # noqa: F401, PLC0415
+        return _CheckResult("pass", "rclpy available"), True
+    except ImportError:
+        return _CheckResult(
+            "warn", "rclpy not found",
+            hint=(
+                "Run inside Docker to use ros2://: "
+                "docker compose -f docker/docker-compose.yml exec apyrobo bash"
+            ),
+        ), False
+
+
+def _check_ros_domain_id() -> _CheckResult:
+    domain_id = os.environ.get("ROS_DOMAIN_ID")
+    if domain_id:
+        return _CheckResult("pass", f"ROS_DOMAIN_ID={domain_id}")
+    return _CheckResult(
+        "warn", "ROS_DOMAIN_ID not set (defaults to 0, may clash)",
+        hint="export ROS_DOMAIN_ID=42  (any unique integer per ROS network)",
+    )
+
+
+def _check_mock_adapter() -> _CheckResult:
+    try:
+        t0 = time.monotonic()
+        Robot.discover("mock://test")
+        elapsed = time.monotonic() - t0
+        if elapsed < 1.0:
+            return _CheckResult("pass", "Mock adapter ok")
+        return _CheckResult("warn", f"Mock adapter slow ({elapsed:.2f}s)")
+    except Exception as exc:
+        return _CheckResult(
+            "fail", f"Mock adapter failed: {exc}",
+            hint="Reinstall apyrobo: pip install --force-reinstall apyrobo",
+        )
+
+
+def _check_llm_api_key() -> _CheckResult:
+    found = [k for k in _LLM_KEYS if os.environ.get(k)]
+    if found:
+        return _CheckResult("pass", f"LLM API key present ({found[0]})")
+    return _CheckResult(
+        "warn",
+        f"No LLM API key found ({', '.join(_LLM_KEYS)})",
+        hint="Set one to use the LLM agent",
+    )
+
+
+def _check_docker() -> _CheckResult:
+    try:
+        proc = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=3,
+        )
+        if proc.returncode == 0:
+            return _CheckResult("pass", "Docker available")
+        return _CheckResult(
+            "warn", "Docker not responding",
+            hint="Docker not found — ros2:// integration tests won't run.",
+        )
+    except FileNotFoundError:
+        return _CheckResult(
+            "warn", "Docker not found",
+            hint="Docker not found — ros2:// integration tests won't run.",
+        )
+    except subprocess.TimeoutExpired:
+        return _CheckResult(
+            "warn", "Docker timed out",
+            hint="Docker not found — ros2:// integration tests won't run.",
+        )
+
+
+def _check_skill_registry() -> _CheckResult:
+    try:
+        urllib.request.urlopen("http://localhost:8080/health", timeout=2)
+        return _CheckResult("pass", "Skill registry reachable at localhost:8080")
+    except Exception:
+        return _CheckResult(
+            "warn", "Skill registry not reachable at localhost:8080",
+            hint="Start with: apyrobo registry start",
+        )
+
+
+def run_doctor_checks() -> list[_CheckResult]:
+    """Run all environment checks. Exposed for testing."""
+    results: list[_CheckResult] = []
+    results.append(_check_python_version())
+    results.append(_check_apyrobo_install())
+    rclpy_result, rclpy_ok = _check_rclpy()
+    results.append(rclpy_result)
+    if rclpy_ok:
+        results.append(_check_ros_domain_id())
+    results.append(_check_mock_adapter())
+    results.append(_check_llm_api_key())
+    results.append(_check_docker())
+    results.append(_check_skill_registry())
+    return results
+
+
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """Run environment diagnostics (also aliased as `apyrobo diagnose`)."""
+    print("apyrobo doctor")
+    print(_RULE)
+
+    results = run_doctor_checks()
+
+    for result in results:
+        print(f"{_icon(result.status)} {result.message}")
+        if result.hint and result.status != "pass":
+            print(f"    → {result.hint}")
+
+    passed = sum(1 for r in results if r.status == "pass")
+    warnings = sum(1 for r in results if r.status == "warn")
+    failures = sum(1 for r in results if r.status == "fail")
+
+    print(_RULE)
+    print(f"{passed} passed · {warnings} warnings · {failures} failures")
+
+    if failures > 0:
+        sys.exit(1)
+
+
 def cmd_voice(args: argparse.Namespace) -> None:
     """VC-01: Interactive voice control demo."""
     from apyrobo.voice import (
@@ -583,6 +754,11 @@ def main() -> None:
     p_pkg_validate = pkg_sub.add_parser("validate", help="Validate a package directory")
     p_pkg_validate.add_argument("directory", help="Package directory")
 
+    # doctor / diagnose — environment diagnostics
+    _doctor_help = "Diagnose the local environment and show fix hints"
+    sub.add_parser("doctor", help=_doctor_help)
+    sub.add_parser("diagnose", help=_doctor_help + " (alias for doctor)")
+
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -617,6 +793,8 @@ def main() -> None:
         "skills": cmd_skills,
         "config": cmd_config,
         "pkg": cmd_pkg,
+        "doctor": cmd_doctor,
+        "diagnose": cmd_doctor,
         "voice": cmd_voice,
     }
     commands[args.command](args)
