@@ -49,6 +49,7 @@ from apyrobo.inference.router import (
 )
 from apyrobo.observability import get_logger, trace_context, configure_logging
 from apyrobo.persistence import StateStore
+from apyrobo.costmap import CostmapChecker, MockCostmapChecker
 from apyrobo.auth import AuthManager, GuardedRobot, AuthError
 from apyrobo.task_queue import TaskQueue, QueuedTask
 from apyrobo.operations import (
@@ -146,4 +147,6 @@ __all__ = [
     "ScheduledTaskRunner",
     "OperationsApiServer",
     "FleetDashboard",
+    "CostmapChecker",
+    "MockCostmapChecker",
 ]

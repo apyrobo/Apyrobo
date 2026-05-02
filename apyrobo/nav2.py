@@ -92,6 +92,11 @@ class Nav2Adapter:
         self._odom_sub: Any = None
         self._goal_handle: Any = None
         self._stub_mode = not _RCLPY_AVAILABLE
+        self._costmap_checker: Any = None  # CostmapChecker | MockCostmapChecker | None
+
+    def set_costmap_checker(self, checker: Any) -> None:
+        """Attach a costmap checker for pre-navigation goal validation."""
+        self._costmap_checker = checker
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -180,6 +185,16 @@ class Nav2Adapter:
     async def navigate_to(self, goal: NavigationGoal) -> NavigationResult:
         if not self._connected:
             return NavigationResult(success=False, message="not connected")
+
+        # Costmap pre-validation (if a checker is attached and has data)
+        checker = self._costmap_checker
+        if checker is not None and checker.is_ready:
+            valid, reason = checker.is_goal_valid(goal.x, goal.y)
+            if not valid:
+                raise ValueError(
+                    f"Costmap pre-validation rejected goal ({goal.x:.2f}, {goal.y:.2f}): {reason}"
+                )
+            logger.debug("Costmap pre-validation: %s", reason)
 
         self._navigating = True
         start = time.monotonic()
