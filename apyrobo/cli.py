@@ -774,6 +774,354 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# apyrobo diagnose --robot — full diagnostic report
+# ---------------------------------------------------------------------------
+
+class _LogCapture(logging.Handler):
+    """Buffer the last N warning/error log records."""
+
+    def __init__(self, maxlen: int = 20) -> None:
+        super().__init__()
+        self._records: list[dict[str, str]] = []
+        self._maxlen = maxlen
+        self.setLevel(logging.WARNING)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        import datetime
+        entry = {
+            "level": record.levelname,
+            "message": self.format(record),
+            "logger": record.name,
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.timezone.utc
+            ).isoformat(),
+        }
+        self._records.append(entry)
+        if len(self._records) > self._maxlen:
+            self._records.pop(0)
+
+    def entries(self) -> list[dict[str, str]]:
+        return list(self._records)
+
+
+def _collect_system_info() -> dict[str, Any]:
+    import platform
+    vi = sys.version_info
+    return {
+        "python": f"{vi.major}.{vi.minor}.{vi.micro}",
+        "os": platform.platform(),
+        "ros_domain_id": os.environ.get("ROS_DOMAIN_ID", "0"),
+    }
+
+
+def _collect_health_info(robot: Any) -> dict[str, Any]:
+    """Read ConnectionHealth state if available."""
+    health_mon = getattr(robot, "health", None)
+    if health_mon is None:
+        return {"available": False}
+    try:
+        result: dict[str, Any] = {"available": True, "is_healthy": health_mon.is_healthy}
+        # last_odom_age_s: compute from internal timestamp if exposed
+        last_odom = getattr(health_mon, "_last_odom_time", None)
+        if last_odom is not None:
+            result["last_odom_age_s"] = round(time.monotonic() - last_odom, 3)
+        reconnect = getattr(health_mon, "_reconnect_count", None)
+        if reconnect is not None:
+            result["reconnect_count"] = reconnect
+        return result
+    except Exception as exc:
+        return {"available": True, "error": str(exc)}
+
+
+def _collect_recent_tasks(limit: int = 10) -> list[dict[str, Any]]:
+    """Query EpisodicStore for recent task history; returns [] on any failure."""
+    try:
+        from apyrobo.memory.episodic import EpisodicStore
+        store = EpisodicStore()
+        episodes = store.query(limit=limit, order="DESC")
+        return [
+            {
+                "task": ep.task,
+                "robot_id": ep.robot_id,
+                "outcome": ep.outcome,
+                "duration_s": ep.duration_s,
+                "timestamp": ep.timestamp,
+                "skills_run": ep.skills_run,
+            }
+            for ep in episodes
+        ]
+    except Exception:
+        return []
+
+
+def _run_robot_checks(robot: Any, uri: str) -> list[dict[str, Any]]:
+    """Run the same checks as `connect --verify` and return them as dicts."""
+    checks: list[dict[str, Any]] = []
+
+    # Position
+    try:
+        pos = robot.get_position()
+        checks.append({"name": "position", "status": "pass", "value": list(pos)})
+    except Exception as exc:
+        checks.append({"name": "position", "status": "fail", "value": None, "error": str(exc)})
+
+    # Battery
+    try:
+        health_data = robot.get_health()
+        battery = health_data.get("battery_pct")
+        if battery is not None:
+            status = "warn" if battery < 20 else "pass"
+            checks.append({"name": "battery", "status": status, "value": round(float(battery), 1)})
+        else:
+            checks.append({"name": "battery", "status": "warn", "value": None})
+    except Exception:
+        checks.append({"name": "battery", "status": "warn", "value": None})
+
+    # Capabilities
+    try:
+        caps = robot.capabilities()
+        names = [c.name for c in caps.capabilities]
+        checks.append({"name": "capabilities", "status": "pass", "value": names})
+    except Exception as exc:
+        checks.append({"name": "capabilities", "status": "fail", "value": None, "error": str(exc)})
+
+    # Latency p50
+    try:
+        raw: list[float] = []
+        for _ in range(3):
+            t = time.monotonic()
+            robot.get_position()
+            raw.append(time.monotonic() - t)
+        raw.sort()
+        p50_ms = raw[len(raw) // 2] * 1000
+        checks.append({"name": "latency_ms_p50", "status": "pass", "value": round(p50_ms, 1)})
+    except Exception as exc:
+        checks.append({"name": "latency_ms_p50", "status": "fail", "value": None, "error": str(exc)})
+
+    return checks
+
+
+def cmd_diagnose(args: argparse.Namespace) -> None:
+    """Extended diagnostics with optional robot connection and JSON export."""
+    import datetime
+
+    uri: str | None = getattr(args, "robot", None)
+    out: str | None = getattr(args, "out", None)
+    timeout: float = getattr(args, "timeout", 10.0)
+
+    # Install log capture early so we catch warnings during robot connect
+    log_capture = _LogCapture(maxlen=20)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(log_capture)
+
+    report: dict[str, Any] = {
+        "generated_at": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
+        "apyrobo_version": _get_apyrobo_version(),
+        "system": _collect_system_info(),
+        "robot": None,
+        "health": None,
+        "recent_tasks": [],
+        "log_entries": [],
+        "checks": [],
+    }
+
+    # Always run environment doctor checks
+    doctor_results = run_doctor_checks()
+    report["checks"] = [
+        {"name": r.message.split()[0] if r.message else "check",
+         "status": r.status, "message": r.message}
+        for r in doctor_results
+    ]
+
+    if uri:
+        robot, connect_time, error = _connect_with_timeout(uri, timeout)
+
+        if error or robot is None:
+            report["robot"] = {
+                "uri": uri,
+                "connected": False,
+                "connect_time_s": round(connect_time, 3),
+                "error": error or "unknown",
+            }
+        else:
+            # Basic adapter state
+            robot_info: dict[str, Any] = {
+                "uri": uri,
+                "connected": True,
+                "connect_time_s": round(connect_time, 3),
+            }
+            try:
+                pos = robot.get_position()
+                robot_info["position"] = list(pos)
+            except Exception:
+                robot_info["position"] = None
+
+            try:
+                h = robot.get_health()
+                robot_info["battery_pct"] = h.get("battery_pct")
+            except Exception:
+                robot_info["battery_pct"] = None
+
+            report["robot"] = robot_info
+            report["health"] = _collect_health_info(robot)
+            report["checks"].extend(_run_robot_checks(robot, uri))
+
+        report["recent_tasks"] = _collect_recent_tasks(limit=10)
+
+    # Attach buffered log entries after everything has run
+    report["log_entries"] = log_capture.entries()
+    root_logger.removeHandler(log_capture)
+
+    payload = json.dumps(report, indent=2, default=str)
+
+    if out == "-" or (not out and uri is None and not sys.stdout.isatty()):
+        # --out - : write JSON to stdout
+        print(payload)
+    elif out == "-":
+        print(payload)
+    elif out:
+        with open(out, "w") as f:
+            f.write(payload)
+        print(f"Diagnostic report written to {out}")
+    else:
+        # Default: write to timestamped file
+        import datetime as _dt
+        ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+        default_out = f"apyrobo-diag-{ts}.json"
+        with open(default_out, "w") as f:
+            f.write(payload)
+        print(f"Diagnostic report written to {default_out}")
+
+
+def _get_apyrobo_version() -> str:
+    try:
+        import apyrobo
+        return apyrobo.__version__
+    except Exception:
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# apyrobo test-skill — isolated skill test runner
+# ---------------------------------------------------------------------------
+
+def cmd_test_skill(args: argparse.Namespace) -> None:
+    """Run a skill against a mock robot and report results."""
+    skill_id_or_file: str = args.skill
+    robot_uri: str = getattr(args, "robot", "mock://test")
+    params_json: str | None = getattr(args, "params", None)
+    repeat: int = getattr(args, "repeat", 1)
+
+    # Parse params
+    params: dict[str, Any] = {}
+    if params_json:
+        try:
+            params = json.loads(params_json)
+        except json.JSONDecodeError as exc:
+            print(f"Error: --params is not valid JSON: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    # Determine if skill_id_or_file is a file path
+    from pathlib import Path as _Path
+    skill_file = _Path(skill_id_or_file)
+    skill_id = skill_id_or_file
+
+    if skill_file.suffix == ".py" and skill_file.exists():
+        # Import the file so @skill decorators run
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_test_skill_mod", skill_file)
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        # Use the stem as skill_id if not overridden
+        skill_id = skill_file.stem
+
+    # Resolve the handler — check global registry first, then decorated skills
+    from apyrobo.skills.handlers import _DEFAULT_REGISTRY, dispatch as _dispatch
+    from apyrobo.skills.skill import BUILTIN_SKILLS
+    from apyrobo.skills.decorators import get_decorated_skills
+
+    handler = _DEFAULT_REGISTRY.resolve(skill_id)
+    if handler is None:
+        # Try decorated skills (file may have registered via @skill)
+        dec = get_decorated_skills()
+        if skill_id in dec:
+            _skill_def, fn = dec[skill_id]
+            import inspect as _inspect
+            accepted = set(_inspect.signature(fn).parameters)
+
+            def handler(robot: Any, p: dict) -> bool:  # type: ignore[misc]
+                filtered = {k: v for k, v in p.items() if k in accepted}
+                result = fn(**filtered)
+                return bool(result) if result is not None else True
+        else:
+            print(f"Error: skill {skill_id!r} not found in handler registry or @skill registry.",
+                  file=sys.stderr)
+            print("Hint: register it with @skill_handler or @skill before running.", file=sys.stderr)
+            sys.exit(1)
+
+    # Build the Skill metadata (for precondition check display)
+    skill_meta = BUILTIN_SKILLS.get(skill_id)
+    if skill_meta is None:
+        dec = get_decorated_skills()
+        if skill_id in dec:
+            skill_meta = dec[skill_id][0]
+
+    # Connect to robot
+    try:
+        robot = Robot.discover(robot_uri)
+    except Exception as exc:
+        print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # Merge default params from skill metadata with user-supplied params
+    merged_params: dict[str, Any] = {}
+    if skill_meta is not None:
+        merged_params.update(skill_meta.parameters)
+    merged_params.update(params)
+
+    _W = 38
+    print("─" * _W)
+    print(f"Skill:    {skill_id}")
+    print(f"Robot:    {robot_uri}")
+    print(f"Runs:     {repeat}")
+    print()
+
+    times: list[float] = []
+    passed = 0
+
+    for i in range(1, repeat + 1):
+        t0 = time.monotonic()
+        exc_info: str | None = None
+        retval: Any = None
+        try:
+            retval = handler(robot, merged_params)
+            ok = bool(retval) if retval is not None else True
+        except Exception as exc:
+            ok = False
+            exc_info = str(exc)
+
+        elapsed = time.monotonic() - t0
+        times.append(elapsed)
+        if ok:
+            passed += 1
+
+        icon = "✅" if ok else "❌"
+        detail = f"{retval}" if exc_info is None else f"raised: {exc_info}"
+        print(f"  Run {i}  {icon}  {elapsed:.3f}s   {detail}")
+
+    print()
+    avg = sum(times) / len(times) if times else 0.0
+    min_t = min(times) if times else 0.0
+    max_t = max(times) if times else 0.0
+    print(f"Passed: {passed}/{repeat}   Avg: {avg:.3f}s   Min: {min_t:.3f}s   Max: {max_t:.3f}s")
+    print("─" * _W)
+
+    if passed < repeat:
+        sys.exit(1)
+
+
 def cmd_voice(args: argparse.Namespace) -> None:
     """VC-01: Interactive voice control demo."""
     from apyrobo.voice import (
@@ -946,9 +1294,45 @@ def main() -> None:
                         help="Machine-readable JSON output")
 
     # doctor / diagnose — environment diagnostics
-    _doctor_help = "Diagnose the local environment and show fix hints"
-    sub.add_parser("doctor", help=_doctor_help)
-    sub.add_parser("diagnose", help=_doctor_help + " (alias for doctor)")
+    sub.add_parser("doctor", help="Diagnose the local environment and show fix hints")
+    p_diag = sub.add_parser(
+        "diagnose",
+        help="Full diagnostic report (optionally connects to a robot)",
+    )
+    p_diag.add_argument(
+        "--robot", metavar="URI", default=None,
+        help="Robot URI to connect to (e.g. mock://turtlebot4)",
+    )
+    p_diag.add_argument(
+        "--out", metavar="FILE", default=None,
+        help="Output path for JSON report; use '-' for stdout",
+    )
+    p_diag.add_argument(
+        "--timeout", type=float, default=10.0, metavar="SECS",
+        help="Robot connection timeout in seconds (default: 10)",
+    )
+
+    # test-skill — isolated skill test runner
+    p_ts = sub.add_parser(
+        "test-skill",
+        help="Run a skill against a mock robot and print a test report",
+    )
+    p_ts.add_argument(
+        "skill", metavar="SKILL",
+        help="Skill ID (e.g. 'move_to') or path to a .py skill file",
+    )
+    p_ts.add_argument(
+        "--robot", metavar="URI", default="mock://turtlebot4",
+        help="Robot URI (default: mock://turtlebot4)",
+    )
+    p_ts.add_argument(
+        "--params", metavar="JSON", default="{}",
+        help="Skill parameters as a JSON object (default: {})",
+    )
+    p_ts.add_argument(
+        "--repeat", type=int, default=1, metavar="N",
+        help="Number of times to run the skill (default: 1)",
+    )
 
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
@@ -986,7 +1370,8 @@ def main() -> None:
         "pkg": cmd_pkg,
         "connect": cmd_connect,
         "doctor": cmd_doctor,
-        "diagnose": cmd_doctor,
+        "diagnose": cmd_diagnose,
+        "test-skill": cmd_test_skill,
         "voice": cmd_voice,
     }
     commands[args.command](args)
