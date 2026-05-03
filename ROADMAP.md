@@ -142,7 +142,7 @@ Focus: make it worth publishing skills. Right now the registry infrastructure ex
 | :clipboard: | **`apyrobo-skills-turtlebot4`** | A pip-installable skill package for common TurtleBot4 tasks: `patrol_area`, `dock`, `undock`, `follow_person`, `inspect_room`. The reference implementation for third-party skill packages. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :clipboard: | **Skill test harness** | `apyrobo test-skill my_skill.py --robot mock://` — runs a skill against a mock robot, checks preconditions/postconditions, prints a test report. Lowers the bar for contributing skills. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | :clipboard: | **Hosted skill registry** | Deploy the `apyrobo/registry/` FastAPI server publicly (e.g. `registry.apyrobo.dev`) so `apyrobo skill search patrol` actually returns results. | |
-| :clipboard: | **Skill composition CLI** | `apyrobo skill compose` — interactive REPL for chaining skills into a graph and testing the result, without writing Python. | :bulb: |
+| ✅ Done | **Skill composition CLI** | `apyrobo skill compose` — interactive REPL for chaining skills into a graph and testing the result, without writing Python. | :bulb: |
 
 ---
 

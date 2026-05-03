@@ -1265,6 +1265,37 @@ def cmd_skill_publish(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# apyrobo skill compose — interactive skill composition REPL
+# ---------------------------------------------------------------------------
+
+def cmd_skill_compose(args: argparse.Namespace) -> None:
+    """Start the interactive skill composition REPL."""
+    robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
+    library_arg: str | None = getattr(args, "library", None)
+
+    robot = Robot.discover(robot_uri)
+
+    # Build library
+    from apyrobo.skills.library import SkillLibrary
+    if library_arg:
+        # Treat as a Python file path: import it so @skill decorators fire
+        from pathlib import Path as _Path
+        lib_path = _Path(library_arg)
+        if lib_path.exists() and lib_path.suffix == ".py":
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("_compose_lib", lib_path)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        library = SkillLibrary.from_decorated()
+    else:
+        library = SkillLibrary.from_decorated()
+
+    from apyrobo.skills.compose import ComposeREPL
+    ComposeREPL(robot, library).run()
+
+
 def cmd_voice(args: argparse.Namespace) -> None:
     """VC-01: Interactive voice control demo."""
     from apyrobo.voice import (
@@ -1522,6 +1553,19 @@ def main() -> None:
         help="Registry base URL (default: http://localhost:8080)",
     )
 
+    p_skill_compose = skill_sub.add_parser(
+        "compose",
+        help="Interactive REPL for chaining skills into a plan",
+    )
+    p_skill_compose.add_argument(
+        "--robot", metavar="URI", default="mock://turtlebot4",
+        help="Robot URI (default: mock://turtlebot4)",
+    )
+    p_skill_compose.add_argument(
+        "--library", metavar="PATH", default=None,
+        help="Path to a .py file with @skill-decorated skills to load",
+    )
+
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -1582,8 +1626,10 @@ def _cmd_skill_dispatch(args: argparse.Namespace) -> None:
         cmd_skill_search(args)
     elif sub == "publish":
         cmd_skill_publish(args)
+    elif sub == "compose":
+        cmd_skill_compose(args)
     else:
-        print("Usage: apyrobo skill <search|publish>", file=sys.stderr)
+        print("Usage: apyrobo skill <search|publish|compose>", file=sys.stderr)
         sys.exit(1)
 
 
