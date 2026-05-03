@@ -41,6 +41,11 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=3.7",
 ]
+registry = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sqlalchemy>=2.0",
+]
 ros = [
     # ROS 2 deps are installed system-wide via apt in Docker
     # This is a placeholder for any pip-installable ROS bridges

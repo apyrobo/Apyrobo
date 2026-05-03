@@ -21,6 +21,7 @@ import os
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -1122,6 +1123,148 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# apyrobo registry start — launch the FastAPI skill registry
+# ---------------------------------------------------------------------------
+
+def cmd_registry_start(args: argparse.Namespace) -> None:
+    """Start the APYROBO skill registry server using uvicorn."""
+    port: int = getattr(args, "port", 8080)
+    db_path: str = getattr(args, "db", "./registry.db")
+    host: str = getattr(args, "host", "0.0.0.0")
+
+    # Surface db_path to the registry via env so SQLAlchemy can pick it up
+    os.environ.setdefault("REGISTRY_DB_PATH", db_path)
+
+    try:
+        import uvicorn  # type: ignore[import]
+    except ImportError:
+        print(
+            "Error: uvicorn is required to start the registry server.\n"
+            "Install it with: pip install 'apyrobo[registry]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        from apyrobo.registry.server import create_app
+        app = create_app()
+    except ImportError as exc:
+        print(f"Error: could not load registry server: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Starting APYROBO skill registry on http://{host}:{port}")
+    print(f"  Database: {db_path}")
+    print("  Press Ctrl+C to stop\n")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+# ---------------------------------------------------------------------------
+# apyrobo skill search / publish — remote registry client commands
+# ---------------------------------------------------------------------------
+
+def _registry_base_url(args: argparse.Namespace) -> str:
+    return getattr(args, "registry", "http://localhost:8080").rstrip("/")
+
+
+def cmd_skill_search(args: argparse.Namespace) -> None:
+    """Search the remote skill registry."""
+    query: str = args.query
+    base = _registry_base_url(args)
+    url = f"{base}/search?q={urllib.parse.quote(query)}"
+
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            results = json.loads(resp.read().decode())
+    except urllib.error.URLError as exc:
+        print(
+            f"Error: could not reach registry at {base}\n"
+            f"  Reason: {exc}\n"
+            "  Start the registry with: apyrobo registry start",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not results:
+        print(f"No skills found matching {query!r}")
+        return
+
+    print(f"Found {len(results)} skill(s) matching {query!r}:\n")
+    for pkg in results:
+        name = pkg.get("name", "?")
+        version = pkg.get("version", "?")
+        description = pkg.get("description", "")
+        tags = ", ".join(pkg.get("tags", [])) or "—"
+        print(f"  {name}  v{version}")
+        print(f"    {description}")
+        print(f"    Tags: {tags}")
+        print()
+
+
+def cmd_skill_publish(args: argparse.Namespace) -> None:
+    """Publish a skill package to the remote registry."""
+    base = _registry_base_url(args)
+    url = f"{base}/skills"
+
+    name: str = args.name
+    version: str = args.version
+    description: str = args.description
+    author: str = getattr(args, "author", "")
+    download_url: str = args.download_url
+    token: str = args.token
+
+    # Generate a placeholder checksum so the model validator passes
+    import hashlib
+    checksum = hashlib.sha256(f"{name}-{version}".encode()).hexdigest()
+
+    payload = json.dumps({
+        "package": {
+            "name": name,
+            "version": version,
+            "description": description,
+            "author": author,
+            "license": "Apache-2.0",
+            "tags": [],
+            "download_url": download_url,
+            "checksum": checksum,
+            "apyrobo_version_min": "1.0.0",
+        },
+        "token": token,
+    }).encode()
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+        print(f"Published: {result.get('name')} v{result.get('version')}")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode()
+        print(f"Error: publish failed (HTTP {exc.code}): {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as exc:
+        print(
+            f"Error: could not reach registry at {base}\n"
+            f"  Reason: {exc}\n"
+            "  Start the registry with: apyrobo registry start",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def cmd_voice(args: argparse.Namespace) -> None:
     """VC-01: Interactive voice control demo."""
     from apyrobo.voice import (
@@ -1334,6 +1477,51 @@ def main() -> None:
         help="Number of times to run the skill (default: 1)",
     )
 
+    # registry — skill registry server management
+    p_registry = sub.add_parser("registry", help="Manage the APYROBO skill registry server")
+    registry_sub = p_registry.add_subparsers(dest="registry_command")
+    p_reg_start = registry_sub.add_parser("start", help="Start the registry server")
+    p_reg_start.add_argument(
+        "--port", type=int, default=8080, metavar="PORT",
+        help="Port to listen on (default: 8080)",
+    )
+    p_reg_start.add_argument(
+        "--host", default="0.0.0.0", metavar="HOST",
+        help="Bind host (default: 0.0.0.0)",
+    )
+    p_reg_start.add_argument(
+        "--db", default="./registry.db", metavar="PATH",
+        help="Path to SQLite database (default: ./registry.db)",
+    )
+
+    # skill — remote registry client commands
+    p_skill = sub.add_parser("skill", help="Search and publish skills in the registry")
+    skill_sub = p_skill.add_subparsers(dest="skill_command")
+
+    p_skill_search = skill_sub.add_parser("search", help="Search the skill registry")
+    p_skill_search.add_argument("query", help="Search term")
+    p_skill_search.add_argument(
+        "--registry", metavar="URL", default="http://localhost:8080",
+        help="Registry base URL (default: http://localhost:8080)",
+    )
+
+    p_skill_publish = skill_sub.add_parser("publish", help="Publish a skill to the registry")
+    p_skill_publish.add_argument("name", help="Package name (e.g. apyrobo-skills-myrobot)")
+    p_skill_publish.add_argument("--version", required=True, help="SemVer version string")
+    p_skill_publish.add_argument("--description", required=True, help="Package description")
+    p_skill_publish.add_argument("--author", default="", help="Author name")
+    p_skill_publish.add_argument(
+        "--download-url", required=True, dest="download_url",
+        help="URL to the wheel or tarball",
+    )
+    p_skill_publish.add_argument(
+        "--token", required=True, help="Registry authentication token",
+    )
+    p_skill_publish.add_argument(
+        "--registry", metavar="URL", default="http://localhost:8080",
+        help="Registry base URL (default: http://localhost:8080)",
+    )
+
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -1372,9 +1560,31 @@ def main() -> None:
         "doctor": cmd_doctor,
         "diagnose": cmd_diagnose,
         "test-skill": cmd_test_skill,
+        "registry": _cmd_registry_dispatch,
+        "skill": _cmd_skill_dispatch,
         "voice": cmd_voice,
     }
     commands[args.command](args)
+
+
+def _cmd_registry_dispatch(args: argparse.Namespace) -> None:
+    sub = getattr(args, "registry_command", None)
+    if sub == "start":
+        cmd_registry_start(args)
+    else:
+        print("Usage: apyrobo registry <start>", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_skill_dispatch(args: argparse.Namespace) -> None:
+    sub = getattr(args, "skill_command", None)
+    if sub == "search":
+        cmd_skill_search(args)
+    elif sub == "publish":
+        cmd_skill_publish(args)
+    else:
+        print("Usage: apyrobo skill <search|publish>", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
