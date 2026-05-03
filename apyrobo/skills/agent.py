@@ -942,12 +942,15 @@ class Agent:
     def execute(self, task: str, robot: Robot,
                 on_event: Any = None, parallel: bool = False,
                 urgency: str | None = None,
-                state_store: Any = None) -> TaskResult:
+                state_store: Any = None,
+                replanning: bool = True,
+                max_replans: int = 2) -> TaskResult:
         """
         Plan and execute a task end-to-end.
 
         IN-01: urgency= is forwarded to the inference router.
         OB-03: Wraps entire execution in trace_context for correlation.
+        RP-01: On skill failure, an LLM-backed agent may replan up to max_replans times.
 
         Args:
             task: Natural language task description
@@ -956,10 +959,14 @@ class Agent:
             parallel: If True, run independent skills concurrently
             urgency: Urgency level ("high", "normal", "low") for routing
             state_store: Optional StorageBackend for crash recovery (OB-02)
+            replanning: If True (default), replan on failure when using LLMProvider.
+            max_replans: Maximum replan attempts before giving up (default 2).
 
         Returns:
             TaskResult with outcome summary
         """
+        from apyrobo.skills.replanner import Replanner, ReplanContext
+
         # OB-03: Trace context propagation from Agent through all layers
         with trace_context(task=task, component="agent",
                            robot_id=getattr(robot, 'robot_id', "unknown"),
@@ -977,20 +984,100 @@ class Agent:
                     error="Agent could not create a plan for this task",
                 )
 
-            # Execute with shared state
-            state = ExecutionState()
-            executor = SkillExecutor(robot, state=state, state_store=state_store)
-            if on_event:
-                executor.on_event(on_event)
+            # RP-01: Only LLMProvider-backed agents can replan.
+            _can_replan = replanning and isinstance(self._provider, LLMProvider)
+            replan_count = 0
+            result: TaskResult | None = None
 
-            # Also capture events internally
-            self._last_events = []
-            executor.on_event(lambda e: self._last_events.append(e))
+            while True:
+                # Execute with shared state
+                state = ExecutionState()
+                executor = SkillExecutor(robot, state=state, state_store=state_store)
+                if on_event:
+                    executor.on_event(on_event)
 
-            result = executor.execute_graph(graph, parallel=parallel, trace_id=trace_id)
-            # Override the generic task name with the actual task
-            result.task_name = task
-            self._last_state = state
+                # Also capture events internally
+                self._last_events = []
+                executor.on_event(lambda e: self._last_events.append(e))
+
+                result = executor.execute_graph(graph, parallel=parallel, trace_id=trace_id)
+                result.task_name = task
+                self._last_state = state
+
+                status_val = (
+                    result.status.value
+                    if hasattr(result.status, "value")
+                    else str(result.status)
+                )
+
+                if status_val == "completed" or not _can_replan or replan_count >= max_replans:
+                    break
+
+                # RP-01: Build replan context from failure details.
+                replan_count += 1
+                m = re.search(r"Skill '([^']+)' failed", result.error or "")
+                raw_failed = m.group(1) if m else "unknown"
+                parts = raw_failed.rsplit("_", 1)
+                failed_skill_id = (
+                    parts[0] if len(parts) == 2 and parts[1].isdigit() else raw_failed
+                )
+
+                order = graph.get_execution_order()
+                completed_steps = [
+                    {
+                        "skill_id": s.skill_id,
+                        "parameters": graph.get_parameters(s.skill_id),
+                    }
+                    for s in order[: result.steps_completed]
+                ]
+
+                catalog = self._get_skill_catalog()
+                available_skills = [
+                    {
+                        "skill_id": s.skill_id,
+                        "name": s.name,
+                        "description": s.description,
+                        "required_capability": s.required_capability.value,
+                        "parameters": s.parameters,
+                    }
+                    for s in catalog.values()
+                ]
+                caps = robot.capabilities()
+                capability_names = [c.capability_type.value for c in caps.capabilities]
+
+                context = ReplanContext(
+                    task=task,
+                    failed_skill_id=failed_skill_id,
+                    completed_steps=completed_steps,
+                    replan_attempt=replan_count,
+                    available_skills=available_skills,
+                    capabilities=capability_names,
+                    error=result.error or "",
+                )
+
+                replanner = Replanner(self._provider)
+                try:
+                    new_steps = replanner.replan(context)
+                except Exception as exc:
+                    logger.warning("Replanner failed (attempt %d): %s", replan_count, exc)
+                    break
+
+                emit_event(
+                    "task.replanned",
+                    task=task,
+                    failed_step=failed_skill_id,
+                    replan_attempt=replan_count,
+                    new_plan_length=len(new_steps),
+                    trace_id=trace_id,
+                )
+
+                new_graph = self._steps_to_graph(new_steps, catalog)
+                if len(new_graph) == 0:
+                    logger.warning("Replanner returned empty plan, giving up")
+                    break
+                graph = new_graph
+
+            assert result is not None  # loop always executes at least once
 
             # VC-02: Record episode in memory after execution
             if self.memory is not None:
