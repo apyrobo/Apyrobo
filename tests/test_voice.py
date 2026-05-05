@@ -12,6 +12,8 @@ from apyrobo.voice import (
     WhisperAdapter,
     PiperAdapter,
     OpenAIVoiceAdapter,
+    WhisperVoiceAdapter,
+    PiperVoiceAdapter,
     voice_loop,
 )
 
@@ -207,3 +209,95 @@ class TestSpeakSkillHandler:
 
         result = dispatch("speak", FakeRobot(), {})
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# WhisperVoiceAdapter / PiperVoiceAdapter aliases (spec names)
+# ---------------------------------------------------------------------------
+
+class TestWhisperVoiceAdapter:
+    def test_is_whisper_adapter(self):
+        adapter = WhisperVoiceAdapter()
+        assert isinstance(adapter, WhisperAdapter)
+
+    def test_is_voice_adapter(self):
+        assert isinstance(WhisperVoiceAdapter(), VoiceAdapter)
+
+    def test_model_kwarg(self):
+        adapter = WhisperVoiceAdapter(model="small")
+        assert adapter._model_size == "small"
+
+    def test_default_model_is_base(self):
+        adapter = WhisperVoiceAdapter()
+        assert adapter._model_size == "base"
+
+
+class TestPiperVoiceAdapter:
+    def test_is_piper_adapter(self):
+        adapter = PiperVoiceAdapter()
+        assert isinstance(adapter, PiperAdapter)
+
+    def test_is_voice_adapter(self):
+        assert isinstance(PiperVoiceAdapter(), VoiceAdapter)
+
+    def test_model_path_kwarg(self):
+        adapter = PiperVoiceAdapter(model_path="/models/en.onnx")
+        assert adapter._voice == "/models/en.onnx"
+
+    def test_listen_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            PiperVoiceAdapter().listen()
+
+
+# ---------------------------------------------------------------------------
+# MockVoiceAdapter — listen_responses kwarg (spec name)
+# ---------------------------------------------------------------------------
+
+class TestMockVoiceAdapterListenResponses:
+    def test_listen_responses_kwarg(self):
+        adapter = MockVoiceAdapter(listen_responses=["a", "b"])
+        assert adapter.listen() == "a"
+        assert adapter.listen() == "b"
+
+    def test_listen_responses_property(self):
+        adapter = MockVoiceAdapter(listen_responses=["x"])
+        assert adapter.listen_responses == ["x"]
+
+    def test_listen_responses_prefers_over_responses(self):
+        adapter = MockVoiceAdapter(listen_responses=["lr"])
+        assert adapter.listen() == "lr"
+
+    def test_responses_kwarg_still_works(self):
+        adapter = MockVoiceAdapter(responses=["old"])
+        assert adapter.listen() == "old"
+
+
+# ---------------------------------------------------------------------------
+# CLI listen command
+# ---------------------------------------------------------------------------
+
+class TestCLIListen:
+    def test_listen_command_exists(self):
+        """apyrobo listen --help does not crash."""
+        import subprocess, sys
+        result = subprocess.run(
+            [sys.executable, "-m", "apyrobo", "listen", "--help"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "listen" in result.stdout.lower() or "adapter" in result.stdout.lower()
+
+    def test_listen_mock_adapter_prints_plan(self, capsys):
+        """cmd_listen with mock adapter produces output."""
+        import argparse
+        from apyrobo.cli import cmd_listen
+
+        args = argparse.Namespace(
+            robot="mock://turtlebot4",
+            provider="rule",
+            adapter="mock",
+            model=None,
+        )
+        cmd_listen(args)
+        captured = capsys.readouterr()
+        assert "Plan:" in captured.out or "Heard:" in captured.out

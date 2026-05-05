@@ -316,12 +316,26 @@ class MockVoiceAdapter(VoiceAdapter):
     Deterministic voice adapter for testing.
 
     Returns pre-configured responses for listen() and records speak() calls.
+
+    Args:
+        responses:       Alias for ``listen_responses`` (legacy name).
+        listen_responses: Ordered list of strings returned by successive
+                          ``listen()`` calls.  Cycles when exhausted.
     """
 
-    def __init__(self, responses: list[str] | None = None) -> None:
-        self._responses = list(responses or [])
+    def __init__(
+        self,
+        responses: list[str] | None = None,
+        listen_responses: list[str] | None = None,
+    ) -> None:
+        src = listen_responses if listen_responses is not None else responses
+        self._responses = list(src or [])
         self._response_idx = 0
         self.spoken: list[str] = []
+
+    @property
+    def listen_responses(self) -> list[str]:
+        return self._responses
 
     def listen(self, timeout_s: float = 5.0) -> str:
         if not self._responses:
@@ -336,6 +350,30 @@ class MockVoiceAdapter(VoiceAdapter):
 
     def is_available(self) -> bool:
         return True
+
+
+# ---------------------------------------------------------------------------
+# Spec-named aliases
+# ---------------------------------------------------------------------------
+
+class WhisperVoiceAdapter(WhisperAdapter):
+    """Alias for WhisperAdapter — STT via openai-whisper, TTS via piper."""
+
+    def __init__(self, model: str = "base", device: str | None = None) -> None:
+        super().__init__(model_size=model, device=device)
+
+
+class PiperVoiceAdapter(PiperAdapter):
+    """Alias for PiperAdapter — lightweight offline TTS via piper-tts.
+
+    Args:
+        model_path: Path to the piper .onnx model file (passed as --model to
+                    the piper subprocess).  Pass ``None`` to use the system
+                    default voice.
+    """
+
+    def __init__(self, model_path: str | None = None) -> None:
+        super().__init__(voice=model_path)
 
 
 # ---------------------------------------------------------------------------

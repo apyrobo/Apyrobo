@@ -1318,6 +1318,51 @@ def cmd_skill_compose(args: argparse.Namespace) -> None:
     ComposeREPL(robot, library).run()
 
 
+def cmd_listen(args: argparse.Namespace) -> None:
+    """VC-01: Listen for one voice utterance, plan from it, and print the plan."""
+    from apyrobo.voice import (
+        MockVoiceAdapter, WhisperVoiceAdapter, PiperVoiceAdapter,
+        OpenAIVoiceAdapter,
+    )
+
+    robot = Robot.discover(args.robot)
+    provider, model_name = _resolve_provider(args.provider, getattr(args, "model", None))
+    try:
+        agent = Agent(provider=provider, **({"model": model_name} if model_name else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}\n\nAvailable providers:\n{_PROVIDER_TABLE}", file=sys.stderr)
+        sys.exit(1)
+
+    adapter_name = getattr(args, "adapter", "whisper")
+    model_arg = getattr(args, "model", None)
+
+    if adapter_name == "whisper":
+        adapter = WhisperVoiceAdapter(model=model_arg or "base")
+    elif adapter_name == "piper":
+        adapter = PiperVoiceAdapter(model_path=model_arg)
+    elif adapter_name == "openai":
+        adapter = OpenAIVoiceAdapter()
+    else:
+        adapter = MockVoiceAdapter(listen_responses=["navigate to (1.0, 2.0)"])
+
+    print(f"Adapter: {adapter_name}  Robot: {robot.robot_id}")
+    print("Listening for one command…")
+
+    text = adapter.listen()
+    if not text:
+        print("(no speech detected)")
+        return
+
+    print(f"Heard: {text!r}")
+    graph = agent.plan(text, robot)
+    print(f"Plan: {len(graph)} skill(s)")
+    for i, skill in enumerate(graph.get_execution_order(), 1):
+        params = graph.get_parameters(skill.skill_id)
+        print(f"  {i}. {skill.name} ({skill.skill_id})")
+        for k, v in (params or {}).items():
+            print(f"       {k}: {v}")
+
+
 def cmd_voice(args: argparse.Namespace) -> None:
     """VC-01: Interactive voice control demo."""
     from apyrobo.voice import (
@@ -1596,6 +1641,16 @@ def main() -> None:
         help="Path to a .py file with @skill-decorated skills to load",
     )
 
+    # listen — VC-01: single-utterance voice→plan
+    p_listen = sub.add_parser("listen", help="Listen for one voice command and plan from it")
+    p_listen.add_argument("--robot", default="mock://turtlebot4")
+    p_listen.add_argument("--provider", default="rule")
+    p_listen.add_argument("--adapter", default="whisper",
+                          choices=["whisper", "piper", "openai", "mock"],
+                          help="Voice STT adapter backend (default: whisper)")
+    p_listen.add_argument("--model", default=None,
+                          help="Whisper model size (base/small/medium/large) or model path")
+
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -1636,6 +1691,7 @@ def main() -> None:
         "test-skill": cmd_test_skill,
         "registry": _cmd_registry_dispatch,
         "skill": _cmd_skill_dispatch,
+        "listen": cmd_listen,
         "voice": cmd_voice,
     }
     commands[args.command](args)
