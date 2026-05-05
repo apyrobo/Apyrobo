@@ -155,8 +155,8 @@ Focus: the planner gets smarter. Today the LLM produces a static plan and retrie
 | ✅ Done | **LLM replanning loop** | When a skill fails, send the failure reason back to the LLM and ask it to replan the remaining steps. Not just retry — actually reconsider the approach. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ Done | **VLM task verification** | After a skill completes, use the VLM adapter to check camera feed and confirm the expected state ("is the cup actually picked up?"). Flag discrepancies for human review or replan. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | ✅ Done | **Long-horizon planning** | Break a multi-step, multi-hour goal ("restock all shelves") into a plan that spans robots, shifts, and recharges. Requires persistent plan state and checkpoint recovery. | :bulb: |
-| :clipboard: | **Correction learning** | When a user overrides a plan step, record the correction and use it to bias future planning for similar tasks. Builds on the existing demonstrations system. | :bulb: |
-| :clipboard: | **Sim-to-real transfer** | `apyrobo plan --simulate` — run a full task plan in Gazebo first, report any failures, then optionally deploy to the real robot. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ Done | **Correction learning** | When a user overrides a plan step, record the correction and use it to bias future planning for similar tasks. Builds on the existing demonstrations system. | :bulb: |
+| ✅ Done | **Sim-to-real transfer** | `apyrobo plan --simulate` — run a full task plan in Gazebo first, report any failures, then optionally deploy to the real robot. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 

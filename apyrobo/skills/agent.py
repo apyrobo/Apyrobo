@@ -836,6 +836,8 @@ class Agent:
 
         self._last_events: list[ExecutionEvent] = []
         self._last_state: ExecutionState | None = None
+        self._correction_learner: Any = None
+        self._last_task: str = ""
 
     def _get_skill_catalog(self) -> dict[str, Skill]:
         """
@@ -946,7 +948,8 @@ class Agent:
                 replanning: bool = True,
                 max_replans: int = 2,
                 verification: bool = False,
-                verifier: Any = None) -> TaskResult:
+                verifier: Any = None,
+                correction_learner: Any = None) -> TaskResult:
         """
         Plan and execute a task end-to-end.
 
@@ -954,6 +957,7 @@ class Agent:
         OB-03: Wraps entire execution in trace_context for correlation.
         RP-01: On skill failure, an LLM-backed agent may replan up to max_replans times.
         VF-01: When verification=True, the TaskVerifier checks each skill via VLM.
+        CL-01: If correction_learner is set, augments the task with past corrections.
 
         Args:
             task: Natural language task description
@@ -964,11 +968,18 @@ class Agent:
             state_store: Optional StorageBackend for crash recovery (OB-02)
             replanning: If True (default), replan on failure when using LLMProvider.
             max_replans: Maximum replan attempts before giving up (default 2).
+            correction_learner: Optional CorrectionLearner; augments task prompt with
+                past corrections before planning.
 
         Returns:
             TaskResult with outcome summary
         """
         from apyrobo.skills.replanner import Replanner, ReplanContext
+
+        # CL-01: Store correction_learner and last task for record_correction().
+        if correction_learner is not None:
+            self._correction_learner = correction_learner
+        self._last_task = task
 
         # OB-03: Trace context propagation from Agent through all layers
         with trace_context(task=task, component="agent",
@@ -976,8 +987,13 @@ class Agent:
                            urgency=urgency or "normal") as ctx:
             trace_id = ctx.get("trace_id")
 
+            # CL-01: Augment task with past corrections before planning.
+            planning_task = task
+            if correction_learner is not None:
+                planning_task = correction_learner.augment_prompt(task, task)
+
             # Plan (IN-01: forward urgency)
-            graph = self.plan(task, robot, urgency=urgency)
+            graph = self.plan(planning_task, robot, urgency=urgency)
 
             if len(graph) == 0:
                 emit_event("task_failed", task=task, reason="no_plan", trace_id=trace_id)
@@ -1251,6 +1267,28 @@ class Agent:
             graph.add_skill(unique_skill, depends_on=depends_on, parameters=params)
             prev_id = unique_id
         return graph
+
+    # ------------------------------------------------------------------
+    # CL-01: Correction learning
+    # ------------------------------------------------------------------
+
+    def record_correction(
+        self,
+        original_step: dict[str, Any],
+        corrected_step: dict[str, Any],
+        reason: str = "",
+    ) -> Any:
+        """Convenience wrapper — record a correction for the most recent task.
+
+        Delegates to the CorrectionLearner passed to the last ``execute()``
+        call.  Returns the new Correction, or None if no learner is attached.
+        """
+        if self._correction_learner is None:
+            logger.warning("record_correction called but no CorrectionLearner is attached")
+            return None
+        return self._correction_learner.record_correction(
+            self._last_task, original_step, corrected_step, reason
+        )
 
     # ------------------------------------------------------------------
     # IN-03: Streaming plan support
