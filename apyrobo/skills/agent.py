@@ -20,7 +20,7 @@ import re
 from typing import Any, Generator
 
 from apyrobo.core.robot import Robot
-from apyrobo.core.schemas import TaskResult
+from apyrobo.core.schemas import TaskResult, TaskStatus, RecoveryAction
 from apyrobo.skills.skill import Skill, BUILTIN_SKILLS
 from apyrobo.skills.executor import SkillGraph, SkillExecutor, ExecutionEvent, ExecutionState, SkillStatus
 from apyrobo.skills.registry import SkillRegistry, DEFAULT_REGISTRY_DIR
@@ -944,13 +944,16 @@ class Agent:
                 urgency: str | None = None,
                 state_store: Any = None,
                 replanning: bool = True,
-                max_replans: int = 2) -> TaskResult:
+                max_replans: int = 2,
+                verification: bool = False,
+                verifier: Any = None) -> TaskResult:
         """
         Plan and execute a task end-to-end.
 
         IN-01: urgency= is forwarded to the inference router.
         OB-03: Wraps entire execution in trace_context for correlation.
         RP-01: On skill failure, an LLM-backed agent may replan up to max_replans times.
+        VF-01: When verification=True, the TaskVerifier checks each skill via VLM.
 
         Args:
             task: Natural language task description
@@ -1000,7 +1003,11 @@ class Agent:
                 self._last_events = []
                 executor.on_event(lambda e: self._last_events.append(e))
 
-                result = executor.execute_graph(graph, parallel=parallel, trace_id=trace_id)
+                # VF-01: Per-step VLM verification if requested.
+                if verification and verifier is not None:
+                    result = self._execute_graph_verified(graph, executor, verifier, robot)
+                else:
+                    result = executor.execute_graph(graph, parallel=parallel, trace_id=trace_id)
                 result.task_name = task
                 self._last_state = state
 
@@ -1097,6 +1104,78 @@ class Agent:
                 )
 
             return result
+
+    # ------------------------------------------------------------------
+    # VF-01: VLM skill verification
+    # ------------------------------------------------------------------
+
+    def _execute_graph_verified(
+        self,
+        graph: SkillGraph,
+        executor: SkillExecutor,
+        verifier: Any,
+        robot: Any,
+    ) -> TaskResult:
+        """Execute graph step-by-step, calling verifier after each skill."""
+        order = graph.get_execution_order()
+        completed = 0
+
+        for skill in order:
+            params = graph.get_parameters(skill.skill_id)
+            status = executor.execute_skill(skill, params)
+
+            if status == SkillStatus.FAILED:
+                return TaskResult(
+                    task_name=f"graph_{len(order)}_skills",
+                    status=TaskStatus.FAILED,
+                    steps_completed=completed,
+                    steps_total=len(order),
+                    error=f"Skill {skill.skill_id!r} failed",
+                    recovery_actions_taken=[RecoveryAction.ABORT],
+                )
+
+            vr = verifier.verify_skill(skill.skill_id, robot=robot)
+            if not vr.verified:
+                if vr.confidence > 0.5:
+                    emit_event(
+                        "skill.verification_failed",
+                        skill_id=skill.skill_id,
+                        confidence=vr.confidence,
+                        observation=vr.observation,
+                        suggested_action=vr.suggested_action,
+                    )
+                    return TaskResult(
+                        task_name=f"graph_{len(order)}_skills",
+                        status=TaskStatus.FAILED,
+                        steps_completed=completed,
+                        steps_total=len(order),
+                        error=(
+                            f"Skill {skill.skill_id!r} failed verification: "
+                            f"{vr.observation}"
+                        ),
+                        recovery_actions_taken=[RecoveryAction.ABORT],
+                    )
+                else:
+                    logger.warning(
+                        "Verification uncertain for %r (confidence=%.2f): %s",
+                        skill.skill_id, vr.confidence, vr.observation,
+                    )
+                    emit_event(
+                        "skill.verification_uncertain",
+                        skill_id=skill.skill_id,
+                        confidence=vr.confidence,
+                        observation=vr.observation,
+                    )
+
+            completed += 1
+
+        return TaskResult(
+            task_name=f"graph_{len(order)}_skills",
+            status=TaskStatus.COMPLETED,
+            confidence=1.0,
+            steps_completed=completed,
+            steps_total=len(order),
+        )
 
     # ------------------------------------------------------------------
     # IN-06: Multi-turn planning support
