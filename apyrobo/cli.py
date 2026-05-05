@@ -144,6 +144,28 @@ def cmd_plan(args: argparse.Namespace) -> None:
             print(f"  ⚠ {r.name}: {r.description}")
     print(f"Proceed: {'yes' if report.can_proceed else 'NO — too risky'}")
 
+    # ST-01: Sim-to-real validation
+    if getattr(args, "simulate", False):
+        from apyrobo.skills.simtoreal import SimToRealTransfer
+        sim_uri = getattr(args, "sim_robot", None) or args.robot
+        real_uri = getattr(args, "real_robot", None)
+        auto_deploy = getattr(args, "auto_deploy", False)
+        transfer = SimToRealTransfer(sim_adapter_uri=sim_uri, real_adapter_uri=real_uri)
+        print()
+        print(f"Running simulation on {sim_uri!r} …")
+        sim_result, deployed = transfer.run(graph, auto_deploy=auto_deploy)
+        status_str = "SUCCESS" if sim_result.success else "FAILED"
+        print(f"Simulation: {status_str} "
+              f"({sim_result.steps_completed}/{sim_result.steps_total} steps)")
+        if sim_result.failures:
+            for f in sim_result.failures:
+                print(f"  ✗ {f}")
+        if auto_deploy:
+            if deployed:
+                print(f"Deployed to real robot {real_uri!r}: YES")
+            else:
+                print("Deployed to real robot: NO (sim failed or no real-robot URI)")
+
 
 def cmd_execute(args: argparse.Namespace) -> None:
     """Plan and execute a task with live output."""
@@ -1391,6 +1413,14 @@ def main() -> None:
     p_plan.add_argument("task", help="Task description in natural language")
     p_plan.add_argument("--robot", default="mock://turtlebot4")
     p_plan.add_argument("--provider", default="rule")
+    p_plan.add_argument("--simulate", action="store_true",
+                        help="Validate plan in simulation before reporting")
+    p_plan.add_argument("--sim-robot", default=None,
+                        help="Simulation robot URI (default: same as --robot)")
+    p_plan.add_argument("--real-robot", default=None,
+                        help="Real robot URI for deployment after sim validation")
+    p_plan.add_argument("--auto-deploy", action="store_true",
+                        help="Automatically deploy to real robot if sim succeeds")
 
     # execute
     p_exec = sub.add_parser("execute", help="Plan and execute a task")
