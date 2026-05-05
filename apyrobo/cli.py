@@ -114,7 +114,14 @@ def cmd_discover(args: argparse.Namespace) -> None:
 def cmd_plan(args: argparse.Namespace) -> None:
     """Plan a task and show the skill graph (without executing)."""
     robot = Robot.discover(args.robot)
-    provider, model = _resolve_provider(args.provider, getattr(args, "model", None))
+    _profile_name = getattr(args, "profile", None)
+    if _profile_name:
+        from apyrobo.profiles import get_profile as _gp
+        _profile = _gp(_profile_name)
+        _default_model = _profile.llm_model
+    else:
+        _default_model = None
+    provider, model = _resolve_provider(args.provider, getattr(args, "model", _default_model))
     try:
         agent = Agent(provider=provider, **({"model": model} if model else {}))
     except ValueError as exc:
@@ -1460,6 +1467,53 @@ def cmd_pkg(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Profiles command
+# ---------------------------------------------------------------------------
+
+def cmd_profiles(args: argparse.Namespace) -> None:
+    """List available compute profiles or show details for one profile."""
+    from apyrobo.profiles import ProfileRegistry, get_profile as _get_profile
+
+    sub = getattr(args, "profiles_command", None)
+    name = getattr(args, "profile_name", None)
+    as_json: bool = getattr(args, "json", False)
+
+    reg = ProfileRegistry()
+
+    if sub == "show" and name:
+        profile = reg.get(name)
+        if profile is None:
+            print(f"Error: unknown profile '{name}'. Available: {', '.join(reg.names())}", file=sys.stderr)
+            sys.exit(1)
+        if as_json:
+            print(json.dumps(profile.to_dict(), indent=2))
+        else:
+            d = profile.to_dict()
+            print(f"Profile: {d['name']}")
+            print(f"  {d['description']}")
+            print(f"  LLM:        {d['llm_provider']} / {d['llm_model']}")
+            if d["llm_api_base"]:
+                print(f"  API base:   {d['llm_api_base']}")
+            print(f"  Context:    {d['max_context_tokens']:,} tokens")
+            print(f"  GPU:        {'yes (' + str(d['gpu_vram_gb']) + ' GB VRAM)' if d['gpu_available'] else 'no'}")
+            print(f"  RAM:        {d['ram_gb']} GB")
+            print(f"  Edge infer: {'yes' if d['edge_inference'] else 'no'}")
+        return
+
+    # Default: list all profiles
+    profiles = reg.all()
+    if as_json:
+        print(json.dumps([p.to_dict() for p in profiles], indent=2))
+    else:
+        print(f"{'NAME':<20} {'LLM MODEL':<35} {'GPU':>5}  DESCRIPTION")
+        print("-" * 80)
+        for p in profiles:
+            gpu = "yes" if p.gpu_available else "no"
+            desc = p.description[:40] if len(p.description) > 40 else p.description
+            print(f"{p.name:<20} {p.llm_model:<35} {gpu:>5}  {desc}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1488,6 +1542,8 @@ def main() -> None:
                         help="Real robot URI for deployment after sim validation")
     p_plan.add_argument("--auto-deploy", action="store_true",
                         help="Automatically deploy to real robot if sim succeeds")
+    p_plan.add_argument("--profile", default=None, metavar="PROFILE",
+                        help="Compute profile (jetson-orin, raspberry-pi, workstation-gpu, cloud, cpu-only)")
 
     # execute
     p_exec = sub.add_parser("execute", help="Plan and execute a task")
@@ -1496,6 +1552,8 @@ def main() -> None:
     p_exec.add_argument("--provider", default="rule")
     p_exec.add_argument("--max-speed", type=float, default=1.5)
     p_exec.add_argument("--force", action="store_true", help="Execute even if low confidence")
+    p_exec.add_argument("--profile", default=None, metavar="PROFILE",
+                        help="Compute profile (jetson-orin, raspberry-pi, workstation-gpu, cloud, cpu-only)")
 
     # skills
     p_skills = sub.add_parser("skills", help="Manage skills")
@@ -1673,6 +1731,14 @@ def main() -> None:
     p_listen.add_argument("--model", default=None,
                           help="Whisper model size (base/small/medium/large) or model path")
 
+    # profiles
+    p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
+    profiles_sub = p_profiles.add_subparsers(dest="profiles_command")
+    p_profiles_show = profiles_sub.add_parser("show", help="Show details for a profile")
+    p_profiles_show.add_argument("profile_name", help="Profile name")
+    p_profiles_show.add_argument("--json", action="store_true")
+    p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
+
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -1715,6 +1781,7 @@ def main() -> None:
         "skill": _cmd_skill_dispatch,
         "listen": cmd_listen,
         "voice": cmd_voice,
+        "profiles": cmd_profiles,
     }
     commands[args.command](args)
 
