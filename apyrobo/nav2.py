@@ -322,6 +322,61 @@ class Nav2Adapter:
             "Nav2Adapter: initial pose set to (%.2f, %.2f, yaw=%.2f)", x, y, yaw
         )
 
+    # ------------------------------------------------------------------
+    # Spec-required convenience methods
+    # ------------------------------------------------------------------
+
+    async def navigate_to_xy(
+        self, x: float, y: float, theta: float = 0.0, frame_id: str = "map"
+    ) -> NavigationResult:
+        """Navigate to (x, y, theta) — convenience wrapper over navigate_to()."""
+        return await self.navigate_to(
+            NavigationGoal(x=x, y=y, yaw=theta, frame_id=frame_id)
+        )
+
+    async def follow_waypoints(self, waypoints: list[dict]) -> list[NavigationResult]:
+        """Navigate through a sequence of waypoints in order.
+
+        Each waypoint dict must have at least ``x`` and ``y`` keys.
+        Optional keys: ``theta`` (default 0), ``frame_id`` (default "map").
+
+        Returns a list of NavigationResult, one per waypoint.
+        """
+        results: list[NavigationResult] = []
+        for wp in waypoints:
+            goal = NavigationGoal(
+                x=float(wp.get("x", 0.0)),
+                y=float(wp.get("y", 0.0)),
+                yaw=float(wp.get("theta", wp.get("yaw", 0.0))),
+                frame_id=str(wp.get("frame_id", "map")),
+            )
+            result = await self.navigate_to(goal)
+            results.append(result)
+            if not result.success:
+                logger.warning(
+                    "Waypoint (%.2f, %.2f) failed: %s", goal.x, goal.y, result.message
+                )
+                break
+        return results
+
+    def get_costmap(self) -> dict:
+        """Return the latest costmap data as a dict.
+
+        In stub/mock mode returns an empty costmap.  With rclpy and a
+        running Nav2 stack, this would subscribe to /global_costmap/costmap.
+        The CostmapChecker integration reads its data via set_costmap_checker().
+        """
+        if self._costmap_checker is not None and hasattr(self._costmap_checker, "raw"):
+            return self._costmap_checker.raw or {}
+        return {}
+
+    def get_navigation_status(self) -> str:
+        """Return the current navigation status string.
+
+        Returns one of: ``"idle"``, ``"navigating"``, ``"cancelled"``.
+        """
+        return "navigating" if self._navigating else "idle"
+
 
 # ---------------------------------------------------------------------------
 # MockNav2Adapter — stub for tests

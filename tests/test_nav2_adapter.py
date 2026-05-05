@@ -131,3 +131,107 @@ class TestNav2AdapterStubMode:
         )
         assert result.success is True
         assert result.elapsed_s >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# New spec-required methods
+# ---------------------------------------------------------------------------
+
+class TestNavigateToXY:
+    def test_navigate_to_xy_success(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.navigate_to_xy(1.0, 2.0)
+        )
+        assert result.success is True
+
+    def test_navigate_to_xy_updates_pose(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(adapter.navigate_to_xy(3.0, 4.0, theta=1.0))
+        pose = adapter.get_current_pose()
+        assert pose["x"] == pytest.approx(3.0)
+        assert pose["y"] == pytest.approx(4.0)
+
+    def test_navigate_to_xy_theta_stored(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(adapter.navigate_to_xy(0.0, 0.0, theta=1.57))
+        pose = adapter.get_current_pose()
+        assert pose["yaw"] == pytest.approx(1.57)
+
+
+class TestFollowWaypoints:
+    def test_follow_empty_waypoints(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        results = asyncio.get_event_loop().run_until_complete(
+            adapter.follow_waypoints([])
+        )
+        assert results == []
+
+    def test_follow_single_waypoint_success(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        results = asyncio.get_event_loop().run_until_complete(
+            adapter.follow_waypoints([{"x": 1.0, "y": 2.0}])
+        )
+        assert len(results) == 1
+        assert results[0].success is True
+
+    def test_follow_multiple_waypoints(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        wps = [{"x": 1.0, "y": 0.0}, {"x": 2.0, "y": 0.0}, {"x": 3.0, "y": 0.0}]
+        results = asyncio.get_event_loop().run_until_complete(
+            adapter.follow_waypoints(wps)
+        )
+        assert len(results) == 3
+        assert all(r.success for r in results)
+
+    def test_follow_waypoints_with_theta(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        results = asyncio.get_event_loop().run_until_complete(
+            adapter.follow_waypoints([{"x": 1.0, "y": 1.0, "theta": 0.5}])
+        )
+        assert results[0].success is True
+
+    def test_follow_waypoints_pose_updates_to_last(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(
+            adapter.follow_waypoints([{"x": 1.0, "y": 0.0}, {"x": 5.0, "y": 0.0}])
+        )
+        pose = adapter.get_current_pose()
+        assert pose["x"] == pytest.approx(5.0)
+
+
+class TestGetCostmap:
+    def test_get_costmap_returns_dict(self):
+        adapter = MockNav2Adapter()
+        assert isinstance(adapter.get_costmap(), dict)
+
+    def test_get_costmap_empty_without_checker(self):
+        adapter = MockNav2Adapter()
+        assert adapter.get_costmap() == {}
+
+
+class TestGetNavigationStatus:
+    def test_status_idle_when_not_navigating(self):
+        adapter = MockNav2Adapter()
+        assert adapter.get_navigation_status() == "idle"
+
+    def test_status_navigating_while_navigating(self):
+        adapter = MockNav2Adapter()
+        adapter._navigating = True
+        assert adapter.get_navigation_status() == "navigating"
+
+    def test_status_idle_after_navigation_complete(self):
+        adapter = MockNav2Adapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(
+            adapter.navigate_to(NavigationGoal(x=1.0, y=0.0))
+        )
+        assert adapter.get_navigation_status() == "idle"
