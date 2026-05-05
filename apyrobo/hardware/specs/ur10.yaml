@@ -1,0 +1,18 @@
+robot_id: ur10
+model: UR10
+manufacturer: Universal Robots
+dof: 6
+payload_kg: 10.0
+reach_m: 1.3
+max_speed_ms: 1.0
+sensors:
+  - joint_encoders
+  - force_torque_wrist
+skill_package: apyrobo-skills-ur
+ros_node_patterns:
+  - /ur_hardware_interface
+  - /joint_state_broadcaster
+notes: >
+  Large-format 6-DOF collaborative arm. Same driver stack as UR5. UR10e
+  variant includes integrated force/torque sensor. Often used for palletising
+  and heavy assembly tasks.

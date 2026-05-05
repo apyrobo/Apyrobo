@@ -1,0 +1,21 @@
+robot_id: px4_quad
+model: PX4 Quadrotor
+manufacturer: PX4 / Generic
+dof: 0
+payload_kg: 0.5
+reach_m: 0.0
+max_speed_ms: 15.0
+sensors:
+  - imu
+  - barometer
+  - gps
+  - optical_flow_optional
+  - lidar_optional
+skill_package: apyrobo-skills-px4
+ros_node_patterns:
+  - /px4_ros_com
+  - /microxrce_agent
+notes: >
+  Generic PX4-based multirotor UAV. Communicates with ROS 2 via
+  px4_ros_com / Micro-XRCE-DDS. Supports offboard control for waypoint
+  navigation, position hold, and velocity control.

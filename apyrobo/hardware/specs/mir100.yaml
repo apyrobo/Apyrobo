@@ -1,0 +1,20 @@
+robot_id: mir100
+model: MiR 100
+manufacturer: Mobile Industrial Robots
+dof: 0
+payload_kg: 100.0
+reach_m: 0.0
+max_speed_ms: 1.5
+sensors:
+  - lidar_front
+  - lidar_rear
+  - depth_cameras
+  - imu
+skill_package: apyrobo-skills-mir
+ros_node_patterns:
+  - /mir_driver
+  - /mir_cmd_vel_mux
+notes: >
+  Autonomous mobile robot (AMR) for indoor logistics. Dual safety laser
+  scanners (Sick S300). Built-in fleet management integration. Runs its own
+  internal navigation stack; ROS 2 interface via mir_robot.

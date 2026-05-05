@@ -512,13 +512,35 @@ def cmd_connect(args: argparse.Namespace) -> None:
     if not as_json:
         print(f"{_icon('pass')} Connected in {connect_time:.1f}s")
 
+    # Auto-discovery: detect hardware spec from live ROS nodes (best-effort)
+    detected_hw: dict[str, Any] = {}
+    try:
+        from apyrobo.hardware import HardwareRegistry, AutoDiscovery
+        _hw_reg = HardwareRegistry()
+        _disc = AutoDiscovery(_hw_reg)
+        _hw_spec = _disc.detect()
+        if _hw_spec:
+            detected_hw = {
+                "robot_id": _hw_spec.robot_id,
+                "model": _hw_spec.model,
+                "skill_package": _hw_spec.skill_package,
+            }
+            if not as_json:
+                print(f"  Hardware: {_disc.summary(_hw_spec)}")
+            _disc.load_skill_package(_hw_spec)
+    except Exception:
+        pass
+
     if not verify:
         if as_json:
-            print(json.dumps({
+            payload: dict[str, Any] = {
                 "uri": uri,
                 "connected": True,
                 "connect_time_s": round(connect_time, 3),
-            }))
+            }
+            if detected_hw:
+                payload["hardware"] = detected_hw
+            print(json.dumps(payload))
         return
 
     # --verify: run the full check suite

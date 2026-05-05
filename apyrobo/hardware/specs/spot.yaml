@@ -1,0 +1,20 @@
+robot_id: spot
+model: Spot
+manufacturer: Boston Dynamics
+dof: 12
+payload_kg: 14.0
+reach_m: 0.0
+max_speed_ms: 1.6
+sensors:
+  - stereo_cameras
+  - depth_cameras
+  - imu
+  - lidar_optional
+skill_package: apyrobo-skills-spot
+ros_node_patterns:
+  - /spot_driver
+  - /spot/status*
+notes: >
+  Quadruped robot with 12-DOF legs. Equipped with five fish-eye cameras for
+  360° perception. Optional Velodyne VLP-16 payload for lidar mapping. Uses
+  Boston Dynamics Spot SDK bridged to ROS 2 via spot_ros2.

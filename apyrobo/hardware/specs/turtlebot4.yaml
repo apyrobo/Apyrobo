@@ -1,0 +1,21 @@
+robot_id: turtlebot4
+model: TurtleBot 4
+manufacturer: Clearpath Robotics / iRobot
+dof: 0
+payload_kg: 9.0
+reach_m: 0.0
+max_speed_ms: 0.46
+sensors:
+  - lidar
+  - rgb_camera
+  - depth_camera
+  - imu
+  - cliff_sensor
+skill_package: apyrobo-skills-turtlebot4
+ros_node_patterns:
+  - /turtlebot4_node
+  - /oakd*
+notes: >
+  Differential-drive mobile base. RPLIDAR A1M8 (or OAK-D Pro for Lite) for
+  navigation. Runs Nav2 out of the box. iRobot Create 3 base provides cliff
+  detection and wheel-drop safety.

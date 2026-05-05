@@ -1,0 +1,17 @@
+robot_id: ur5
+model: UR5
+manufacturer: Universal Robots
+dof: 6
+payload_kg: 5.0
+reach_m: 0.85
+max_speed_ms: 1.0
+sensors:
+  - joint_encoders
+  - force_torque_wrist
+skill_package: apyrobo-skills-ur
+ros_node_patterns:
+  - /ur_hardware_interface
+  - /joint_state_broadcaster
+notes: >
+  6-DOF collaborative arm. UR5e variant adds built-in force/torque sensing at
+  the wrist. Compatible with MoveIt 2 and the ur_robot_driver.

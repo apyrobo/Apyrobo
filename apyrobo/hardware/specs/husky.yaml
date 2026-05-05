@@ -1,0 +1,20 @@
+robot_id: husky
+model: Husky UGV
+manufacturer: Clearpath Robotics
+dof: 0
+payload_kg: 75.0
+reach_m: 0.0
+max_speed_ms: 1.0
+sensors:
+  - lidar
+  - imu
+  - gps_optional
+  - rgb_camera_optional
+skill_package: apyrobo-skills-husky
+ros_node_patterns:
+  - /husky_node
+  - /husky_velocity_controller
+notes: >
+  Rugged four-wheel-drive outdoor UGV. Skid-steer drive. Designed for outdoor
+  autonomy; supports Nav2 with optional GPS waypoint following. Large payload
+  capacity makes it suitable for carrying sensor payloads or robotic arms.
