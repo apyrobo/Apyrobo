@@ -180,3 +180,131 @@ class TestMoveItAdapterStubMode:
         adapter = MockMoveItAdapter()
         values = adapter.get_current_joint_values()
         assert isinstance(values, dict)
+
+
+# ---------------------------------------------------------------------------
+# New spec-required methods
+# ---------------------------------------------------------------------------
+
+class TestMoveToPose:
+    def test_move_to_pose_success(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.move_to_pose(0.3, 0.0, 0.5)
+        )
+        assert result.success is True
+
+    def test_move_to_pose_updates_current_pose(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(
+            adapter.move_to_pose(0.4, 0.1, 0.6)
+        )
+        pose = adapter.get_current_pose()
+        assert pose["x"] == pytest.approx(0.4)
+        assert pose["y"] == pytest.approx(0.1)
+        assert pose["z"] == pytest.approx(0.6)
+
+    def test_move_to_pose_with_quaternion(self):
+        import math
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        # 90° rotation around z → qw=cos(45°), qz=sin(45°)
+        qw = math.cos(math.pi / 4)
+        qz = math.sin(math.pi / 4)
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.move_to_pose(0.0, 0.0, 0.5, qz=qz, qw=qw)
+        )
+        assert result.success is True
+
+    def test_move_to_pose_not_connected_fails(self):
+        adapter = MockMoveItAdapter()
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.move_to_pose(0.0, 0.0, 0.0)
+        )
+        assert result.success is False
+
+
+class TestExecuteCartesianPath:
+    def test_empty_waypoints_success(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.execute_cartesian_path([])
+        )
+        assert result.success is True
+        assert result.trajectory_length == 0
+
+    def test_single_waypoint(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.execute_cartesian_path([{"x": 0.3, "y": 0.0, "z": 0.5}])
+        )
+        assert result.success is True
+
+    def test_multiple_waypoints(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        wps = [
+            {"x": 0.3, "y": 0.0, "z": 0.5},
+            {"x": 0.4, "y": 0.1, "z": 0.5},
+            {"x": 0.5, "y": 0.0, "z": 0.4},
+        ]
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.execute_cartesian_path(wps)
+        )
+        assert result.success is True
+
+    def test_cartesian_path_final_pose(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        wps = [{"x": 0.1, "y": 0.0, "z": 0.3}, {"x": 0.9, "y": 0.0, "z": 0.7}]
+        asyncio.get_event_loop().run_until_complete(adapter.execute_cartesian_path(wps))
+        pose = adapter.get_current_pose()
+        assert pose["x"] == pytest.approx(0.9)
+
+
+class TestGripper:
+    def test_open_gripper_success(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        result = asyncio.get_event_loop().run_until_complete(adapter.open_gripper())
+        assert result.success is True
+
+    def test_open_gripper_updates_joint(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(adapter.open_gripper())
+        assert adapter.get_joint_states().get("gripper", -1) == pytest.approx(0.04)
+
+    def test_close_gripper_success(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        result = asyncio.get_event_loop().run_until_complete(adapter.close_gripper())
+        assert result.success is True
+
+    def test_close_gripper_updates_joint(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(adapter.close_gripper())
+        assert adapter.get_joint_states().get("gripper", -1) == pytest.approx(0.0)
+
+    def test_open_close_sequence(self):
+        adapter = MockMoveItAdapter()
+        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.get_event_loop().run_until_complete(adapter.open_gripper())
+        assert adapter.get_joint_states()["gripper"] == pytest.approx(0.04)
+        asyncio.get_event_loop().run_until_complete(adapter.close_gripper())
+        assert adapter.get_joint_states()["gripper"] == pytest.approx(0.0)
+
+    def test_open_gripper_not_connected_fails(self):
+        adapter = MockMoveItAdapter()
+        result = asyncio.get_event_loop().run_until_complete(adapter.open_gripper())
+        assert result.success is False
+
+    def test_close_gripper_not_connected_fails(self):
+        adapter = MockMoveItAdapter()
+        result = asyncio.get_event_loop().run_until_complete(adapter.close_gripper())
+        assert result.success is False

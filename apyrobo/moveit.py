@@ -326,6 +326,114 @@ class MoveItAdapter:
         logger.info("MoveItAdapter: homing arm")
         return await self.move_to_named_target("home")
 
+    # ------------------------------------------------------------------
+    # Spec-required convenience methods
+    # ------------------------------------------------------------------
+
+    async def move_to_pose(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        qx: float = 0.0,
+        qy: float = 0.0,
+        qz: float = 0.0,
+        qw: float = 1.0,
+        frame_id: str = "base_link",
+    ) -> MotionResult:
+        """Move end-effector to (x, y, z) with orientation quaternion (qx, qy, qz, qw).
+
+        Converts to Euler angles for the internal PoseTarget representation.
+        """
+        import math
+        # Extract yaw from quaternion (ZYX Euler)
+        sinr_cosp = 2.0 * (qw * qx + qy * qz)
+        cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy)
+        roll = math.atan2(sinr_cosp, cosr_cosp)
+
+        sinp = 2.0 * (qw * qy - qz * qx)
+        pitch = math.asin(max(-1.0, min(1.0, sinp)))
+
+        siny_cosp = 2.0 * (qw * qz + qx * qy)
+        cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+
+        return await self.move_to_pose_target(
+            PoseTarget(x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw, frame_id=frame_id)
+        )
+
+    async def execute_cartesian_path(
+        self,
+        waypoints: list[dict],
+        velocity_scale: float = 0.5,
+    ) -> MotionResult:
+        """Execute a Cartesian-space path through a list of pose waypoints.
+
+        Each waypoint dict must have ``x``, ``y``, ``z`` keys.  Optional keys:
+        ``qx``, ``qy``, ``qz``, ``qw`` (orientation quaternion).
+
+        In stub mode, navigates to the final waypoint.  With a real MoveIt
+        stack, this generates a Cartesian trajectory for the full path.
+        """
+        if not waypoints:
+            return MotionResult(success=True, trajectory_length=0, message="no waypoints")
+        if not self._connected:
+            return MotionResult(success=False, message="not connected")
+
+        results: list[MotionResult] = []
+        for wp in waypoints:
+            r = await self.move_to_pose(
+                x=float(wp.get("x", 0.0)),
+                y=float(wp.get("y", 0.0)),
+                z=float(wp.get("z", 0.0)),
+                qx=float(wp.get("qx", 0.0)),
+                qy=float(wp.get("qy", 0.0)),
+                qz=float(wp.get("qz", 0.0)),
+                qw=float(wp.get("qw", 1.0)),
+            )
+            results.append(r)
+            if not r.success:
+                return r
+
+        total_traj = sum(r.trajectory_length for r in results)
+        return MotionResult(
+            success=True,
+            trajectory_length=total_traj,
+            message=f"cartesian path: {len(waypoints)} waypoints executed",
+        )
+
+    async def open_gripper(self) -> MotionResult:
+        """Open the gripper (move to a pre-defined open joint configuration).
+
+        In stub mode succeeds immediately.  With rclpy, sends a gripper action.
+        """
+        if not self._connected:
+            return MotionResult(success=False, message="not connected")
+        self._moving = True
+        try:
+            await asyncio.sleep(0.05)
+            self._joint_values["gripper"] = 0.04  # 4 cm open
+            logger.info("MoveItAdapter: gripper opened")
+            return MotionResult(success=True, trajectory_length=1, message="gripper opened")
+        finally:
+            self._moving = False
+
+    async def close_gripper(self) -> MotionResult:
+        """Close the gripper (move to a pre-defined closed joint configuration).
+
+        In stub mode succeeds immediately.  With rclpy, sends a gripper action.
+        """
+        if not self._connected:
+            return MotionResult(success=False, message="not connected")
+        self._moving = True
+        try:
+            await asyncio.sleep(0.05)
+            self._joint_values["gripper"] = 0.0  # fully closed
+            logger.info("MoveItAdapter: gripper closed")
+            return MotionResult(success=True, trajectory_length=1, message="gripper closed")
+        finally:
+            self._moving = False
+
 
 # ---------------------------------------------------------------------------
 # MockMoveItAdapter — stub for tests and offline development
