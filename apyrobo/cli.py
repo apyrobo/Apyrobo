@@ -1467,6 +1467,41 @@ def cmd_pkg(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Serve command
+# ---------------------------------------------------------------------------
+
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Start an orchestration server (stdio adapter by default)."""
+    from apyrobo.orchestration import OrchestrationServer, StdioOrchestrationAdapter
+    from apyrobo.core.robot import Robot
+
+    robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
+    profile_name: str | None = getattr(args, "profile", None)
+    provider_name: str = getattr(args, "provider", "rule")
+
+    if profile_name:
+        from apyrobo.profiles import get_profile as _gp
+        _profile = _gp(profile_name)
+        _default_model: str | None = _profile.llm_model
+    else:
+        _default_model = None
+
+    provider, model = _resolve_provider(provider_name, _default_model)
+    try:
+        agent = Agent(provider=provider, **({"model": model} if model else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    robot = Robot.discover(robot_uri)
+    adapter = StdioOrchestrationAdapter()
+    server = OrchestrationServer(adapter, agent, default_robot=robot)
+
+    print(f"apyrobo serve — robot={robot_uri} provider={provider}", file=sys.stderr, flush=True)
+    server.run()
+
+
+# ---------------------------------------------------------------------------
 # Profiles command
 # ---------------------------------------------------------------------------
 
@@ -1731,6 +1766,15 @@ def main() -> None:
     p_listen.add_argument("--model", default=None,
                           help="Whisper model size (base/small/medium/large) or model path")
 
+    # serve — orchestration server
+    p_serve = sub.add_parser("serve", help="Start a stdio orchestration server")
+    p_serve.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
+                         help="Robot URI (default: mock://turtlebot4)")
+    p_serve.add_argument("--provider", default="rule",
+                         help="LLM provider (default: rule)")
+    p_serve.add_argument("--profile", default=None, metavar="PROFILE",
+                         help="Compute profile to apply")
+
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
     profiles_sub = p_profiles.add_subparsers(dest="profiles_command")
@@ -1782,6 +1826,7 @@ def main() -> None:
         "listen": cmd_listen,
         "voice": cmd_voice,
         "profiles": cmd_profiles,
+        "serve": cmd_serve,
     }
     commands[args.command](args)
 
