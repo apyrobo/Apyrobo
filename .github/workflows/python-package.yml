@@ -1,12 +1,12 @@
 # Publish to PyPI on version tag push (v*).
 #
 # Prerequisites (repo owner must configure once on GitHub):
-#   1. Create GitHub Environments named "testpypi" and "pypi".
-#   2. On test.pypi.org and pypi.org, add a Trusted Publisher:
-#        Owner: apyrobo  Repo: Apyrobo  Workflow: python-package.yml
+#   1. Create a GitHub Environment named "pypi".
+#   2. On pypi.org, add a Trusted Publisher:
+#        Owner: apyrobo  Repo: Apyrobo  Workflow: python-package.yml  Environment: pypi
 #   3. No API token secrets are needed — OIDC handles auth automatically.
 #
-# Flow: build → publish to TestPyPI → publish to real PyPI → create GitHub Release
+# Flow: build → publish to PyPI → create GitHub Release
 name: Publish to PyPI
 
 on:
@@ -47,29 +47,9 @@ jobs:
           name: dist
           path: dist/
 
-  publish-testpypi:
-    name: Publish to TestPyPI
-    needs: build
-    runs-on: ubuntu-latest
-    environment: testpypi
-    permissions:
-      id-token: write  # required for OIDC trusted-publisher auth
-
-    steps:
-      - name: Download dist artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-
   publish-pypi:
     name: Publish to PyPI
-    needs: publish-testpypi
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
