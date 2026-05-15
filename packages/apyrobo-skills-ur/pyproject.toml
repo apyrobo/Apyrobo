@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "apyrobo-skills-ur"
+version = "1.0.0"
+description = "Universal Robots UR3/UR5/UR10/UR16 skill pack for APYROBO"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "APYROBO Contributors" }]
+keywords = ["robotics", "ros2", "universal-robots", "ur3", "ur5", "ur10", "ur16", "apyrobo", "skills", "manipulation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "apyrobo>=1.0.0",
+]
+
+[project.entry-points."apyrobo.skills"]
+ur = "apyrobo_skills_ur:register"
+
+[project.urls]
+Homepage = "https://github.com/apyrobo/Apyrobo"
+Repository = "https://github.com/apyrobo/Apyrobo/tree/main/packages/apyrobo-skills-ur"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apyrobo_skills_ur*"]
