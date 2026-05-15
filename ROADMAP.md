@@ -229,6 +229,23 @@ Focus: make apyrobo the neutral AI orchestration standard. Robot-agnostic, AI-ag
 
 ---
 
+## v4.0.0 — Connected Intelligence
+
+Focus: close the loop between robots and the humans who direct them. Real-time telemetry into the LLM context, built-in front-ends for common orchestration surfaces, and a hosted skill registry so the community can publish and discover skill packages without leaving the CLI.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **WebSocket orchestration adapter** | `apyrobo serve --transport websocket` — real-time bidirectional task/response streaming for web UIs and mobile apps. Ships with a reference React component. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Slack orchestration adapter** | `apyrobo-orchestration-slack` — Bolt-based adapter. Slash commands dispatch tasks; threaded replies stream skill progress. App manifest and install guide included. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Web dashboard** | `apyrobo dashboard` — FastAPI + HTMX live dashboard: robot status, active task graph, skill history, safety events. Replaces the current read-only metrics endpoint. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Live telemetry context** | Pipe live sensor readings (battery, position, camera) into the LLM context window on every planning call so the planner knows current state without tool calls. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Skill registry CLI** | `apyrobo registry search`, `apyrobo registry publish`, `apyrobo registry install <package>` — community-hosted index of skill packages with metadata, ratings, and compatibility matrix. | :bulb: |
+| :clipboard: | **Multi-agent coordination** | Multiple `Agent` instances negotiate over a shared task bus — one agent can sub-contract skills to another agent on a different robot without explicit wiring. | :bulb: |
+| :clipboard: | **Natural language safety policies** | `apyrobo policy add "never exceed 0.5 m/s near humans"` — LLM translates the sentence into a `SafetyPolicy` object and registers it. Plain English audit trail. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Hardware-in-the-loop CI** | Self-hosted GitHub Actions runner with a physical robot; skill packages run against real hardware on every PR merge. Reference runner config for UR5 and TurtleBot 4. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
 ## Non-Goals
 
 Things APYROBO intentionally does **not** aim to do:

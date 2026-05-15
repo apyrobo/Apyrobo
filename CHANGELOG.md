@@ -7,6 +7,42 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ---
 
+## [3.0.0] - 2026-05-15
+
+Universal Coverage — any robot, any LLM, any hardware, zero configuration.
+
+### Added
+
+**Skill packages**
+- `apyrobo-skills-ur` — Universal Robots UR3/UR5/UR10/UR16: `move_joints`, `move_linear`, `pick`, `place`, `move_home`, `set_tcp`, `get_pose`
+- `apyrobo-skills-spot` — Boston Dynamics Spot: `walk_to`, `sit`, `stand`, `stair_climb`, `dock`, `capture_image`, `arm_pick`
+- `apyrobo-skills-franka` — Franka Panda: `move_to_pose`, `grasp`, `release`, `move_home`, `cartesian_sweep`, `impedance_control`
+- `apyrobo-skills-drone-px4` — PX4-based drones: `takeoff`, `land`, `fly_to`, `orbit`, `return_home`, `capture_image`
+- `apyrobo-skills-agv` — MiR / Omron LD / Clearpath Husky: `navigate_to`, `follow_route`, `dock_to_station`, `load_cargo`, `unload_cargo`
+
+**Compute profiles** (`apyrobo/compute_profiles/`)
+- `--profile jetson-orin`, `--profile workstation-gpu`, `--profile cloud`, `--profile cpu-only`
+- Each profile pre-configures LLM, VLM, STT/TTS models and inference backends
+- `apyrobo profiles` CLI command — list all profiles or inspect one; `--json` flag
+- `--profile` flag added to `apyrobo exec` and `apyrobo plan`
+
+**Hardware knowledge schema** (`apyrobo/hardware/`)
+- Per-robot YAML spec files: reach, payload, DoF, sensor suite, speed limits
+- `HardwareRegistry` — discovers and loads specs at runtime
+- Auto-discovery: `apyrobo connect ros2://ur10` detects robot type from URDF/node list
+
+**Orchestration server** (`apyrobo/orchestration/`)
+- `OrchestrationAdapter` ABC — pluggable interface for any front-end (Slack, Discord, web UI, ROS service)
+- `OrchestrationServer` — receive → plan → send loop with `max_iterations` guard
+- `StdioOrchestrationAdapter` — JSON-over-stdin/stdout reference implementation
+- `apyrobo serve` CLI command — run the orchestration server over stdio
+
+**Workflow templates** (`examples/workflows/`)
+- 10 ready-made multi-robot workflow scripts: patrol loop, pick-and-place, inspection round, charging cycle, shelf restock, delivery run, multi-floor navigation, quality inspection, fleet coordination, voice-commanded robot
+
+---
+
+
 ## [1.0.0] - 2026-04-29
 
 First stable release. Covers all work from PRs #32–#45.
