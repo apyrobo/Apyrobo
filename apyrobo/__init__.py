@@ -10,7 +10,7 @@ Built on ROS 2. Model-agnostic. Hardware-agnostic.
     result = agent.execute(task="deliver package to room 3", robot=robot)
 """
 
-__version__ = "1.0.0"
+from apyrobo.__version__ import __version__
 
 from apyrobo.core.robot import Robot
 from apyrobo.core.health import ConnectionHealth
