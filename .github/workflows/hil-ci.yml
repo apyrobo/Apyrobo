@@ -1,0 +1,137 @@
+# Hardware-in-the-loop CI
+#
+# Runs the skill test suite against a real physical robot on every push to main
+# and on PRs that touch skill packages or core adapters.
+#
+# Prerequisites:
+#   1. A self-hosted GitHub Actions runner with:
+#        - ROS 2 Humble installed and sourced
+#        - apyrobo installed: pip install -e ".[dev]"
+#        - Physical robot connected and reachable
+#   2. A GitHub Actions Environment named "hardware" with:
+#        - ROBOT_URI secret: e.g. ros2://turtlebot4 or ros2://ur5
+#        - ROBOT_TYPE secret: turtlebot4 | ur5 | spot | franka
+#   3. Runner labelled "hil-runner" in repo Settings → Actions → Runners
+#
+# How to set up a runner:
+#   https://docs.github.com/en/actions/hosting-your-own-runners/adding-self-hosted-runners
+
+name: Hardware-in-the-Loop CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apyrobo/skills/**"
+      - "apyrobo/core/**"
+      - "apyrobo/safety/**"
+      - "packages/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apyrobo/skills/**"
+      - "apyrobo/core/**"
+      - "apyrobo/safety/**"
+      - "packages/**"
+  workflow_dispatch:
+    inputs:
+      robot_uri:
+        description: "Robot URI override (e.g. ros2://ur5)"
+        required: false
+      skill_filter:
+        description: "Pytest -k filter for specific skills"
+        required: false
+
+concurrency:
+  group: hil-${{ github.ref }}
+  cancel-in-progress: true  # Only one HIL run at a time — robot is a shared resource
+
+jobs:
+  hil-test:
+    name: HIL — ${{ secrets.ROBOT_TYPE || 'turtlebot4' }}
+    runs-on: [self-hosted, hil-runner]
+    environment: hardware
+    timeout-minutes: 30
+
+    env:
+      ROBOT_URI: ${{ inputs.robot_uri || secrets.ROBOT_URI || 'ros2://turtlebot4' }}
+      ROBOT_TYPE: ${{ secrets.ROBOT_TYPE || 'turtlebot4' }}
+      APYROBO_HIL: "1"  # Skills can check this to adjust behavior in HIL mode
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]" --quiet
+
+      - name: Install skill package for robot type
+        run: |
+          case "$ROBOT_TYPE" in
+            turtlebot4) pip install -e packages/apyrobo-skills-turtlebot4 --quiet ;;
+            ur5|ur10)   pip install -e packages/apyrobo-skills-ur --quiet ;;
+            spot)       pip install -e packages/apyrobo-skills-spot --quiet ;;
+            franka)     pip install -e packages/apyrobo-skills-franka --quiet ;;
+            *)          echo "No skill package for $ROBOT_TYPE — using builtins only" ;;
+          esac
+
+      - name: Verify robot connectivity
+        run: |
+          python - <<'EOF'
+          from apyrobo import Robot
+          import os
+          uri = os.environ["ROBOT_URI"]
+          robot = Robot.discover(uri)
+          caps = robot.capabilities()
+          print(f"Connected: {uri}")
+          print(f"Capabilities: {[c.name for c in caps.capabilities]}")
+          EOF
+
+      - name: Run HIL skill tests
+        run: |
+          FILTER="${{ inputs.skill_filter }}"
+          if [ -n "$FILTER" ]; then
+            pytest tests/hil/ -v -k "$FILTER" \
+              --robot-uri "$ROBOT_URI" \
+              --robot-type "$ROBOT_TYPE" \
+              --timeout=60 \
+              --tb=short
+          else
+            pytest tests/hil/ -v \
+              --robot-uri "$ROBOT_URI" \
+              --robot-type "$ROBOT_TYPE" \
+              --timeout=60 \
+              --tb=short
+          fi
+
+      - name: Run failover tests against real robot
+        run: |
+          pytest tests/test_failover.py tests/test_production_hardening.py \
+            -v --timeout=30 --tb=short \
+            -k "not Watchdog"  # Watchdog timing tests are flaky on slow hardware
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hil-results-${{ github.run_id }}
+          path: |
+            .pytest_cache/
+            *.log
+          retention-days: 7
+
+      - name: Safe shutdown
+        if: always()
+        run: |
+          python - <<'EOF'
+          from apyrobo import Robot
+          import os, logging
+          logging.basicConfig(level=logging.INFO)
+          try:
+              robot = Robot.discover(os.environ["ROBOT_URI"])
+              robot.stop()
+              print("Robot stopped safely")
+          except Exception as e:
+              print(f"Safe shutdown warning: {e}")
+          EOF

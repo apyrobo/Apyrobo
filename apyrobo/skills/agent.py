@@ -825,7 +825,7 @@ class Agent:
         elif provider == "auto":
             # Try LLM first, fall back to rule-based
             try:
-                import litellm
+                import litellm  # noqa: F401
                 self._provider = LLMProvider(**kwargs)
                 logger.info("Agent using LLM provider")
             except ImportError:
@@ -900,6 +900,28 @@ class Agent:
         except TypeError:
             # Provider doesn't accept urgency kwarg
             steps = self._provider.plan(task, available_skills, capability_names)
+        except Exception as exc:
+            # Degraded-mode fallback: LLM provider failed at runtime (network error,
+            # rate limit, wrong API key, etc.) — fall back to rule-based so the robot
+            # is never stranded waiting for an unavailable LLM.
+            if not isinstance(self._provider, RuleBasedProvider):
+                logger.warning(
+                    "Agent: LLM provider failed (%s), falling back to rule-based (degraded mode)",
+                    exc,
+                )
+                emit_event(
+                    "agent.degraded",
+                    reason=str(exc),
+                    provider=type(self._provider).__name__,
+                    task=task,
+                )
+                fallback = RuleBasedProvider(patterns=self._rule_patterns)
+                try:
+                    steps = fallback.plan(task, available_skills, capability_names)
+                except Exception:
+                    steps = []
+            else:
+                raise
 
         # Build the graph
         graph = SkillGraph()

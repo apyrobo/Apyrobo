@@ -16,6 +16,10 @@ receive→plan→send loop.  ``StdioOrchestrationAdapter`` implements the contra
 over stdin/stdout (one JSON object per line), making it easy to pipe tasks
 from a shell script.  ``MockOrchestrationAdapter`` is pre-loaded with a list
 of tasks and is intended for unit tests.
+
+Crash recovery: pass a ``CheckpointStore`` to ``OrchestrationServer`` to persist
+in-flight tasks. On restart, call ``server.resume_incomplete()`` to recover tasks
+that were in-flight when the server last crashed.
 """
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ import abc
 import json
 import logging
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -92,16 +97,25 @@ class OrchestrationAdapter(abc.ABC):
 class OrchestrationServer:
     """Runs the receive→plan→send loop for a given adapter and agent.
 
+    Crash recovery: pass ``checkpoint_store`` to persist in-flight tasks to
+    SQLite. On restart, call ``resume_incomplete()`` to recover tasks that
+    were in-flight when the server last crashed.
+
     Usage::
 
         from apyrobo.core.robot import Robot
         from apyrobo.skills.agent import Agent
         from apyrobo.orchestration import OrchestrationServer, StdioOrchestrationAdapter
+        from apyrobo.skills.checkpoint import CheckpointStore
 
         robot = Robot.discover("mock://turtlebot4")
         agent = Agent(provider="rule")
         adapter = StdioOrchestrationAdapter()
-        server = OrchestrationServer(adapter, agent, default_robot=robot)
+        store = CheckpointStore("/var/lib/apyrobo/orchestration.db")
+        server = OrchestrationServer(adapter, agent, default_robot=robot,
+                                     checkpoint_store=store)
+        # Recover tasks from previous crash
+        recovered = server.resume_incomplete()
         server.run()
     """
 
@@ -111,12 +125,40 @@ class OrchestrationServer:
         agent: Any,
         default_robot: Any = None,
         max_iterations: int | None = None,
+        checkpoint_store: Any = None,
     ) -> None:
         self.adapter = adapter
         self.agent = agent
         self.default_robot = default_robot
         self.max_iterations = max_iterations
+        self._checkpoint_store = checkpoint_store
         self._iterations = 0
+
+    def resume_incomplete(self) -> list[OrchestrationMessage]:
+        """Return tasks that were in-flight when the server last crashed.
+
+        Each returned message was being processed when the server died.
+        Re-queue them by calling adapter.send() or prepending to the task list.
+        Clears the recovered checkpoints.
+        """
+        if self._checkpoint_store is None:
+            return []
+        recovered: list[OrchestrationMessage] = []
+        try:
+            task_ids = self._checkpoint_store.list_tasks()
+            for task_id in task_ids:
+                if not task_id.startswith("orch:"):
+                    continue
+                entry = self._checkpoint_store.load(task_id)
+                if entry is None:
+                    continue
+                msg = OrchestrationMessage.from_dict(entry.state)
+                recovered.append(msg)
+                self._checkpoint_store.delete(task_id)
+                logger.info("OrchestrationServer: recovered in-flight task %r", msg.task)
+        except Exception as exc:
+            logger.warning("OrchestrationServer.resume_incomplete error: %s", exc)
+        return recovered
 
     def run(self) -> None:
         """Start the receive→plan→send loop."""
@@ -134,11 +176,41 @@ class OrchestrationServer:
                     break
 
                 self._iterations += 1
+                task_id = f"orch:{self._iterations}:{time.time()}"
+                self._checkpoint_begin(task_id, msg)
                 response = self._handle(msg)
+                self._checkpoint_complete(task_id)
                 self.adapter.send(response)
         finally:
             self.adapter.shutdown()
             logger.info("OrchestrationServer stopped")
+
+    def _checkpoint_begin(self, task_id: str, msg: OrchestrationMessage) -> None:
+        """Persist in-flight task so it can be recovered after a crash."""
+        if self._checkpoint_store is None:
+            return
+        try:
+            from apyrobo.skills.checkpoint import CheckpointEntry
+            entry = CheckpointEntry(
+                task_id=task_id,
+                skill_name="orchestration",
+                step_index=0,
+                total_steps=1,
+                state=msg.to_dict(),
+                completed_steps=[],
+            )
+            self._checkpoint_store.save(entry)
+        except Exception as exc:
+            logger.warning("OrchestrationServer._checkpoint_begin error: %s", exc)
+
+    def _checkpoint_complete(self, task_id: str) -> None:
+        """Remove in-flight checkpoint after successful handling."""
+        if self._checkpoint_store is None:
+            return
+        try:
+            self._checkpoint_store.delete(task_id)
+        except Exception as exc:
+            logger.warning("OrchestrationServer._checkpoint_complete error: %s", exc)
 
     def _handle(self, msg: OrchestrationMessage) -> OrchestrationMessage:
         """Plan a task from *msg* and return a response message."""

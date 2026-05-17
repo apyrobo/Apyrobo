@@ -19,3 +19,9 @@ from apyrobo.safety.verification import (  # noqa: F401
     generate_certification_report,
     BUILTIN_PROPERTIES,
 )
+from apyrobo.safety.watchdog import (  # noqa: F401
+    SkillWatchdog,
+    WatchdogAction,
+    WatchdogRule,
+    WatchdogFiring,
+)
