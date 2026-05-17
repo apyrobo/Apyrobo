@@ -10,6 +10,22 @@ Public roadmap for the APYROBO project. Items are grouped by milestone and rough
 
 ---
 
+## What we're actually optimizing for
+
+Technical excellence alone does not make a framework influential. The path from "promising architecture" to "the obvious choice" runs through four compounding unlocks — in order:
+
+1. **Production reliability** — Teams won't build on a framework that fails unpredictably around expensive hardware. Failure handling maturity is the hidden prerequisite for trust.
+
+2. **Five-minute success** — Developers decide in the first 10 minutes whether a tool is worth their time. `git clone → docker compose up → working demo` is the bar. Anything slower loses them.
+
+3. **Ecosystem gravity** — Compatibility wins. Every maintained adapter, every integration, every supported simulator is a reason for a new team to pick APYROBO over starting from scratch. Network effects compound from here.
+
+4. **Category ownership** — The goal is for "AI-native robotics orchestration" to be synonymous with APYROBO the way "container orchestration" is synonymous with Kubernetes. That requires killer demos, repeated contextual visibility, and being easy to discover, understand, and discuss online.
+
+The milestones below are ordered by this logic, not by feature priority.
+
+---
+
 ## v0.1.0 — Foundation (Current Release)
 
 Core framework with mock adapter support, offline planning, and safety enforcement.
@@ -229,20 +245,67 @@ Focus: make apyrobo the neutral AI orchestration standard. Robot-agnostic, AI-ag
 
 ---
 
-## v4.0.0 — Connected Intelligence
+## v4.0.0 — Production Hardening
 
-Focus: close the loop between robots and the humans who direct them. Real-time telemetry into the LLM context, built-in front-ends for common orchestration surfaces, and a hosted skill registry so the community can publish and discover skill packages without leaving the CLI.
+**Unlock: Trust.** Teams won't build on a framework they can't rely on around expensive hardware. This milestone closes the gap between impressive demos and actual deployment. The hidden killer in robotics is failure handling — without it, orchestration frameworks stay "cool demos."
 
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
+| :clipboard: | **Deterministic failover** | If a skill times out or throws, the robot returns to a known-safe state automatically — not a crash, not a hang. Configurable per-skill safe-state: stop in place, home arm, dock, or e-stop. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Plan rollback** | When a multi-step plan fails partway through, undo committed state changes in reverse order (e.g. re-open gripper, navigate back to start). `RollbackExecutor` wraps `SkillExecutor`. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Degraded operation mode** | If the LLM provider is unreachable, fall back to rule-based planning automatically — no crash, no hang, logged degradation event. `Agent(provider="auto")` already exists; this makes the fallback robust under network loss. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Crash recovery** | `OrchestrationServer` persists in-flight task state to disk; on restart it resumes from the last committed checkpoint. Uses the existing `CheckpointStore`. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Watchdog improvements** | Per-skill-type dead-man switch with configurable timeout, escalation path, and recovery action. Current watchdog is global; this makes it surgical. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Chaos test suite** | Pytest fixtures that inject: network partitions, motor fault signals, sensor dropout, LLM timeouts, concurrent skill conflicts. Pass = framework stays safe and observable under all of them. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Hardware-in-the-loop CI** | Self-hosted GitHub Actions runner with a physical robot (TurtleBot 4 and UR5 reference configs). Skill packages run against real hardware on every PR merge. The first public robotics framework with HIL CI. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
+## v5.0.0 — Five-Minute Success
+
+**Unlock: Developer velocity.** Developers decide in the first 10 minutes whether a tool is worth their time. The bar is: `git clone → docker compose up → working robot demo in a browser` with zero prior robotics knowledge. This milestone also makes APYROBO dramatically faster to extend.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **`apyrobo-demo` docker compose environment** | Single `docker compose up` spins up Gazebo, APYROBO, a mock fleet, and the web dashboard. First-time user sees a coordinated multi-robot task executing within 5 minutes on a laptop. No ROS 2 install, no config. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **`apyrobo init` project scaffold** | `apyrobo init my-skill-package --robot ur10` generates a ready-to-run skill package with pyproject.toml, stub skill, test file, and CI workflow. `apyrobo init my-adapter --scheme mqtt` generates a working adapter skeleton. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **`apyrobo shell` interactive REPL** | Drop into a live Python session with a connected mock robot, `agent`, and all skills imported. `apyrobo shell --robot mock://spot` for instant experimentation without writing a script. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **`apyrobo test-skill` harness** | `apyrobo test-skill my_skill.py --robot mock://turtlebot4` — runs the skill against a mock robot, reports pass/fail, timing, capability mismatches, and safety violations. No pytest boilerplate required. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Structured error messages** | When a skill fails because the robot lacks a capability, the error says exactly why and what skill packages would fix it. When LLM planning fails, the error includes the raw prompt and a suggested fix. Errors are actionable, not stack traces. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Interactive tutorial runner** | `apyrobo tutorial start` — guided CLI walkthrough: connect robot → execute task → add a skill → coordinate a fleet. Self-paced, runs entirely in mock mode. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Web dashboard** | `apyrobo dashboard` — FastAPI + HTMX live view: robot status, active task graph, skill history, safety events, watchdog state. Replaces the current read-only metrics endpoint. Ships in the demo docker compose environment. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
+## v6.0.0 — Ecosystem Integrations
+
+**Unlock: Compatibility.** Every maintained adapter is a reason for a team to pick APYROBO over starting from scratch. Infrastructure wins through compatibility layers. This milestone targets the hardware platforms and LLM backends where robotics teams actually live.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **NVIDIA Isaac Sim adapter** | `apyrobo connect isaac://my_scene` — adapter for NVIDIA Isaac Sim. Full physics, photorealistic sensors, GPU-accelerated. Primary simulation target for teams doing sim-to-real with Jetson hardware. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Unitree Go2 / H1 adapter** | `apyrobo connect unitree://go2` — quadruped and humanoid adapter for Unitree robots. `walk_to`, `sit`, `stand`, `wave`, `pick` for H1 arm. First humanoid skill package. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **`apyrobo-skills-ros-nav`** | Skills that wrap ROS 2 Nav2 topics as first-class APYROBO skills: `navigate_to_pose`, `follow_path`, `recover`, `set_costmap_params`. Works with any Nav2-compatible robot without a custom adapter. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Ollama first-class compute profile** | `--profile local` auto-detects the best Ollama model on the machine (no litellm string knowledge required). `apyrobo profiles detect` scans installed Ollama models and recommends a profile. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **OpenCV vision pipeline** | `VisionAdapter` — wraps OpenCV capture + optional YOLO/SAM inference as an APYROBO sensor source. Skills can call `vision.detect("cup")` and get pose estimates back. Works on CPU. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :clipboard: | **WebSocket orchestration adapter** | `apyrobo serve --transport websocket` — real-time bidirectional task/response streaming for web UIs and mobile apps. Ships with a reference React component. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | **Slack orchestration adapter** | `apyrobo-orchestration-slack` — Bolt-based adapter. Slash commands dispatch tasks; threaded replies stream skill progress. App manifest and install guide included. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | **Web dashboard** | `apyrobo dashboard` — FastAPI + HTMX live dashboard: robot status, active task graph, skill history, safety events. Replaces the current read-only metrics endpoint. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
-| :clipboard: | **Live telemetry context** | Pipe live sensor readings (battery, position, camera) into the LLM context window on every planning call so the planner knows current state without tool calls. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | **Skill registry CLI** | `apyrobo registry search`, `apyrobo registry publish`, `apyrobo registry install <package>` — community-hosted index of skill packages with metadata, ratings, and compatibility matrix. | :bulb: |
-| :clipboard: | **Multi-agent coordination** | Multiple `Agent` instances negotiate over a shared task bus — one agent can sub-contract skills to another agent on a different robot without explicit wiring. | :bulb: |
-| :clipboard: | **Natural language safety policies** | `apyrobo policy add "never exceed 0.5 m/s near humans"` — LLM translates the sentence into a `SafetyPolicy` object and registers it. Plain English audit trail. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | **Hardware-in-the-loop CI** | Self-hosted GitHub Actions runner with a physical robot; skill packages run against real hardware on every PR merge. Reference runner config for UR5 and TurtleBot 4. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Slack orchestration adapter** | `apyrobo-orchestration-slack` — Bolt-based adapter. Slash commands dispatch tasks; threaded replies stream skill progress. App manifest and one-command install included. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Live telemetry context** | Pipe live sensor state (battery, position, camera description) into the LLM context window on every planning call so the planner knows current state without tool calls. Adds `TelemetryContextProvider` to the agent loop. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+
+---
+
+## v7.0.0 — Category Ownership
+
+**Unlock: Discoverability.** The goal is for "AI-native robotics orchestration" to be synonymous with APYROBO the way "container orchestration" became synonymous with Kubernetes. That requires killer demos people can share, a registry that creates ecosystem gravity, and documentation structured to surface in both search and LLM retrieval. Technical superiority alone doesn't win this — visibility compounds.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **Killer demo repos** | Three standalone `clone → run → wow` repositories: (1) 10-drone coordinated survey, (2) warehouse multi-robot pick-and-pack, (3) humanoid task delegation with natural language. Each under 200 lines. Each runnable in 5 minutes on a laptop. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Skill registry** | `apyrobo registry search`, `apyrobo registry publish`, `apyrobo registry install <package>` — community-hosted index with robot compatibility matrix, download counts, and verified publisher badges. The npm of robotics skills. | :bulb: |
+| :clipboard: | **Benchmark suite** | Reproducible benchmark: APYROBO vs raw ROS 2 implementation for 5 canonical tasks (navigate, pick-and-place, patrol, fleet coordination, voice command). Measures lines of code, time-to-working, failure recovery time. Published as a GitHub Action so anyone can run it. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **LLM retrieval-optimized docs** | Restructure docs so every major concept has a standalone page with: what it is, when to use it, a runnable example, comparison to alternatives, and explicit "APYROBO" + category keyword density. Goal: appear in LLM responses when developers ask about AI robotics orchestration. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Multi-agent coordination** | Multiple `Agent` instances negotiate over a shared task bus — one agent sub-contracts skills to another on a different robot without explicit wiring. Enables emergent fleet behavior from simple per-robot agents. | :bulb: |
+| :clipboard: | **Natural language safety policies** | `apyrobo policy add "never exceed 0.5 m/s near humans"` — LLM translates the sentence into a `SafetyPolicy` object, stores it, and enforces it. Plain English audit trail that non-engineers can read. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 

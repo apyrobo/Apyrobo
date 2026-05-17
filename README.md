@@ -367,20 +367,17 @@ docker-compose up apyrobo-api
 
 ## Roadmap
 
-| Milestone | Focus | Status |
-|-----------|-------|--------|
-| **v0.1.0** | Foundation — core abstractions, skill graph, safety, swarm, observability | ✅ Done |
-| **v0.2.0** | Handler registry, voice, Nav2/MoveIt adapters, retry, checkpointing | ✅ Done |
-| **v0.3.0** | Memory + VLM — episodic/semantic memory, vision-language models, MuJoCo | ✅ Done |
-| **v0.4.0** | Fleet & Cloud — fleet manager, Kubernetes, REST API | ✅ Done |
-| **v1.0.0** | Stable release — API freeze, PyPI publish, changelog, migration guide | ✅ Done |
-| **v1.1.0** | Ship & discover — PyPI pipeline, compute profiles, hardware profiles | ✅ Done |
-| **v1.2.0** | Real robot hardening — Nav2 costmap, hardware-in-the-loop CI | ✅ Done |
-| **v1.3.0** | Skill ecosystem — skill packages, turtlebot4 reference package | ✅ Done |
-| **v2.0.0** | Adaptive intelligence — LLM replanning, VLM task verification, sim-to-real | ✅ Done |
-| **v3.0.0** | Universal coverage — UR, Spot, Franka, PX4 drone, AGV skill packages, orchestration server, workflow templates | ✅ Done |
+The path from pre-alpha to category-defining runs through four compounding unlocks: **trust → developer velocity → ecosystem gravity → discoverability**.
 
-We have items marked **good first issue** and **help wanted** across future milestones.
+| Milestone | Unlock | Focus | Status |
+|-----------|--------|-------|--------|
+| **v0.1.0–v3.0.0** | Foundation | Core framework, skill packages, compute profiles, orchestration server | ✅ Done |
+| **v4.0.0** | Trust | Production hardening — deterministic failover, plan rollback, crash recovery, chaos tests, HIL CI | :clipboard: Planned |
+| **v5.0.0** | Velocity | Five-minute success — `docker compose up` demo, `apyrobo init`, REPL, tutorial runner, web dashboard | :clipboard: Planned |
+| **v6.0.0** | Compatibility | Ecosystem integrations — Isaac Sim, Unitree, OpenCV, Ollama, WebSocket, Slack, live telemetry | :clipboard: Planned |
+| **v7.0.0** | Discoverability | Category ownership — killer demos, skill registry, benchmark suite, LLM-optimized docs, multi-agent | :clipboard: Planned |
+
+We have items marked **good first issue** and **help wanted** across every milestone.
 See [ROADMAP.md](ROADMAP.md) for the full technical roadmap with contribution opportunities.
 
 ---
