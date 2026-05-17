@@ -1133,15 +1133,44 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         merged_params.update(skill_meta.parameters)
     merged_params.update(params)
 
-    _W = 38
+    _W = 50
     print("─" * _W)
     print(f"Skill:    {skill_id}")
     print(f"Robot:    {robot_uri}")
     print(f"Runs:     {repeat}")
+
+    # Capability mismatch check — emit structured warning before running
+    if skill_meta is not None:
+        from apyrobo.core.schemas import CapabilityType
+        required_cap: Any = getattr(skill_meta, "required_capability", None)
+        if required_cap is not None and required_cap != CapabilityType.CUSTOM:
+            try:
+                caps = robot.capabilities()
+                robot_cap_types = {c.capability_type for c in caps.capabilities}
+                if required_cap not in robot_cap_types:
+                    _CAP_PACKAGES = {
+                        CapabilityType.MANIPULATE: "apyrobo-skills-ur / apyrobo-skills-franka",
+                        CapabilityType.PICK:       "apyrobo-skills-ur / apyrobo-skills-franka",
+                        CapabilityType.PLACE:      "apyrobo-skills-ur / apyrobo-skills-franka",
+                        CapabilityType.NAVIGATE:   "apyrobo-skills-turtlebot4 / apyrobo-skills-spot",
+                        CapabilityType.DOCK:       "apyrobo-skills-turtlebot4",
+                    }
+                    print()
+                    print("  ⚠  Capability mismatch detected:")
+                    print(f"       Skill requires: {required_cap.value!r}")
+                    print(f"       Robot provides: {[c.capability_type.value for c in caps.capabilities]}")
+                    hint = _CAP_PACKAGES.get(required_cap)
+                    if hint:
+                        print(f"       Fix:            pip install {hint}")
+                    print("  (skill may still run if the robot handles the call gracefully)")
+            except Exception:
+                pass
+
     print()
 
     times: list[float] = []
     passed = 0
+    failures: list[str] = []
 
     for i in range(1, repeat + 1):
         t0 = time.monotonic()
@@ -1158,6 +1187,8 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         times.append(elapsed)
         if ok:
             passed += 1
+        else:
+            failures.append(exc_info or f"returned {retval!r}")
 
         icon = "✅" if ok else "❌"
         detail = f"{retval}" if exc_info is None else f"raised: {exc_info}"
@@ -1171,6 +1202,18 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
     print("─" * _W)
 
     if passed < repeat:
+        # Structured failure summary with fix hints
+        print()
+        print("  Failure summary:")
+        for msg in set(failures):
+            print(f"    • {msg}")
+            # Surface common fix hints
+            if "AttributeError" in (msg or "") and "gripper" in (msg or "").lower():
+                print("      Fix: robot does not support gripper — check robot capabilities")
+            elif "TimeoutError" in (msg or "") or "timeout" in (msg or "").lower():
+                print("      Fix: increase --timeout or check robot connection")
+            elif "CapabilityError" in (msg or "") or "capability" in (msg or "").lower():
+                print("      Fix: install the matching skill package for this robot type")
         sys.exit(1)
 
 
@@ -1549,6 +1592,360 @@ def cmd_profiles(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# apyrobo init — scaffold a new pip-installable skill package
+# ---------------------------------------------------------------------------
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Scaffold a new pip-installable APYROBO skill package."""
+    import pathlib
+    import textwrap
+
+    raw_name: str = args.name.lower().strip()
+    # Normalise to kebab-case for the package name, snake_case for the module
+    pkg_name = "apyrobo-skills-" + raw_name.replace("_", "-")
+    module_name = "apyrobo_skills_" + raw_name.replace("-", "_")
+    out_dir = pathlib.Path(getattr(args, "directory", None) or raw_name)
+
+    if out_dir.exists() and not getattr(args, "force", False):
+        print(f"Error: directory '{out_dir}' already exists. Use --force to overwrite.", file=sys.stderr)
+        sys.exit(1)
+
+    src_dir = out_dir / "src" / module_name
+    tests_dir = out_dir / "tests"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    tests_dir.mkdir(parents=True, exist_ok=True)
+
+    author = getattr(args, "author", "") or ""
+    description = getattr(args, "description", "") or f"APYROBO skill package for {raw_name}"
+
+    # pyproject.toml
+    (out_dir / "pyproject.toml").write_text(textwrap.dedent(f"""\
+        [build-system]
+        requires = ["setuptools>=68"]
+        build-backend = "setuptools.backends.legacy:build"
+
+        [project]
+        name = "{pkg_name}"
+        version = "0.1.0"
+        description = "{description}"
+        requires-python = ">=3.10"
+        dependencies = ["apyrobo>=3.0.0"]
+        {('authors = [{name = ' + repr(author) + '}]') if author else ""}
+
+        [project.entry-points."apyrobo.skills"]
+        {module_name} = "{module_name}:register"
+
+        [tool.pytest.ini_options]
+        testpaths = ["tests"]
+    """))
+
+    # src/<module>/__init__.py
+    (src_dir / "__init__.py").write_text(textwrap.dedent(f"""\
+        \"\"\"APYROBO skill package: {pkg_name}.\"\"\"
+        from .skills import register
+
+        __all__ = ["register"]
+    """))
+
+    # src/<module>/skills.py
+    skill_fn_name = raw_name.replace("-", "_")
+    (src_dir / "skills.py").write_text(textwrap.dedent(f"""\
+        \"\"\"Skills for {pkg_name}.\"\"\"
+        from apyrobo.skills.decorators import skill
+        from apyrobo.skills.library import SkillLibrary
+
+
+        @skill(
+            name="{skill_fn_name}_hello",
+            description="Example skill — say hello from {raw_name}",
+            required_capabilities=[],
+        )
+        def {skill_fn_name}_hello(robot, message: str = "hello") -> bool:
+            print(f"[{raw_name}] {{message}}")
+            return True
+
+
+        def register(library: SkillLibrary) -> None:
+            \"\"\"Entry-point called by APYROBO on startup.\"\"\"
+            library.register_decorated()
+    """))
+
+    # tests/__init__.py
+    (tests_dir / "__init__.py").write_text("")
+
+    # tests/test_skills.py
+    (tests_dir / "test_skills.py").write_text(textwrap.dedent(f"""\
+        \"\"\"Smoke tests for {pkg_name}.\"\"\"
+        import pytest
+        from apyrobo.core.robot import Robot
+
+
+        @pytest.fixture
+        def robot():
+            return Robot.discover("mock://test")
+
+
+        def test_{skill_fn_name}_hello(robot):
+            from {module_name}.skills import {skill_fn_name}_hello
+            assert {skill_fn_name}_hello(robot) is True
+
+
+        def test_{skill_fn_name}_hello_custom_message(robot):
+            from {module_name}.skills import {skill_fn_name}_hello
+            assert {skill_fn_name}_hello(robot, message="world") is True
+    """))
+
+    # README.md
+    (out_dir / "README.md").write_text(textwrap.dedent(f"""\
+        # {pkg_name}
+
+        {description}
+
+        ## Quick start
+
+        ```bash
+        pip install -e .
+        apyrobo execute "{skill_fn_name} hello" --robot mock://turtlebot4
+        ```
+
+        ## Development
+
+        ```bash
+        pip install -e ".[dev]"
+        pytest
+        ```
+    """))
+
+    # .github/workflows/ci.yml
+    gh_dir = out_dir / ".github" / "workflows"
+    gh_dir.mkdir(parents=True, exist_ok=True)
+    (gh_dir / "ci.yml").write_text(textwrap.dedent(f"""\
+        name: CI
+
+        on: [push, pull_request]
+
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v4
+              - uses: actions/setup-python@v5
+                with:
+                  python-version: "3.12"
+              - run: pip install apyrobo pytest
+              - run: pip install -e .
+              - run: pytest
+    """))
+
+    print(f"Created: {out_dir}/")
+    print(f"  Package:  {pkg_name}")
+    print(f"  Module:   {module_name}")
+    print(f"  Skill:    {skill_fn_name}_hello")
+    print()
+    print("Next steps:")
+    print(f"  cd {out_dir}")
+    print(f"  pip install -e .")
+    print(f"  apyrobo test-skill {skill_fn_name}_hello --robot mock://turtlebot4")
+    print(f"  pytest")
+
+
+# ---------------------------------------------------------------------------
+# apyrobo shell — interactive REPL with robot + skills pre-loaded
+# ---------------------------------------------------------------------------
+
+def cmd_shell(args: argparse.Namespace) -> None:
+    """Drop into a Python REPL with robot, agent, and all skills pre-imported."""
+    import code as _code
+
+    robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
+    provider_name: str = getattr(args, "provider", "rule")
+
+    print(f"Connecting to {robot_uri!r} …")
+    try:
+        robot = Robot.discover(robot_uri)
+    except Exception as exc:
+        print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    provider, model = _resolve_provider(provider_name)
+    try:
+        agent = Agent(provider=provider, **({"model": model} if model else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    caps = robot.capabilities()
+
+    from apyrobo.skills.skill import BUILTIN_SKILLS
+    from apyrobo.skills.executor import SkillGraph
+
+    banner = (
+        "\n"
+        "  APYROBO Interactive Shell\n"
+        "  ─────────────────────────────────────────────────────\n"
+        f"  robot    → {caps.name!r} ({robot_uri})\n"
+        f"  agent    → {provider} provider\n"
+        f"  skills   → {len(BUILTIN_SKILLS)} built-in skills available\n"
+        "\n"
+        "  Try:\n"
+        "    graph = agent.plan('navigate to dock', robot)\n"
+        "    graph.get_execution_order()\n"
+        "    robot.move(1.0, 0.0)\n"
+        "    robot.capabilities()\n"
+        "\n"
+        "  Type exit() or Ctrl-D to quit.\n"
+    )
+
+    local_ns: dict = {
+        "robot": robot,
+        "agent": agent,
+        "Robot": Robot,
+        "Agent": Agent,
+        "SkillGraph": SkillGraph,  # type: ignore[possibly-undefined]
+        "BUILTIN_SKILLS": BUILTIN_SKILLS,
+    }
+
+    _code.interact(banner=banner, local=local_ns, exitmsg="Goodbye.")
+
+
+# ---------------------------------------------------------------------------
+# apyrobo tutorial — interactive guided walkthrough (mock mode only)
+# ---------------------------------------------------------------------------
+
+_TUTORIAL_STEPS = [
+    {
+        "title": "Step 1 — Discover a robot",
+        "description": (
+            "APYROBO talks to robots through URIs like ros2://turtlebot4 or mock://test.\n"
+            "The 'mock://' prefix spins up an in-process simulator — no hardware needed."
+        ),
+        "code": "robot = Robot.discover('mock://turtlebot4')\nprint(robot.capabilities().name)",
+        "expect": "TurtleBot4",
+    },
+    {
+        "title": "Step 2 — Inspect capabilities",
+        "description": (
+            "Every robot exposes its capabilities so the planner knows what it can do.\n"
+            "The mock TurtleBot4 supports navigation, cameras, and basic manipulation."
+        ),
+        "code": "caps = robot.capabilities()\nfor c in caps.capabilities:\n    print(f'  {c.name}: {c.description}')",
+        "expect": None,
+    },
+    {
+        "title": "Step 3 — Plan a task",
+        "description": (
+            "The Agent turns a natural-language task into a skill graph.\n"
+            "The built-in rule-based planner works without any API key."
+        ),
+        "code": "agent = Agent(provider='rule')\ngraph = agent.plan('navigate to the dock', robot)\nfor s in graph.get_execution_order():\n    print(f'  {s.skill_id}: {s.name}')",
+        "expect": None,
+    },
+    {
+        "title": "Step 4 — Execute the plan",
+        "description": (
+            "SkillExecutor runs each skill in the graph, respecting dependencies\n"
+            "and enforcing safety policies at every step."
+        ),
+        "code": (
+            "from apyrobo.skills.executor import SkillExecutor\n"
+            "from apyrobo.core.schemas import TaskStatus\n"
+            "executor = SkillExecutor(robot)\n"
+            "result = executor.execute_graph(graph)\n"
+            "print('Result:', result.status.value)"
+        ),
+        "expect": "completed",
+    },
+    {
+        "title": "Step 5 — Write your own skill",
+        "description": (
+            "Skills are plain Python functions decorated with @skill.\n"
+            "They receive the robot and any parameters, and return True on success."
+        ),
+        "code": (
+            "from apyrobo.skills.decorators import skill\n\n"
+            "@skill(name='wave', description='Wave the robot arm')\n"
+            "def wave(robot, repetitions: int = 3) -> bool:\n"
+            "    for i in range(repetitions):\n"
+            "        print(f'  wave {i+1}/{repetitions}')\n"
+            "    return True\n\n"
+            "wave(robot)"
+        ),
+        "expect": None,
+    },
+    {
+        "title": "Step 6 — Test a skill",
+        "description": (
+            "apyrobo test-skill runs a skill against a mock robot and prints timing.\n"
+            "For your own skill files: apyrobo test-skill my_skill.py"
+        ),
+        "code": None,  # command-line demo
+        "cli": "apyrobo test-skill navigate_to --robot mock://turtlebot4",
+        "expect": None,
+    },
+]
+
+
+def cmd_tutorial(args: argparse.Namespace) -> None:
+    """Interactive guided walkthrough — runs entirely in mock mode, no hardware needed."""
+    interactive: bool = not getattr(args, "non_interactive", False)
+
+    print()
+    print("  ╔══════════════════════════════════════════════════╗")
+    print("  ║   APYROBO Interactive Tutorial                   ║")
+    print("  ║   Zero hardware required — runs in mock mode     ║")
+    print("  ╚══════════════════════════════════════════════════╝")
+    print()
+
+    from apyrobo.core.robot import Robot as _Robot
+    from apyrobo.skills.agent import Agent as _Agent
+
+    ns: dict = {"Robot": _Robot, "Agent": _Agent}
+
+    for i, step in enumerate(_TUTORIAL_STEPS, 1):
+        total = len(_TUTORIAL_STEPS)
+        print(f"  ┌─ {step['title']} ({i}/{total})")
+        print(f"  │")
+        for line in step["description"].splitlines():
+            print(f"  │  {line}")
+        print(f"  │")
+
+        if step.get("cli"):
+            print(f"  │  $ {step['cli']}")
+        elif step.get("code"):
+            for line in step["code"].splitlines():
+                print(f"  │  >>> {line}" if not line.startswith(" ") else f"  │  ... {line}")
+
+        print(f"  │")
+
+        if interactive and i < total:
+            try:
+                inp = input("  └─ Press Enter to continue (or 'q' to quit) … ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if inp in ("q", "quit", "exit"):
+                print("  Exiting tutorial. Run 'apyrobo tutorial' any time to restart.")
+                break
+        else:
+            print(f"  └─")
+
+        if step.get("code") and step.get("expect") is None and not step.get("cli"):
+            try:
+                exec(step["code"], ns)  # noqa: S102
+            except Exception:
+                pass
+
+        print()
+
+    print("  Tutorial complete!")
+    print("  Explore further:")
+    print("    apyrobo shell --robot mock://turtlebot4   # interactive REPL")
+    print("    apyrobo init my-robot                     # scaffold a skill package")
+    print("    apyrobo doctor                            # diagnose your environment")
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1783,6 +2180,27 @@ def main() -> None:
     p_profiles_show.add_argument("--json", action="store_true")
     p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # init — project scaffold
+    p_init = sub.add_parser("init", help="Scaffold a new pip-installable skill package")
+    p_init.add_argument("name", help="Robot/platform name (e.g. 'my-robot')")
+    p_init.add_argument("--description", default="", help="One-line package description")
+    p_init.add_argument("--author", default="", help="Author name")
+    p_init.add_argument("--directory", default=None,
+                        help="Output directory (default: ./<name>)")
+    p_init.add_argument("--force", action="store_true", help="Overwrite existing directory")
+
+    # shell — interactive REPL
+    p_shell = sub.add_parser("shell", help="Interactive Python REPL with robot and skills loaded")
+    p_shell.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
+                         help="Robot URI (default: mock://turtlebot4)")
+    p_shell.add_argument("--provider", default="rule",
+                         help="LLM provider (default: rule)")
+
+    # tutorial — guided walkthrough
+    p_tutorial = sub.add_parser("tutorial", help="Interactive guided tutorial (mock mode, no hardware needed)")
+    p_tutorial.add_argument("--non-interactive", action="store_true",
+                            help="Run all steps without pausing for input")
+
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
     p_voice.add_argument("--robot", default="mock://turtlebot4")
@@ -1827,6 +2245,9 @@ def main() -> None:
         "voice": cmd_voice,
         "profiles": cmd_profiles,
         "serve": cmd_serve,
+        "init": cmd_init,
+        "shell": cmd_shell,
+        "tutorial": cmd_tutorial,
     }
     commands[args.command](args)
 

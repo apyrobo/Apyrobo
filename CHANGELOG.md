@@ -7,6 +7,42 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ---
 
+## [Unreleased] — v5.0.0 Five-Minute Success
+
+### Added
+
+**`apyrobo init` — project scaffold**
+- New `apyrobo init <name>` command generates a complete pip-installable skill package
+- Output includes `pyproject.toml` with `apyrobo.skills` entry-point, `src/<module>/skills.py` with a stub `@skill`-decorated function, `tests/test_skills.py`, `.github/workflows/ci.yml`
+- Handles both kebab-case and snake_case names; normalises to kebab package name + snake module name
+- `--author`, `--description`, `--directory`, `--force` flags
+
+**`apyrobo shell` — interactive REPL**
+- New `apyrobo shell --robot <uri>` command drops into a Python REPL
+- Pre-imports: `robot`, `agent`, `Robot`, `Agent`, `SkillGraph`, `BUILTIN_SKILLS`
+- Startup banner shows connected robot name, provider, and skill count
+- Supports any robot URI; defaults to `mock://turtlebot4`
+
+**`apyrobo tutorial` — guided walkthrough**
+- New `apyrobo tutorial` command: 6-step interactive tour covering discovery, capabilities, planning, execution, writing a skill, and testing
+- Runs entirely in mock mode — no hardware, no API key needed
+- `--non-interactive` flag runs all steps without pausing (CI-friendly)
+- Each step shows the code you'd type and the concept it teaches
+
+**`apyrobo-demo` docker compose environment**
+- `docker/docker-compose-demo.yml` — three services: `apyrobo-demo` (orchestration server), `dashboard` (web UI on port 8000), `mock-fleet` (3 simulated robots)
+- `docker/Dockerfile.demo` — standalone image for deployment
+- `apyrobo/demo/mock_fleet.py` — animated 3-robot status printer with deterministic position simulation
+- `apyrobo demo mock-fleet` entry-point via `__main__`
+
+**Enhanced `apyrobo test-skill`**
+- Capability mismatch detection: checks `skill_meta.required_capability` against the robot's `capabilities()` before running
+- Emits structured warning with the missing `CapabilityType`, what the robot provides, and a `pip install` fix hint
+- Failure summary section: groups distinct error messages and surfaces actionable hints for common patterns (gripper AttributeError, timeout, capability errors)
+- Separator width expanded from 38 to 50 characters for readability
+
+---
+
 ## [3.0.0] - 2026-05-15
 
 Universal Coverage — any robot, any LLM, any hardware, zero configuration.
