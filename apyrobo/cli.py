@@ -1515,12 +1515,18 @@ def cmd_pkg(args: argparse.Namespace) -> None:
 
 def cmd_serve(args: argparse.Namespace) -> None:
     """Start an orchestration server (stdio adapter by default)."""
-    from apyrobo.orchestration import OrchestrationServer, StdioOrchestrationAdapter
+    from apyrobo.orchestration import (
+        OrchestrationServer,
+        StdioOrchestrationAdapter,
+        WebSocketOrchestrationAdapter,
+    )
     from apyrobo.core.robot import Robot
 
     robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
     profile_name: str | None = getattr(args, "profile", None)
     provider_name: str = getattr(args, "provider", "rule")
+    transport: str = getattr(args, "transport", "stdio")
+    ws_port: int = getattr(args, "ws_port", 8765)
 
     if profile_name:
         from apyrobo.profiles import get_profile as _gp
@@ -1537,10 +1543,26 @@ def cmd_serve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     robot = Robot.discover(robot_uri)
-    adapter = StdioOrchestrationAdapter()
-    server = OrchestrationServer(adapter, agent, default_robot=robot)
 
-    print(f"apyrobo serve — robot={robot_uri} provider={provider}", file=sys.stderr, flush=True)
+    if transport == "websocket":
+        try:
+            adapter = WebSocketOrchestrationAdapter(port=ws_port)
+        except ImportError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"apyrobo serve — robot={robot_uri} provider={provider} "
+            f"transport=websocket port={ws_port}",
+            file=sys.stderr, flush=True,
+        )
+    else:
+        adapter = StdioOrchestrationAdapter()
+        print(
+            f"apyrobo serve — robot={robot_uri} provider={provider} transport=stdio",
+            file=sys.stderr, flush=True,
+        )
+
+    server = OrchestrationServer(adapter, agent, default_robot=robot)
     server.run()
 
 
@@ -1557,6 +1579,33 @@ def cmd_profiles(args: argparse.Namespace) -> None:
     as_json: bool = getattr(args, "json", False)
 
     reg = ProfileRegistry()
+
+    if sub == "detect":
+        from apyrobo.profiles.schema import detect_profile
+        if not as_json:
+            print("Scanning hardware and Ollama…")
+        result = detect_profile()
+        if as_json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            conf_icon = {"high": "✅", "medium": "⚡", "low": "⚠"}.get(result.confidence, "?")
+            print(f"\n  Recommended profile: {result.recommended_profile}  {conf_icon} ({result.confidence} confidence)")
+            print(f"  Reason: {result.reason}")
+            print()
+            print(f"  Ollama: {'running' if result.ollama_available else 'not detected'}", end="")
+            if result.ollama_models:
+                print(f"  ({len(result.ollama_models)} models: {', '.join(result.ollama_models[:3])}{'…' if len(result.ollama_models) > 3 else ''})")
+            else:
+                print()
+            print(f"  GPU:    {'yes — ' + result.gpu_name if result.gpu_detected else 'not detected'}")
+            print(f"  RAM:    {result.ram_gb:.0f} GB")
+            if result.notes:
+                print()
+                for note in result.notes:
+                    print(f"  ℹ  {note}")
+            print()
+            print(f"  To use: apyrobo execute 'your task' --profile {result.recommended_profile}")
+        return
 
     if sub == "show" and name:
         profile = reg.get(name)
@@ -2198,13 +2247,21 @@ def main() -> None:
                           help="Whisper model size (base/small/medium/large) or model path")
 
     # serve — orchestration server
-    p_serve = sub.add_parser("serve", help="Start a stdio orchestration server")
+    p_serve = sub.add_parser("serve", help="Start an orchestration server (stdio or websocket)")
     p_serve.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
                          help="Robot URI (default: mock://turtlebot4)")
     p_serve.add_argument("--provider", default="rule",
                          help="LLM provider (default: rule)")
     p_serve.add_argument("--profile", default=None, metavar="PROFILE",
                          help="Compute profile to apply")
+    p_serve.add_argument(
+        "--transport", default="stdio", choices=["stdio", "websocket"],
+        help="Transport layer: 'stdio' (default) or 'websocket'",
+    )
+    p_serve.add_argument(
+        "--ws-port", dest="ws_port", type=int, default=8765, metavar="PORT",
+        help="WebSocket port when --transport websocket is used (default: 8765)",
+    )
 
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
@@ -2212,6 +2269,9 @@ def main() -> None:
     p_profiles_show = profiles_sub.add_parser("show", help="Show details for a profile")
     p_profiles_show.add_argument("profile_name", help="Profile name")
     p_profiles_show.add_argument("--json", action="store_true")
+    p_profiles_detect = profiles_sub.add_parser("detect",
+                                                 help="Auto-detect the best profile for this machine")
+    p_profiles_detect.add_argument("--json", action="store_true", help="Output as JSON")
     p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
 
     # dashboard — live HTMX robot dashboard

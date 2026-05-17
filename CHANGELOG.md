@@ -7,6 +7,42 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ---
 
+## [Unreleased] — v6.0.0 Ecosystem Integrations
+
+### Added
+
+**`apyrobo profiles detect` — hardware auto-detection**
+- New `apyrobo profiles detect` command probes the local machine and recommends the best profile
+- Detects: Ollama at localhost:11434 (lists installed models, picks best by capability), nvidia-smi GPU info (name, VRAM), system RAM via /proc/meminfo or sysconf
+- Recommends profile with `high`/`medium`/`low` confidence and a human-readable reason
+- `--json` flag for scripting and CI integration
+- `detect_profile()` and `DetectionResult` exported from `apyrobo.profiles.schema`
+
+**`WebSocketOrchestrationAdapter` — real-time task streaming**
+- `apyrobo serve --transport websocket --ws-port 8765` — starts a WebSocket server instead of stdio
+- `WebSocketOrchestrationAdapter(host, port)` implements the `OrchestrationAdapter` contract over asyncio + websockets
+- Background asyncio loop runs in a daemon thread; `receive()` blocks on a `queue.Queue` fed by the async handler
+- `send(msg)` broadcasts JSON to all currently connected clients
+- Multiple simultaneous clients supported; disconnected clients silently skipped
+- Graceful `ImportError` with `pip install 'apyrobo[websocket]'` hint when websockets not installed
+
+**`TelemetryContextProvider` — live robot state in LLM planning prompts**
+- `apyrobo.skills.telemetry_context.TelemetryContextProvider(robot, refresh_interval=5.0)`
+- Background thread samples robot state every N seconds: position, heading, battery, velocity, sensor status, active errors
+- `get_context_string()` returns a compact `[Robot State — sampled Xs ago]` block
+- Stale-data warning when snapshot is older than `max_snapshot_age` (default 30s)
+- Integrated into `Agent.plan()` via `telemetry_provider=` kwarg; injected into LLM prompts only (skipped for rule-based provider)
+- `TelemetrySnapshot` dataclass with per-field nullable fields
+
+**`apyrobo-skills-ros-nav` — Nav2 skill package**
+- `packages/apyrobo-skills-ros-nav/` — pip-installable, `apyrobo.skills` entry-point
+- Skills: `navigate_to_pose(x, y, yaw, frame_id)`, `follow_path(waypoints)`, `clear_costmaps()`, `nav2_recover()`
+- `Nav2Client` helper class manages rclpy node lifecycle for Nav2 ActionClient calls
+- Graceful ImportError with ROS 2 install instructions when rclpy is unavailable
+- All skills have 30s action timeout; return `False` when action server unavailable
+
+---
+
 ## [Unreleased] — v5.0.0 Five-Minute Success
 
 ### Added

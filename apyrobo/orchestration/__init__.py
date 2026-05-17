@@ -5,6 +5,7 @@ from apyrobo.orchestration.adapter import (
     StdioOrchestrationAdapter,
     MockOrchestrationAdapter,
     OrchestrationMessage,
+    WebSocketOrchestrationAdapter,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "StdioOrchestrationAdapter",
     "MockOrchestrationAdapter",
     "OrchestrationMessage",
+    "WebSocketOrchestrationAdapter",
 ]
