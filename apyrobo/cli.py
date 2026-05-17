@@ -1885,6 +1885,40 @@ _TUTORIAL_STEPS = [
 ]
 
 
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """Start the HTMX live dashboard connected to a robot."""
+    robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
+    port: int = getattr(args, "port", 8000)
+    host: str = getattr(args, "host", "0.0.0.0")
+
+    try:
+        import uvicorn  # type: ignore[import]
+    except ImportError:
+        print(
+            "Error: uvicorn is required for the dashboard.\n"
+            "Install with: pip install 'apyrobo[dashboard]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Connecting to {robot_uri!r} …")
+    try:
+        robot = Robot.discover(robot_uri)
+        caps = robot.capabilities()
+        print(f"Connected: {caps.name}")
+    except Exception as exc:
+        print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    from apyrobo.dashboard import RobotDashboard
+    dash = RobotDashboard(robot, robot_uri=robot_uri)
+    app = dash.create_fastapi_app()
+
+    print(f"Dashboard starting on http://{host if host != '0.0.0.0' else 'localhost'}:{port}")
+    print("  Press Ctrl+C to stop\n")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 def cmd_tutorial(args: argparse.Namespace) -> None:
     """Interactive guided walkthrough — runs entirely in mock mode, no hardware needed."""
     interactive: bool = not getattr(args, "non_interactive", False)
@@ -2180,6 +2214,15 @@ def main() -> None:
     p_profiles_show.add_argument("--json", action="store_true")
     p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # dashboard — live HTMX robot dashboard
+    p_dash = sub.add_parser("dashboard", help="Start the live HTMX robot dashboard")
+    p_dash.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
+                        help="Robot URI (default: mock://turtlebot4)")
+    p_dash.add_argument("--port", type=int, default=8000, metavar="PORT",
+                        help="Port to listen on (default: 8000)")
+    p_dash.add_argument("--host", default="0.0.0.0", metavar="HOST",
+                        help="Bind host (default: 0.0.0.0)")
+
     # init — project scaffold
     p_init = sub.add_parser("init", help="Scaffold a new pip-installable skill package")
     p_init.add_argument("name", help="Robot/platform name (e.g. 'my-robot')")
@@ -2248,6 +2291,7 @@ def main() -> None:
         "init": cmd_init,
         "shell": cmd_shell,
         "tutorial": cmd_tutorial,
+        "dashboard": cmd_dashboard,
     }
     commands[args.command](args)
 

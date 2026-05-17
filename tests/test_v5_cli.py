@@ -302,6 +302,114 @@ class TestCmdTestSkillCapabilityMismatch:
 
 
 # ---------------------------------------------------------------------------
+# apyrobo dashboard — RobotDashboard unit tests
+# ---------------------------------------------------------------------------
+
+class TestRobotDashboard:
+    @pytest.fixture
+    def dash(self):
+        from apyrobo.core.robot import Robot
+        from apyrobo.dashboard import RobotDashboard
+        robot = Robot.discover("mock://turtlebot4")
+        return RobotDashboard(robot, robot_uri="mock://turtlebot4")
+
+    def test_get_robot_status_connected(self, dash):
+        status = dash.get_robot_status()
+        assert status["connected"] is True
+        assert status["name"]
+        assert isinstance(status["capabilities"], list)
+
+    def test_record_skill_appears_in_history(self, dash):
+        dash.record_skill("navigate_to", "ok", 150.0)
+        history = dash.get_skill_history()
+        assert len(history) == 1
+        assert history[0]["skill_id"] == "navigate_to"
+        assert history[0]["status"] == "ok"
+        assert history[0]["elapsed_ms"] == 150.0
+
+    def test_history_newest_first(self, dash):
+        dash.record_skill("skill_a", "ok", 1.0)
+        dash.record_skill("skill_b", "ok", 2.0)
+        history = dash.get_skill_history()
+        assert history[0]["skill_id"] == "skill_b"
+        assert history[1]["skill_id"] == "skill_a"
+
+    def test_record_safety_event_appears(self, dash):
+        dash.record_safety_event("watchdog.fired", "navigate_to timed out")
+        events = dash.get_safety_events()
+        assert len(events) == 1
+        assert events[0]["event_type"] == "watchdog.fired"
+
+    def test_get_available_skills_nonempty(self, dash):
+        skills = dash.get_available_skills()
+        assert len(skills) > 0
+        assert all("skill_id" in s for s in skills)
+
+    def test_status_partial_html_contains_robot_name(self, dash):
+        from apyrobo.dashboard import _render_status_partial
+        status = dash.get_robot_status()
+        html = _render_status_partial(status)
+        assert status["name"] in html
+
+    def test_history_partial_empty_state(self, dash):
+        from apyrobo.dashboard import _render_history_partial
+        html = _render_history_partial([])
+        assert "No skills" in html
+
+    def test_history_partial_with_data(self, dash):
+        from apyrobo.dashboard import _render_history_partial
+        dash.record_skill("navigate_to", "ok", 123.0)
+        html = _render_history_partial(dash.get_skill_history())
+        assert "navigate_to" in html
+        assert "123" in html
+
+    def test_safety_partial_empty_ok(self, dash):
+        from apyrobo.dashboard import _render_safety_partial
+        html = _render_safety_partial([])
+        assert "No safety events" in html
+
+    def test_safety_partial_with_event(self, dash):
+        from apyrobo.dashboard import _render_safety_partial
+        dash.record_safety_event("watchdog.fired", "detail text")
+        html = _render_safety_partial(dash.get_safety_events())
+        assert "watchdog.fired" in html
+        assert "detail text" in html
+
+    def test_live_dashboard_html_has_htmx(self, dash):
+        from apyrobo.dashboard import _render_live_dashboard_html
+        html = _render_live_dashboard_html("mock://turtlebot4")
+        assert "htmx" in html
+        assert "hx-get" in html
+        assert "hx-trigger" in html
+        assert "mock://turtlebot4" in html
+
+    def test_fastapi_app_creates_routes(self, dash):
+        pytest.importorskip("fastapi")
+        app = dash.create_fastapi_app()
+        routes = [r.path for r in app.routes]
+        assert "/" in routes
+        assert "/health" in routes
+        assert "/api/status" in routes
+        assert "/partials/status" in routes
+        assert "/partials/history" in routes
+        assert "/partials/safety" in routes
+
+    def test_disconnected_status_partial(self):
+        from apyrobo.dashboard import _render_status_partial
+        html = _render_status_partial({"connected": False, "error": "timeout"})
+        assert "Not connected" in html or "timeout" in html
+
+    def test_history_bounded_by_max(self):
+        from apyrobo.core.robot import Robot
+        from apyrobo.dashboard import RobotDashboard, _MAX_HISTORY
+        robot = Robot.discover("mock://turtlebot4")
+        dash = RobotDashboard(robot)
+        for i in range(_MAX_HISTORY + 10):
+            dash.record_skill(f"skill_{i}", "ok", float(i))
+        assert len(dash.get_skill_history()) == _MAX_HISTORY
+
+
+# ---------------------------------------------------------------------------
 # mock_fleet demo module
 # ---------------------------------------------------------------------------
 

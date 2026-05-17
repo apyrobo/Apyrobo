@@ -35,6 +35,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `apyrobo/demo/mock_fleet.py` — animated 3-robot status printer with deterministic position simulation
 - `apyrobo demo mock-fleet` entry-point via `__main__`
 
+**`apyrobo dashboard` — HTMX live view**
+- New `apyrobo dashboard --robot <uri> --port 8000` command
+- `RobotDashboard` class: wraps a `Robot`, buffers skill history (deque, last 50) and safety events (deque, last 100)
+- HTMX panels auto-refresh: status every 5s, skill history every 3s, safety every 5s
+- Partial endpoints: `GET /partials/status`, `/partials/history`, `/partials/safety`, `/partials/skills`
+- JSON API: `GET /api/status`, `/api/skills/history`, `/api/skills/available`, `/api/safety/events`
+- Dark terminal-themed UI (consistent with APYROBO's aesthetic)
+- `record_skill()` and `record_safety_event()` hooks for integration with skill executor
+
 **Enhanced `apyrobo test-skill`**
 - Capability mismatch detection: checks `skill_meta.required_capability` against the robot's `capabilities()` before running
 - Emits structured warning with the missing `CapabilityType`, what the robot provides, and a `pip install` fix hint

@@ -273,7 +273,7 @@ Focus: make apyrobo the neutral AI orchestration standard. Robot-agnostic, AI-ag
 | ✅ Done | **`apyrobo test-skill` harness** | Enhanced with capability mismatch detection: warns when skill requires a CapabilityType the connected robot doesn't have, with structured `pip install` fix hints. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | **Structured error messages** | Capability mismatches, AttributeErrors, and timeouts in `test-skill` now emit a formatted failure summary with actionable fix hints. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | ✅ Done | **Interactive tutorial runner** | `apyrobo tutorial` — 6-step guided CLI walkthrough (discover → capabilities → plan → execute → write skill → test-skill). Runs entirely in mock mode, supports `--non-interactive` for CI. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | **Web dashboard** | `apyrobo dashboard` — FastAPI + HTMX live view: robot status, active task graph, skill history, safety events, watchdog state. Replaces the current read-only metrics endpoint. Ships in the demo docker compose environment. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| ✅ Done | **Web dashboard** | `apyrobo dashboard --robot <uri> --port 8000` — FastAPI + HTMX live view: robot status, capability list, skill execution history, safety events, available skills. Auto-refreshes panels every 3–5s. `RobotDashboard` class exposes `record_skill()` / `record_safety_event()` hooks. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 
 ---
 
