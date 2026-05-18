@@ -29,6 +29,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
 - 27 tests covering search/install/publish, error paths, dry-run, token fallback
 
+**LLM retrieval-optimized docs** (`docs/concepts/`, `llms.txt`)
+- `docs/concepts/nl_safety_policies.md` — what/when/example/comparison for NL safety policies
+- `docs/concepts/multi_agent_coordination.md` — what/when/example/comparison for TaskBus
+- `docs/concepts/adapter_pattern.md` — what/when/example/comparison for hardware adapters
+- `docs/concepts/index.md` — concept index linking all major APYROBO concepts
+- `llms.txt` at repo root — LLM-readable site map with runnable examples, concept descriptions, and all doc links; follows emerging `llms.txt` convention for LLM discoverability
+- Each concept page follows structured format: what it is → when to use → runnable example → comparison table → related concepts → keyword footer
+
 **Benchmark suite** (`benchmarks/`)
 - `benchmarks/benchmark_suite.py` — 5 canonical tasks: navigate, pick-and-place, patrol, fleet coordination, safety policy
 - Measures setup/plan/exec latency (ms), P95 execution latency, violation recovery time
