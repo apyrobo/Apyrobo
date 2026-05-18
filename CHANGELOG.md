@@ -29,6 +29,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
 - 27 tests covering search/install/publish, error paths, dry-run, token fallback
 
+**Killer demo repos** (`demos/`)
+- `demos/drone_survey/demo.py` — 10 drones survey a 10 km² grid in parallel; uses `MockAdapter` + `ThreadPoolExecutor`; anomaly detection with streaming output; 131 lines
+- `demos/warehouse_robots/demo.py` — 3 specialized robots (picker/packer/hauler) fill 5 orders via `TaskBus` capability routing; 156 lines
+- `demos/humanoid_nlp/demo.py` — operator writes 5 NL safety rules; compliance checker blocks 3/6 tasks (speed, no-go zone, battery); runtime policy addition demonstrated; 159 lines
+- All demos: `pip install apyrobo && python demo.py` — no hardware, no API keys, under 30 seconds
+
 **Natural language safety policies** (`apyrobo.safety.nl_policy`)
 - `NLSafetyPolicy` — dataclass with auto UUID, severity (hard/soft), active flag, `to_dict()`/`from_dict()`, `summary()`
 - `NLPolicyParser.parse(description)` — regex-first extraction for speed limits, proximity limits, battery reserves, no-go zones; LLM fallback via `agent.complete()` for unknown patterns; custom fallback
