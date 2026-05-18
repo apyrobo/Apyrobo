@@ -1,0 +1,62 @@
+name: APYROBO Benchmark Suite
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apyrobo/**'
+      - 'benchmarks/**'
+  pull_request:
+    paths:
+      - 'apyrobo/**'
+      - 'benchmarks/**'
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Benchmark iterations per task
+        default: '50'
+        required: false
+
+jobs:
+  benchmark:
+    name: Run benchmark suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install APYROBO
+        run: pip install -e ".[dev]"
+
+      - name: Run benchmark suite
+        run: |
+          ITERATIONS=${{ github.event.inputs.iterations || '30' }}
+          python benchmarks/benchmark_suite.py --iterations $ITERATIONS
+
+      - name: Export JSON results
+        run: |
+          python benchmarks/benchmark_suite.py --iterations 30 --json \
+            > benchmark-results-py${{ matrix.python-version }}.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-py${{ matrix.python-version }}
+          path: benchmark-results-py${{ matrix.python-version }}.json
+          retention-days: 90
+
+      - name: Post summary
+        run: |
+          echo "## Benchmark Results (Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          python benchmarks/benchmark_suite.py --iterations 30 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

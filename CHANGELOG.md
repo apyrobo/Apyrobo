@@ -29,6 +29,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
 - 27 tests covering search/install/publish, error paths, dry-run, token fallback
 
+**Benchmark suite** (`benchmarks/`)
+- `benchmarks/benchmark_suite.py` — 5 canonical tasks: navigate, pick-and-place, patrol, fleet coordination, safety policy
+- Measures setup/plan/exec latency (ms), P95 execution latency, violation recovery time
+- LOC comparison: APYROBO 83 lines vs raw ROS 2 428 lines (5.2× reduction on average)
+- `--json` flag for machine-readable output suitable for regression tracking
+- `benchmarks/.github/workflows/benchmark.yml` — CI workflow; runs on push to main when `apyrobo/` or `benchmarks/` changes; posts table to job summary, uploads JSON artifacts (90-day retention); matrix across Python 3.9/3.11/3.12
+
 **Killer demo repos** (`demos/`)
 - `demos/drone_survey/demo.py` — 10 drones survey a 10 km² grid in parallel; uses `MockAdapter` + `ThreadPoolExecutor`; anomaly detection with streaming output; 131 lines
 - `demos/warehouse_robots/demo.py` — 3 specialized robots (picker/packer/hauler) fill 5 orders via `TaskBus` capability routing; 156 lines
