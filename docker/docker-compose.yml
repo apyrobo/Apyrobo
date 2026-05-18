@@ -224,23 +224,13 @@ services:
     depends_on:
       fake-robot:
         condition: service_healthy
-    # Point pytest directly at the integration test file (not the directory)
-    # and disable coverage. pytest 9 collects testpaths ("tests") in addition
-    # to CLI args, which previously dragged the test_ros2_*_mocked.py files
-    # into the same session — their module-level sys.modules.setdefault()
-    # blocks would land MagicMock stubs in nav_msgs.msg before apyrobo's real
-    # imports ran. Naming the file alone keeps collection scoped.
     command:
       - pytest
-      - tests/integration/test_ros2_adapter.py
       - -m
       - integration
+      - tests/integration/
       - -v
       - --tb=short
-      - -p
-      - no:cacheprovider
-      - --no-cov
-      - --override-ini=testpaths=tests/integration
 
 volumes:
   audit_data:
