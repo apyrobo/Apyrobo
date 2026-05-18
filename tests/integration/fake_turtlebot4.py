@@ -160,7 +160,7 @@ class FakeTurtleBot4(Node):
         target_y = float(goal.pose.pose.position.y)
 
         self.get_logger().info(
-            "NavigateToPose goal received: target=(%.2f, %.2f)", target_x, target_y
+            f"NavigateToPose goal received: target=({target_x:.2f}, {target_y:.2f})"
         )
 
         with self._lock:
