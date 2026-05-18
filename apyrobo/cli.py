@@ -1585,6 +1585,85 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Policy command — natural language safety policies
+# ---------------------------------------------------------------------------
+
+_DEFAULT_POLICY_DB = "./apyrobo_policies.db"
+
+
+def cmd_policy(args: argparse.Namespace) -> None:
+    """apyrobo policy — manage natural language safety policies."""
+    from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
+
+    sub: str = getattr(args, "policy_command", "") or ""
+    db_path: str = getattr(args, "db", _DEFAULT_POLICY_DB)
+    as_json: bool = getattr(args, "json", False)
+    store = NLPolicyStore(db_path)
+
+    try:
+        if sub == "add":
+            description: str = getattr(args, "description", "")
+            severity: str = getattr(args, "severity", "hard")
+            parser = NLPolicyParser(severity=severity)
+            policy = parser.parse(description)
+            store.add(policy)
+            if as_json:
+                print(json.dumps(policy.to_dict(), indent=2))
+            else:
+                print(f"✓ Added policy [{policy.policy_id}]")
+                print(f"  Type: {policy.constraint_type}")
+                print(f"  Params: {policy.parameters}")
+                print(f"  Severity: {policy.severity}")
+
+        elif sub == "list":
+            show_all: bool = getattr(args, "all", False)
+            policies = store.get_all_policies() if show_all else store.get_active_policies()
+            if as_json:
+                print(json.dumps([p.to_dict() for p in policies], indent=2))
+            elif not policies:
+                print("No safety policies defined.")
+            else:
+                active_label = "" if show_all else " (active)"
+                print(f"Safety policies{active_label}:")
+                print("-" * 70)
+                for p in policies:
+                    status = "" if p.active else " [INACTIVE]"
+                    print(f"  {p.summary()}{status}")
+
+        elif sub == "remove":
+            policy_id: str = getattr(args, "policy_id", "")
+            if store.remove(policy_id):
+                print(f"✓ Removed policy [{policy_id}]")
+            else:
+                print(f"Policy [{policy_id}] not found.", file=sys.stderr)
+                sys.exit(1)
+
+        elif sub == "check":
+            action: str = getattr(args, "action", "")
+            parser = NLPolicyParser()
+            active_policies = store.get_active_policies()
+            violations = parser.check_compliance(action, active_policies)
+            if as_json:
+                print(json.dumps({"action": action, "violations": violations}, indent=2))
+            elif violations:
+                print(f"⚠️  {len(violations)} violation(s) for: {action!r}")
+                for v in violations:
+                    print(f"  • {v}")
+                sys.exit(1)
+            else:
+                print(f"✓ No policy violations for: {action!r}")
+
+        else:
+            print("Usage: apyrobo policy <add|list|remove|check> [options]")
+            print("  add <description>    Add a natural language safety policy")
+            print("  list [--all]         List active (or all) policies")
+            print("  remove <id>          Remove a policy by ID")
+            print("  check <action>       Check if an action would violate policies")
+    finally:
+        store.close()
+
+
+# ---------------------------------------------------------------------------
 # Registry command
 # ---------------------------------------------------------------------------
 
@@ -2453,6 +2532,32 @@ def main() -> None:
     p_profiles_detect.add_argument("--json", action="store_true", help="Output as JSON")
     p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # policy — natural language safety policies
+    _db_help = f"Path to policy database (default: {_DEFAULT_POLICY_DB})"
+    p_policy = sub.add_parser("policy", help="Manage natural language safety policies")
+    policy_sub = p_policy.add_subparsers(dest="policy_command")
+
+    p_pol_add = policy_sub.add_parser("add", help="Add a natural language safety policy")
+    p_pol_add.add_argument("description", help="Natural language safety rule")
+    p_pol_add.add_argument("--severity", choices=["hard", "soft"], default="hard",
+                           help="Policy severity: 'hard' blocks, 'soft' warns (default: hard)")
+    p_pol_add.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+    p_pol_add.add_argument("--json", action="store_true", help="Output policy JSON")
+
+    p_pol_list = policy_sub.add_parser("list", help="List safety policies")
+    p_pol_list.add_argument("--all", action="store_true", help="Include inactive policies")
+    p_pol_list.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+    p_pol_list.add_argument("--json", action="store_true", help="Output JSON")
+
+    p_pol_remove = policy_sub.add_parser("remove", help="Remove a safety policy by ID")
+    p_pol_remove.add_argument("policy_id", help="Policy ID to remove")
+    p_pol_remove.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+
+    p_pol_check = policy_sub.add_parser("check", help="Check an action against active policies")
+    p_pol_check.add_argument("action", help="Action description to check")
+    p_pol_check.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+    p_pol_check.add_argument("--json", action="store_true", help="Output JSON")
+
     # dashboard — live HTMX robot dashboard
     p_dash = sub.add_parser("dashboard", help="Start the live HTMX robot dashboard")
     p_dash.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
@@ -2531,6 +2636,7 @@ def main() -> None:
         "shell": cmd_shell,
         "tutorial": cmd_tutorial,
         "dashboard": cmd_dashboard,
+        "policy": cmd_policy,
     }
     commands[args.command](args)
 

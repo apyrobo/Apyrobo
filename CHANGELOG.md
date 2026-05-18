@@ -29,6 +29,19 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
 - 27 tests covering search/install/publish, error paths, dry-run, token fallback
 
+**Natural language safety policies** (`apyrobo.safety.nl_policy`)
+- `NLSafetyPolicy` — dataclass with auto UUID, severity (hard/soft), active flag, `to_dict()`/`from_dict()`, `summary()`
+- `NLPolicyParser.parse(description)` — regex-first extraction for speed limits, proximity limits, battery reserves, no-go zones; LLM fallback via `agent.complete()` for unknown patterns; custom fallback
+- `NLPolicyParser.check_compliance(action, policies)` — returns list of violation strings; skips inactive policies
+- `NLPolicyStore(db_path)` — SQLite-backed store; `add()`, `get()`, `remove()`, `deactivate()`, `get_active_policies()`, `get_all_policies()`, `count()`; in-memory mode with `":memory:"`
+- `apyrobo policy add "never exceed 0.5 m/s near humans"` — parse and persist to `~/.apyrobo/policies.db`
+- `apyrobo policy list [--json] [--all]` — tabular or JSON listing of active (or all) policies
+- `apyrobo policy remove <policy-id>` — delete policy from store; exits 1 if not found
+- `apyrobo policy check --action "navigate at 2 m/s"` — check action against all active policies; exits 1 on violations
+- `--db` flag on all subcommands for non-default database path
+- `NLSafetyPolicy`, `NLPolicyParser`, `NLPolicyStore` exported from `apyrobo.safety`
+- 46 tests covering regex patterns, LLM fallback, compliance checking, store operations, all CLI subcommands
+
 ---
 
 ## [Unreleased] — v6.0.0 Ecosystem Integrations
