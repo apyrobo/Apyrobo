@@ -5,7 +5,9 @@ from apyrobo.orchestration.adapter import (
     StdioOrchestrationAdapter,
     MockOrchestrationAdapter,
     OrchestrationMessage,
+    WebSocketOrchestrationAdapter,
 )
+from apyrobo.orchestration.slack_adapter import SlackOrchestrationAdapter
 
 __all__ = [
     "OrchestrationAdapter",
@@ -13,4 +15,6 @@ __all__ = [
     "StdioOrchestrationAdapter",
     "MockOrchestrationAdapter",
     "OrchestrationMessage",
+    "WebSocketOrchestrationAdapter",
+    "SlackOrchestrationAdapter",
 ]

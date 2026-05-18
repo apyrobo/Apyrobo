@@ -1,0 +1,92 @@
+# APYROBO — AI-Native Robotics Orchestration Framework
+
+APYROBO is an open-source Python framework for building AI agents that control robots.
+It provides hardware abstraction (mock, ROS 2, Unitree, Isaac Sim), a skill graph engine,
+multi-robot coordination, natural language safety policies, and built-in observability.
+
+The key differentiation: the same APYROBO agent code runs on any robot — change the URI,
+not the code. Safety is enforced at the framework layer and cannot be bypassed by any agent.
+
+## Quick start
+
+```python
+pip install apyrobo
+```
+
+```python
+from apyrobo import Agent, MockAdapter, Robot, SkillExecutor
+
+robot = Robot("mock://bot", MockAdapter("bot"))          # or any real hardware URI
+agent = Agent(provider="rule")                           # or "openai", "anthropic", etc.
+plan  = agent.plan("navigate to point A and pick up object", robot)
+result = SkillExecutor(robot).execute_graph(plan)
+print(result.status)  # completed
+```
+
+## Core concepts
+
+### Hardware adapter pattern
+URI-based abstraction: `mock://`, `nav2://`, `unitree://go2@host`, `isaac://host:port`.
+Write once, run on any robot. MockAdapter for CI/testing, real adapters for production.
+
+### Skill graph engine
+DAG-based task composition. `agent.plan(task, robot)` returns a `SkillGraph`. The executor
+handles parallel skill branches, retries, circuit breakers, and precondition/postcondition checks.
+
+### Natural language safety policies
+```python
+from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
+store = NLPolicyStore("~/.apyrobo/policies.db")
+store.add(NLPolicyParser().parse("never exceed 0.5 m/s near humans"))
+violations = NLPolicyParser().check_compliance("navigate at 2 m/s", store.get_active_policies())
+```
+Parse plain English → store in SQLite → enforce before execution. Non-engineers write the rules.
+
+### Multi-agent coordination
+```python
+from apyrobo.coordination.bus import TaskBus, MultiAgentCoordinator
+bus = TaskBus()
+# Register robots, then:
+result = bus.dispatch("pick_object", required_capability="PICK")  # routes to best agent
+bus.broadcast("emergency_stop")                                   # fans out to all agents
+```
+
+### CLI
+```bash
+apyrobo serve --transport stdio          # start a robot server
+apyrobo policy add "never enter lab"    # add NL safety rule
+apyrobo policy check --action "..."     # check compliance (exits 1 on violation)
+apyrobo registry search navigation      # search skill registry
+```
+
+## Documentation
+
+- [Quickstart (5 min)](docs/quickstart_5min.md)
+- [Architecture overview](docs/architecture.md)
+- [Concept index](docs/concepts/index.md)
+- [Natural language safety policies](docs/concepts/nl_safety_policies.md)
+- [Multi-agent coordination](docs/concepts/multi_agent_coordination.md)
+- [Hardware adapter pattern](docs/concepts/adapter_pattern.md)
+- [Skill authoring guide](docs/skill_authoring.md)
+- [Adapter authoring guide](docs/adapter_authoring.md)
+- [APYROBO vs alternatives](docs/comparison.md)
+- [API reference](docs/api_reference.md)
+
+## Demos (clone → run → wow)
+
+```bash
+python demos/drone_survey/demo.py        # 10-drone coordinated survey
+python demos/warehouse_robots/demo.py    # warehouse pick-and-pack with TaskBus
+python demos/humanoid_nlp/demo.py        # NL safety policies on a humanoid
+```
+
+## Supported hardware
+
+ROS 2 (Nav2 + MoveIt), Unitree Go2 + H1, NVIDIA Isaac Sim, Gazebo, MQTT, HTTP.
+MockAdapter for testing without hardware.
+
+## What APYROBO is NOT
+
+- Not a replacement for ROS 2 — it orchestrates on top of ROS 2
+- Not a general-purpose LLM library — it is robotics-specific
+- Not a cloud service — runs entirely on-premises, no data leaves your environment

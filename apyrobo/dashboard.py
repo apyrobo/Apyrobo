@@ -230,6 +230,338 @@ class Dashboard:
         logger.info("Dashboard starting on %s:%d", host, port)
 
 
+# ---------------------------------------------------------------------------
+# v5.0.0 Live Robot Dashboard — HTMX-powered
+# ---------------------------------------------------------------------------
+
+import collections
+
+_MAX_HISTORY = 50  # max skill executions tracked
+_MAX_EVENTS = 100  # max safety events tracked
+
+
+class RobotDashboard:
+    """Live dashboard that watches a connected Robot and buffers recent events.
+
+    Attach to an observability event stream so ``record_skill()`` and
+    ``record_safety_event()`` are called as skills run and safety events fire.
+    When used standalone (e.g. in the demo compose), the dashboard polls the
+    robot on each request instead.
+
+    Usage::
+
+        robot = Robot.discover("mock://turtlebot4")
+        dash = RobotDashboard(robot)
+        app = dash.create_fastapi_app()
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    """
+
+    def __init__(self, robot: Any, robot_uri: str = "") -> None:
+        self.robot = robot
+        self.robot_uri = robot_uri
+        self._skill_history: collections.deque = collections.deque(maxlen=_MAX_HISTORY)
+        self._safety_events: collections.deque = collections.deque(maxlen=_MAX_EVENTS)
+        self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Event recording (can be called from skill executor hooks)
+    # ------------------------------------------------------------------
+
+    def record_skill(
+        self,
+        skill_id: str,
+        status: str,
+        elapsed_ms: float,
+        params: dict | None = None,
+    ) -> None:
+        with self._lock:
+            self._skill_history.append({
+                "skill_id": skill_id,
+                "status": status,
+                "elapsed_ms": round(elapsed_ms, 1),
+                "params": params or {},
+                "timestamp": time.time(),
+            })
+
+    def record_safety_event(self, event_type: str, detail: str) -> None:
+        with self._lock:
+            self._safety_events.append({
+                "event_type": event_type,
+                "detail": detail,
+                "timestamp": time.time(),
+            })
+
+    # ------------------------------------------------------------------
+    # Data accessors
+    # ------------------------------------------------------------------
+
+    def get_robot_status(self) -> dict[str, Any]:
+        try:
+            caps = self.robot.capabilities()
+            cap_list = [{"name": c.name, "type": c.capability_type.value} for c in caps.capabilities]
+            pos = None
+            try:
+                pos = self.robot.get_position()
+            except Exception:
+                pass
+            battery = None
+            try:
+                battery = self.robot.get_battery_level()
+            except Exception:
+                pass
+            return {
+                "name": caps.name,
+                "robot_id": caps.robot_id,
+                "uri": self.robot_uri,
+                "max_speed": caps.max_speed,
+                "capabilities": cap_list,
+                "position": {"x": round(pos[0], 2), "y": round(pos[1], 2)} if pos else None,
+                "battery_pct": round(battery * 100) if battery is not None else None,
+                "connected": True,
+            }
+        except Exception as exc:
+            return {"connected": False, "error": str(exc)}
+
+    def get_skill_history(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(reversed(list(self._skill_history)))
+
+    def get_safety_events(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(reversed(list(self._safety_events)))
+
+    def get_available_skills(self) -> list[dict[str, Any]]:
+        from apyrobo.skills.skill import BUILTIN_SKILLS
+        return [
+            {
+                "skill_id": s.skill_id,
+                "name": s.name,
+                "description": s.description,
+                "type": s.skill_type.value if hasattr(s, "skill_type") else "custom",
+            }
+            for s in BUILTIN_SKILLS.values()
+        ]
+
+    # ------------------------------------------------------------------
+    # FastAPI app
+    # ------------------------------------------------------------------
+
+    def create_fastapi_app(self) -> Any:
+        try:
+            from fastapi import FastAPI
+            from fastapi.responses import HTMLResponse, JSONResponse
+        except ImportError:
+            raise RuntimeError(
+                "fastapi is required for the dashboard.\n"
+                "Install with: pip install 'apyrobo[dashboard]'"
+            )
+
+        app = FastAPI(title="APYROBO Live Dashboard", version="5.0.0")
+
+        @app.get("/health")
+        def health() -> dict:
+            return {"status": "ok", "timestamp": time.time()}
+
+        @app.get("/api/status")
+        def api_status() -> dict:
+            return self.get_robot_status()
+
+        @app.get("/api/skills/history")
+        def api_skill_history() -> list:
+            return self.get_skill_history()
+
+        @app.get("/api/skills/available")
+        def api_skills_available() -> list:
+            return self.get_available_skills()
+
+        @app.get("/api/safety/events")
+        def api_safety_events() -> list:
+            return self.get_safety_events()
+
+        @app.get("/partials/status", response_class=HTMLResponse)
+        def partial_status() -> str:
+            s = self.get_robot_status()
+            return _render_status_partial(s)
+
+        @app.get("/partials/history", response_class=HTMLResponse)
+        def partial_history() -> str:
+            history = self.get_skill_history()
+            return _render_history_partial(history)
+
+        @app.get("/partials/safety", response_class=HTMLResponse)
+        def partial_safety() -> str:
+            events = self.get_safety_events()
+            return _render_safety_partial(events)
+
+        @app.get("/partials/skills", response_class=HTMLResponse)
+        def partial_skills() -> str:
+            skills = self.get_available_skills()
+            return _render_skills_partial(skills)
+
+        @app.get("/", response_class=HTMLResponse)
+        def index() -> str:
+            return _render_live_dashboard_html(self.robot_uri)
+
+        return app
+
+
+def _ts(t: float) -> str:
+    """Format a unix timestamp as HH:MM:SS."""
+    import datetime
+    return datetime.datetime.fromtimestamp(t).strftime("%H:%M:%S")
+
+
+def _render_status_partial(s: dict) -> str:
+    if not s.get("connected"):
+        return f'<div class="panel-error">⚠ Not connected: {s.get("error", "")}</div>'
+    pos = s.get("position")
+    pos_str = f"({pos['x']}, {pos['y']})" if pos else "—"
+    batt = s.get("battery_pct")
+    batt_str = f"{batt}%" if batt is not None else "—"
+    caps = ", ".join(c["type"] for c in s.get("capabilities", []))
+    return (
+        f'<div class="kv"><span>Name</span><span>{s["name"]}</span></div>'
+        f'<div class="kv"><span>URI</span><span>{s["uri"]}</span></div>'
+        f'<div class="kv"><span>Position</span><span>{pos_str}</span></div>'
+        f'<div class="kv"><span>Battery</span><span>{batt_str}</span></div>'
+        f'<div class="kv"><span>Capabilities</span><span>{caps}</span></div>'
+        f'<div class="kv"><span>Max speed</span><span>{s.get("max_speed", "—")} m/s</span></div>'
+    )
+
+
+def _render_history_partial(history: list) -> str:
+    if not history:
+        return '<div class="muted">No skills executed yet.</div>'
+    rows = ""
+    for h in history[:20]:
+        icon = "✅" if h["status"] == "ok" else "❌"
+        rows += (
+            f'<tr><td>{_ts(h["timestamp"])}</td>'
+            f'<td class="skill-id">{h["skill_id"]}</td>'
+            f'<td>{icon} {h["status"]}</td>'
+            f'<td>{h["elapsed_ms"]}ms</td></tr>'
+        )
+    return f"<table><tr><th>Time</th><th>Skill</th><th>Status</th><th>Time</th></tr>{rows}</table>"
+
+
+def _render_safety_partial(events: list) -> str:
+    if not events:
+        return '<div class="muted ok">✅ No safety events.</div>'
+    rows = ""
+    for e in events[:15]:
+        rows += (
+            f'<tr><td>{_ts(e["timestamp"])}</td>'
+            f'<td class="warn">{e["event_type"]}</td>'
+            f'<td>{e["detail"]}</td></tr>'
+        )
+    return f"<table><tr><th>Time</th><th>Event</th><th>Detail</th></tr>{rows}</table>"
+
+
+def _render_skills_partial(skills: list) -> str:
+    if not skills:
+        return '<div class="muted">No skills loaded.</div>'
+    rows = ""
+    for s in skills[:30]:
+        rows += (
+            f'<tr><td class="skill-id">{s["skill_id"]}</td>'
+            f'<td>{s["name"]}</td>'
+            f'<td class="muted">{s.get("description", "")[:60]}</td></tr>'
+        )
+    return (
+        f"<div class='muted'>{len(skills)} built-in skills</div>"
+        f"<table><tr><th>ID</th><th>Name</th><th>Description</th></tr>{rows}</table>"
+    )
+
+
+def _render_live_dashboard_html(robot_uri: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>APYROBO Dashboard</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: 'Courier New', monospace; background: #0d1117; color: #c9d1d9; padding: 16px; }}
+header {{ display: flex; align-items: center; gap: 12px; padding-bottom: 12px;
+          border-bottom: 1px solid #21262d; margin-bottom: 16px; }}
+h1 {{ color: #58a6ff; font-size: 1.1rem; }}
+.dot {{ width: 10px; height: 10px; border-radius: 50%; background: #3fb950; display: inline-block; }}
+.uri {{ color: #8b949e; font-size: 0.85rem; }}
+.grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+.panel {{ background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 12px; }}
+.panel h2 {{ color: #7ee787; font-size: 0.85rem; margin-bottom: 10px;
+             border-bottom: 1px solid #21262d; padding-bottom: 6px; }}
+.kv {{ display: flex; justify-content: space-between; padding: 3px 0;
+       border-bottom: 1px solid #21262d08; font-size: 0.82rem; }}
+.kv span:first-child {{ color: #8b949e; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 0.78rem; }}
+th {{ color: #8b949e; text-align: left; padding: 4px 6px; border-bottom: 1px solid #21262d; }}
+td {{ padding: 3px 6px; border-bottom: 1px solid #21262d18; }}
+.skill-id {{ color: #58a6ff; font-family: monospace; }}
+.muted {{ color: #8b949e; font-size: 0.82rem; padding: 4px 0; }}
+.muted.ok {{ color: #3fb950; }}
+.warn {{ color: #f85149; }}
+.panel-error {{ color: #f85149; font-size: 0.85rem; }}
+footer {{ margin-top: 16px; color: #8b949e; font-size: 0.75rem; text-align: center; }}
+a {{ color: #58a6ff; }}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>APYROBO Dashboard</h1>
+  <span class="uri">{robot_uri}</span>
+</header>
+<div class="grid">
+  <div class="panel">
+    <h2>🤖 Robot Status</h2>
+    <div id="status-panel"
+         hx-get="/partials/status"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML">
+      Loading…
+    </div>
+  </div>
+  <div class="panel">
+    <h2>🛡 Safety Events</h2>
+    <div id="safety-panel"
+         hx-get="/partials/safety"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML">
+      Loading…
+    </div>
+  </div>
+  <div class="panel">
+    <h2>📋 Skill History</h2>
+    <div id="history-panel"
+         hx-get="/partials/history"
+         hx-trigger="load, every 3s"
+         hx-swap="innerHTML">
+      Loading…
+    </div>
+  </div>
+  <div class="panel">
+    <h2>⚙ Available Skills</h2>
+    <div id="skills-panel"
+         hx-get="/partials/skills"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      Loading…
+    </div>
+  </div>
+</div>
+<footer>
+  <a href="/api/status">/api/status</a> ·
+  <a href="/api/skills/history">/api/skills/history</a> ·
+  <a href="/api/safety/events">/api/safety/events</a> ·
+  <a href="/health">/health</a>
+  — APYROBO v5.0.0
+</footer>
+</body>
+</html>"""
+
+
 def create_app(
     router: Any = None,
     metrics: Any = None,

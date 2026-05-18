@@ -1,0 +1,60 @@
+# =============================================================================
+# APYROBO v5.0.0 "Five-Minute Success" — Demo Environment
+#
+# Quick start:
+#   docker compose -f docker/docker-compose-demo.yml up
+#   → Dashboard: http://localhost:8000
+# =============================================================================
+
+services:
+
+  apyrobo-demo:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ..:/app
+    environment:
+      PYTHONPATH: /app
+      APYROBO_LOG_LEVEL: INFO
+      APYROBO_DEMO: "1"
+    command: >
+      sh -c "pip install -e /app[dashboard] -q &&
+             apyrobo serve --robot mock://turtlebot4 --provider rule"
+    restart: unless-stopped
+
+  dashboard:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ..:/app
+    environment:
+      PYTHONPATH: /app
+      APYROBO_LOG_LEVEL: INFO
+      APYROBO_DEMO: "1"
+    command: >
+      sh -c "pip install -e /app[dashboard] -q &&
+             apyrobo dashboard --port 8000 --robot mock://turtlebot4"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - apyrobo-demo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mock-fleet:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ..:/app
+    environment:
+      PYTHONPATH: /app
+      APYROBO_DEMO: "1"
+    command: >
+      sh -c "pip install -e /app[dashboard] -q &&
+             python -m apyrobo.demo.mock_fleet"
+    restart: unless-stopped

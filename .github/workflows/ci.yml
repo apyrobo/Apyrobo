@@ -46,6 +46,7 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ \
+            -m "not integration" \
             --cov=apyrobo \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \

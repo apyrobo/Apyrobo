@@ -1,9 +1,12 @@
 # =============================================================================
 # APYROBO Docker Compose — Production / Cloud Environment
 #
-# Quick start:
+# Quick start (API only):
 #   cp docker/.env.example docker/.env
 #   docker compose -f docker/docker-compose.yml up -d
+#
+# With workers (opt-in via the `workers` profile):
+#   docker compose -f docker/docker-compose.yml --profile workers up -d
 #
 # With Redis:
 #   docker compose -f docker/docker-compose.yml --profile redis up -d
@@ -18,7 +21,12 @@
 #   → Prometheus: http://localhost:9090
 #
 # Scale workers:
-#   docker compose -f docker/docker-compose.yml up -d --scale apyrobo-worker=4
+#   docker compose -f docker/docker-compose.yml --profile workers \
+#       up -d --scale apyrobo-worker=4
+#
+# Integration tests (fake-robot + pytest, no workers):
+#   docker compose -f docker/docker-compose.yml --profile integration up \
+#       --abort-on-container-exit --exit-code-from integration-test
 # =============================================================================
 
 services:
@@ -59,6 +67,9 @@ services:
   # ---------------------------------------------------------------------------
   # Skill executor workers (stateless — scale freely)
   # ---------------------------------------------------------------------------
+  # NOTE: the worker service is opt-in via `--profile workers`. The CLI
+  # `worker` subcommand isn't implemented yet — keeping the service out of
+  # default startup prevents it from crashing integration runs.
   apyrobo-worker:
     build:
       context: ..
@@ -66,6 +77,8 @@ services:
       target: runtime
     image: apyrobo:latest
     restart: unless-stopped
+    profiles:
+      - workers
     deploy:
       replicas: 2
     environment:

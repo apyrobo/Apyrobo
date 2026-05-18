@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "apyrobo-skills-ros-nav"
+version = "0.1.0"
+description = "APYROBO skill wrappers for ROS 2 Nav2 navigation stack"
+requires-python = ">=3.10"
+dependencies = ["apyrobo>=3.0.0"]
+
+[project.entry-points."apyrobo.skills"]
+apyrobo_skills_ros_nav = "apyrobo_skills_ros_nav:register"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apyrobo_skills_ros_nav*"]

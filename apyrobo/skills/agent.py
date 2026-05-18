@@ -792,6 +792,9 @@ class Agent:
         from apyrobo.memory import AgentMemory
         self.memory: AgentMemory | None = kwargs.pop("memory", None)
 
+        # Live telemetry context — inject robot state into LLM prompts
+        self._telemetry: Any = kwargs.pop("telemetry_provider", None)
+
         # Auto-discover default registry if none provided
         if self._registry is None and DEFAULT_REGISTRY_DIR.exists():
             try:
@@ -881,8 +884,19 @@ class Agent:
         if self.memory and isinstance(self._provider, (LLMProvider, ToolCallingProvider)):
             memory_context = self.memory.to_context_string()
             if memory_context:
-                # Prepend memory context to the task for LLM awareness
                 task = f"{task}\n\n[Agent Memory Context]\n{memory_context}"
+
+        # Live telemetry context — inject current robot state so LLM knows
+        # position, battery, velocity, and sensor health without tool calls
+        if self._telemetry is not None and isinstance(
+            self._provider, (LLMProvider, ToolCallingProvider)
+        ):
+            try:
+                telemetry_str = self._telemetry.get_context_string()
+                if telemetry_str:
+                    task = f"{task}\n\n{telemetry_str}"
+            except Exception as _tel_exc:
+                logger.debug("TelemetryContextProvider error: %s", _tel_exc)
 
         # IN-09: Optionally inject constrained prompt into provider
         if self._use_constrained_prompt and isinstance(self._provider, LLMProvider):

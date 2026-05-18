@@ -9,8 +9,12 @@
 
 FROM ros:humble-ros-base
 
-# Install ROS 2 message packages needed by the adapter and fake robot
+# Install ROS 2 message packages needed by the adapter and fake robot.
+# ros-humble-rclpy is installed explicitly so its submodules (callback_group,
+# executors, etc.) are guaranteed to be present via apt and not shadowed by
+# any PyPI stub that pip --upgrade might introduce.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-rclpy \
     ros-humble-nav2-msgs \
     ros-humble-tf2 \
     python3-pip \
@@ -22,8 +26,17 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY apyrobo/ ./apyrobo/
 
-# Install apyrobo + test dependencies
-# pip uses the system Python that ROS 2 uses (/usr/bin/python3)
+# Ensure the ROS 2 Python packages are on PYTHONPATH at build time AND at
+# runtime, regardless of whether the entrypoint has sourced setup.bash yet.
+# /opt/ros/humble/lib/python3.10/site-packages contains the real rclpy;
+# placing it first ensures it takes precedence over any pip-installed packages.
+ENV PYTHONPATH=/opt/ros/humble/lib/python3.10/site-packages
+
+# Install apyrobo + test dependencies.
+# pip upgrade is required: the system pip in ros:humble-ros-base (pip 22)
+# cannot install editable packages from pyproject.toml without setup.py
+# (PEP 660 / build_editable hook). ros-humble-rclpy is already apt-pinned
+# above so upgrading pip here cannot shadow it with a PyPI stub.
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
     pip install --no-cache-dir -e . && \
@@ -39,4 +52,10 @@ ENV PYTHONUNBUFFERED=1 \
     ROS_DOMAIN_ID=42
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
-CMD ["pytest", "-m", "integration", "tests/integration/", "-v", "--tb=short"]
+# Run only the integration-marked tests. Do NOT pass tests/integration/ as an
+# explicit path: pytest 9 with testpaths=["tests"] in pyproject.toml still scans
+# the full testpaths tree and triggers module-level pytest.skip() in the mocked
+# test files, which produces "0 items / 1 skipped" + "no collectors" when an
+# explicit subdirectory path is also given. Relying solely on -m integration
+# lets pytest collect from testpaths naturally and filter by marker.
+CMD ["pytest", "-m", "integration", "-v", "--tb=short"]

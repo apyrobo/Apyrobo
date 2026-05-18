@@ -41,6 +41,10 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=3.7",
 ]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+]
 registry = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",

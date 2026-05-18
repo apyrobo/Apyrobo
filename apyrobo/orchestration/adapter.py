@@ -15,7 +15,9 @@ The adapter contract is intentionally minimal:
 receive→plan→send loop.  ``StdioOrchestrationAdapter`` implements the contract
 over stdin/stdout (one JSON object per line), making it easy to pipe tasks
 from a shell script.  ``MockOrchestrationAdapter`` is pre-loaded with a list
-of tasks and is intended for unit tests.
+of tasks and is intended for unit tests.  ``WebSocketOrchestrationAdapter``
+exposes the same contract over a WebSocket server (requires the ``websockets``
+library: ``pip install 'apyrobo[websocket]'``).
 
 Crash recovery: pass a ``CheckpointStore`` to ``OrchestrationServer`` to persist
 in-flight tasks. On restart, call ``server.resume_incomplete()`` to recover tasks
@@ -26,7 +28,9 @@ from __future__ import annotations
 import abc
 import json
 import logging
+import queue
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -333,3 +337,172 @@ class MockOrchestrationAdapter(OrchestrationAdapter):
 
     def shutdown(self) -> None:
         self.shutdown_called = True
+
+
+# ---------------------------------------------------------------------------
+# WebSocket adapter
+# ---------------------------------------------------------------------------
+
+try:
+    import websockets  # type: ignore
+    import websockets.server  # type: ignore
+    _WEBSOCKETS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _WEBSOCKETS_AVAILABLE = False
+
+
+class WebSocketOrchestrationAdapter(OrchestrationAdapter):
+    """WebSocket-based orchestration adapter.
+
+    Starts a WebSocket server on ``host:port``.  Each connected client can
+    send JSON task messages; responses are broadcast to **all** currently
+    connected clients.
+
+    The adapter presents the same *synchronous* interface as the other adapters
+    (``receive()`` blocks, ``send()`` is immediate) while running the async
+    WebSocket server in a dedicated background thread.
+
+    Requires the ``websockets`` library::
+
+        pip install 'apyrobo[websocket]'
+
+    Protocol — identical to ``StdioOrchestrationAdapter``:
+
+    * Client → server: ``{"task": "navigate to dock", "robot_uri": "mock://..."}``
+    * Server → client: ``{"task": "...", "robot_uri": "...", "metadata": {...}, "source": "..."}``
+    """
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 8765) -> None:
+        if not _WEBSOCKETS_AVAILABLE:
+            raise ImportError(
+                "The 'websockets' package is required for WebSocketOrchestrationAdapter.\n"
+                "Install with: pip install 'apyrobo[websocket]'"
+            )
+        self._host = host
+        self._port = port
+        self._recv_queue: queue.Queue[OrchestrationMessage | None] = queue.Queue()
+        self._clients: set[Any] = set()
+        self._clients_lock = threading.Lock()
+        self._loop: Any = None          # asyncio event loop running in background
+        self._server: Any = None        # websockets.WebSocketServer
+        self._thread: threading.Thread | None = None
+        self._started = threading.Event()
+
+    # ------------------------------------------------------------------
+    # Async internals (run inside background thread)
+    # ------------------------------------------------------------------
+
+    async def _handler(self, websocket: Any) -> None:
+        """Handle a single WebSocket client connection."""
+        with self._clients_lock:
+            self._clients.add(websocket)
+        logger.info("WebSocketOrchestrationAdapter: client connected (%s)", websocket.remote_address)
+        try:
+            async for raw in websocket:
+                raw = raw.strip() if isinstance(raw, str) else raw.decode().strip()
+                if not raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                    msg = OrchestrationMessage.from_dict(data)
+                except (json.JSONDecodeError, Exception) as exc:
+                    logger.warning(
+                        "WebSocketOrchestrationAdapter: bad JSON (%s): %r", exc, raw
+                    )
+                    msg = OrchestrationMessage(task=raw)
+                self._recv_queue.put(msg)
+        except Exception as exc:
+            logger.debug("WebSocketOrchestrationAdapter: client error: %s", exc)
+        finally:
+            with self._clients_lock:
+                self._clients.discard(websocket)
+            logger.info("WebSocketOrchestrationAdapter: client disconnected")
+
+    async def _serve(self) -> None:
+        """Start the WebSocket server and run until cancelled."""
+        import asyncio
+
+        async with websockets.server.serve(self._handler, self._host, self._port) as srv:
+            self._server = srv
+            self._started.set()
+            logger.info(
+                "WebSocketOrchestrationAdapter: listening on ws://%s:%d",
+                self._host, self._port,
+            )
+            # Run until the event loop is stopped externally.
+            await asyncio.get_event_loop().create_future()  # wait forever
+
+    def _run_loop(self) -> None:
+        """Entry point for the background thread."""
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+        try:
+            loop.run_until_complete(self._serve())
+        except Exception:
+            pass
+        finally:
+            loop.close()
+
+    # ------------------------------------------------------------------
+    # OrchestrationAdapter interface
+    # ------------------------------------------------------------------
+
+    def startup(self) -> None:
+        """Start the WebSocket server in a background thread."""
+        self._thread = threading.Thread(
+            target=self._run_loop, name="ws-orchestration", daemon=True
+        )
+        self._thread.start()
+        # Wait until the server is actually listening (up to 10 s).
+        if not self._started.wait(timeout=10):
+            raise RuntimeError(
+                f"WebSocketOrchestrationAdapter: server did not start within 10 s "
+                f"(host={self._host!r}, port={self._port})"
+            )
+        logger.info("WebSocketOrchestrationAdapter ready")
+
+    def shutdown(self) -> None:
+        """Stop the WebSocket server and background thread."""
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        # Unblock any waiting receive() call.
+        self._recv_queue.put(None)
+        logger.info("WebSocketOrchestrationAdapter closed")
+
+    def receive(self) -> OrchestrationMessage | None:
+        """Block until a message arrives from any connected client.
+
+        Returns ``None`` when the adapter is shut down.
+        """
+        return self._recv_queue.get()
+
+    def send(self, msg: OrchestrationMessage) -> None:
+        """Broadcast *msg* as JSON to all currently connected clients."""
+        import asyncio
+
+        payload = json.dumps(msg.to_dict())
+        with self._clients_lock:
+            clients = set(self._clients)
+
+        if not clients:
+            logger.debug("WebSocketOrchestrationAdapter.send: no connected clients")
+            return
+
+        async def _broadcast() -> None:
+            import asyncio
+            coros = [c.send(payload) for c in clients]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.debug("WebSocketOrchestrationAdapter.send error: %s", res)
+
+        if self._loop is not None and not self._loop.is_closed():
+            future = asyncio.run_coroutine_threadsafe(_broadcast(), self._loop)
+            try:
+                future.result(timeout=5)
+            except Exception as exc:
+                logger.warning("WebSocketOrchestrationAdapter.send failed: %s", exc)

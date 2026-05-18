@@ -8,6 +8,13 @@ Simulates the ROS 2 interface that ROS2Adapter (ros2_bridge.py) expects:
   - Serves NavigateToPose action at 'navigate_to_pose'
   - Publishes /battery_state (sensor_msgs/BatteryState) at 1 Hz
 
+Design notes:
+  /odom and /battery_state are published from background Python threads so
+  they keep flowing even while the action-server execute callback is
+  blocking (time.sleep inside the navigation simulation).  This approach
+  avoids any dependency on rclpy.callback_group, which has been observed
+  to be unavailable in some ros:humble-ros-base image variants.
+
 Run standalone:
     python tests/integration/fake_turtlebot4.py
 """
@@ -20,8 +27,7 @@ import time
 
 import rclpy
 from rclpy.action import ActionServer
-from rclpy.callback_group import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
@@ -46,8 +52,7 @@ class FakeTurtleBot4(Node):
         self._y = 0.0
         self._yaw = 0.0
         self._lock = threading.Lock()
-
-        cb_group = ReentrantCallbackGroup()
+        self._running = True
 
         # Publish /odom with BEST_EFFORT QoS to match adapter's subscription
         odom_qos = QoSProfile(
@@ -61,17 +66,7 @@ class FakeTurtleBot4(Node):
         self._battery_pub = self.create_publisher(BatteryState, "/battery_state", 10)
 
         # Subscribe to /cmd_vel for pose integration
-        self._cmd_vel_sub = self.create_subscription(
-            Twist,
-            "/cmd_vel",
-            self._cmd_vel_callback,
-            10,
-            callback_group=cb_group,
-        )
-
-        # Timers
-        self.create_timer(1.0 / self.ODOM_HZ, self._publish_odom, callback_group=cb_group)
-        self.create_timer(1.0 / self.BATTERY_HZ, self._publish_battery, callback_group=cb_group)
+        self.create_subscription(Twist, "/cmd_vel", self._cmd_vel_callback, 10)
 
         # NavigateToPose action server — action name matches adapter DEFAULT_CONFIG['nav2_action']
         self._action_server = ActionServer(
@@ -79,10 +74,36 @@ class FakeTurtleBot4(Node):
             NavigateToPose,
             "navigate_to_pose",
             execute_callback=self._navigate_execute,
-            callback_group=cb_group,
         )
 
+        # Background threads publish /odom and /battery independently of the
+        # ROS 2 executor, keeping them flowing while the action server is busy.
+        self._odom_thread = threading.Thread(
+            target=self._odom_loop, name="odom_pub", daemon=True
+        )
+        self._battery_thread = threading.Thread(
+            target=self._battery_loop, name="battery_pub", daemon=True
+        )
+        self._odom_thread.start()
+        self._battery_thread.start()
+
         self.get_logger().info("FakeTurtleBot4 ready — publishing /odom, serving navigate_to_pose")
+
+    # ------------------------------------------------------------------
+    # Background publisher loops
+    # ------------------------------------------------------------------
+
+    def _odom_loop(self) -> None:
+        interval = 1.0 / self.ODOM_HZ
+        while self._running:
+            self._publish_odom()
+            time.sleep(interval)
+
+    def _battery_loop(self) -> None:
+        interval = 1.0 / self.BATTERY_HZ
+        while self._running:
+            self._publish_battery()
+            time.sleep(interval)
 
     # ------------------------------------------------------------------
     # cmd_vel — integrate velocity into pose (very rough, no physics)
@@ -139,7 +160,7 @@ class FakeTurtleBot4(Node):
         target_y = float(goal.pose.pose.position.y)
 
         self.get_logger().info(
-            "NavigateToPose goal received: target=(%.2f, %.2f)", target_x, target_y
+            f"NavigateToPose goal received: target=({target_x:.2f}, {target_y:.2f})"
         )
 
         with self._lock:
@@ -207,19 +228,30 @@ class FakeTurtleBot4(Node):
         q.z = math.sin(yaw / 2.0)
         return q
 
+    def destroy_node(self) -> None:
+        self._running = False
+        super().destroy_node()
+
 
 def main() -> None:
     rclpy.init()
     node = FakeTurtleBot4()
-    executor = MultiThreadedExecutor()
+    executor = SingleThreadedExecutor()
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # ExternalShutdownException is raised when rclpy's signal handler
+        # (triggered by SIGTERM/SIGINT from Docker) shuts down the context
+        # while the executor is spinning. Catching it here ensures the
+        # container exits with code 0 rather than 1 (unhandled exception).
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass  # context already shut down by signal handler
 
 
 if __name__ == "__main__":

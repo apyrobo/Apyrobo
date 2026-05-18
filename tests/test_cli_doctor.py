@@ -64,10 +64,11 @@ class TestCheckPythonVersion:
 
 class TestCheckApyroboInstall:
     def test_passes_with_version(self):
+        import apyrobo as _apyrobo
         result = _check_apyrobo_install()
         assert result.status == "pass"
         assert "apyrobo" in result.message
-        assert "1.0.0" in result.message
+        assert _apyrobo.__version__ in result.message
 
 
 # ---------------------------------------------------------------------------

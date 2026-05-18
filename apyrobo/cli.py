@@ -1133,15 +1133,44 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         merged_params.update(skill_meta.parameters)
     merged_params.update(params)
 
-    _W = 38
+    _W = 50
     print("─" * _W)
     print(f"Skill:    {skill_id}")
     print(f"Robot:    {robot_uri}")
     print(f"Runs:     {repeat}")
+
+    # Capability mismatch check — emit structured warning before running
+    if skill_meta is not None:
+        from apyrobo.core.schemas import CapabilityType
+        required_cap: Any = getattr(skill_meta, "required_capability", None)
+        if required_cap is not None and required_cap != CapabilityType.CUSTOM:
+            try:
+                caps = robot.capabilities()
+                robot_cap_types = {c.capability_type for c in caps.capabilities}
+                if required_cap not in robot_cap_types:
+                    _CAP_PACKAGES = {
+                        CapabilityType.MANIPULATE: "apyrobo-skills-ur / apyrobo-skills-franka",
+                        CapabilityType.PICK:       "apyrobo-skills-ur / apyrobo-skills-franka",
+                        CapabilityType.PLACE:      "apyrobo-skills-ur / apyrobo-skills-franka",
+                        CapabilityType.NAVIGATE:   "apyrobo-skills-turtlebot4 / apyrobo-skills-spot",
+                        CapabilityType.DOCK:       "apyrobo-skills-turtlebot4",
+                    }
+                    print()
+                    print("  ⚠  Capability mismatch detected:")
+                    print(f"       Skill requires: {required_cap.value!r}")
+                    print(f"       Robot provides: {[c.capability_type.value for c in caps.capabilities]}")
+                    hint = _CAP_PACKAGES.get(required_cap)
+                    if hint:
+                        print(f"       Fix:            pip install {hint}")
+                    print("  (skill may still run if the robot handles the call gracefully)")
+            except Exception:
+                pass
+
     print()
 
     times: list[float] = []
     passed = 0
+    failures: list[str] = []
 
     for i in range(1, repeat + 1):
         t0 = time.monotonic()
@@ -1158,6 +1187,8 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         times.append(elapsed)
         if ok:
             passed += 1
+        else:
+            failures.append(exc_info or f"returned {retval!r}")
 
         icon = "✅" if ok else "❌"
         detail = f"{retval}" if exc_info is None else f"raised: {exc_info}"
@@ -1171,6 +1202,18 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
     print("─" * _W)
 
     if passed < repeat:
+        # Structured failure summary with fix hints
+        print()
+        print("  Failure summary:")
+        for msg in set(failures):
+            print(f"    • {msg}")
+            # Surface common fix hints
+            if "AttributeError" in (msg or "") and "gripper" in (msg or "").lower():
+                print("      Fix: robot does not support gripper — check robot capabilities")
+            elif "TimeoutError" in (msg or "") or "timeout" in (msg or "").lower():
+                print("      Fix: increase --timeout or check robot connection")
+            elif "CapabilityError" in (msg or "") or "capability" in (msg or "").lower():
+                print("      Fix: install the matching skill package for this robot type")
         sys.exit(1)
 
 
@@ -1472,12 +1515,20 @@ def cmd_pkg(args: argparse.Namespace) -> None:
 
 def cmd_serve(args: argparse.Namespace) -> None:
     """Start an orchestration server (stdio adapter by default)."""
-    from apyrobo.orchestration import OrchestrationServer, StdioOrchestrationAdapter
+    from apyrobo.orchestration import (
+        OrchestrationServer,
+        StdioOrchestrationAdapter,
+        WebSocketOrchestrationAdapter,
+    )
     from apyrobo.core.robot import Robot
 
     robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
     profile_name: str | None = getattr(args, "profile", None)
     provider_name: str = getattr(args, "provider", "rule")
+    transport: str = getattr(args, "transport", "stdio")
+    ws_port: int = getattr(args, "ws_port", 8765)
+    slack_port: int = getattr(args, "slack_port", 3000)
+    slack_command: str = getattr(args, "slack_command", "/apyrobo")
 
     if profile_name:
         from apyrobo.profiles import get_profile as _gp
@@ -1494,11 +1545,236 @@ def cmd_serve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     robot = Robot.discover(robot_uri)
-    adapter = StdioOrchestrationAdapter()
-    server = OrchestrationServer(adapter, agent, default_robot=robot)
 
-    print(f"apyrobo serve — robot={robot_uri} provider={provider}", file=sys.stderr, flush=True)
+    if transport == "websocket":
+        try:
+            adapter = WebSocketOrchestrationAdapter(port=ws_port)
+        except ImportError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"apyrobo serve — robot={robot_uri} provider={provider} "
+            f"transport=websocket port={ws_port}",
+            file=sys.stderr, flush=True,
+        )
+    elif transport == "slack":
+        try:
+            from apyrobo.orchestration.slack_adapter import SlackOrchestrationAdapter
+            adapter = SlackOrchestrationAdapter(
+                port=slack_port,
+                command=slack_command,
+                default_robot=robot_uri,
+            )
+        except ImportError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"apyrobo serve — robot={robot_uri} provider={provider} "
+            f"transport=slack command={slack_command} port={slack_port}",
+            file=sys.stderr, flush=True,
+        )
+    else:
+        adapter = StdioOrchestrationAdapter()
+        print(
+            f"apyrobo serve — robot={robot_uri} provider={provider} transport=stdio",
+            file=sys.stderr, flush=True,
+        )
+
+    server = OrchestrationServer(adapter, agent, default_robot=robot)
     server.run()
+
+
+# ---------------------------------------------------------------------------
+# Policy command — natural language safety policies
+# ---------------------------------------------------------------------------
+
+_DEFAULT_POLICY_DB = "./apyrobo_policies.db"
+
+
+def cmd_policy(args: argparse.Namespace) -> None:
+    """apyrobo policy — manage natural language safety policies."""
+    from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
+
+    sub: str = getattr(args, "policy_command", "") or ""
+    db_path: str = getattr(args, "db", _DEFAULT_POLICY_DB)
+    as_json: bool = getattr(args, "json", False)
+    store = NLPolicyStore(db_path)
+
+    try:
+        if sub == "add":
+            description: str = getattr(args, "description", "")
+            severity: str = getattr(args, "severity", "hard")
+            parser = NLPolicyParser(severity=severity)
+            policy = parser.parse(description)
+            store.add(policy)
+            if as_json:
+                print(json.dumps(policy.to_dict(), indent=2))
+            else:
+                print(f"✓ Added policy [{policy.policy_id}]")
+                print(f"  Type: {policy.constraint_type}")
+                print(f"  Params: {policy.parameters}")
+                print(f"  Severity: {policy.severity}")
+
+        elif sub == "list":
+            show_all: bool = getattr(args, "all", False)
+            policies = store.get_all_policies() if show_all else store.get_active_policies()
+            if as_json:
+                print(json.dumps([p.to_dict() for p in policies], indent=2))
+            elif not policies:
+                print("No safety policies defined.")
+            else:
+                active_label = "" if show_all else " (active)"
+                print(f"Safety policies{active_label}:")
+                print("-" * 70)
+                for p in policies:
+                    status = "" if p.active else " [INACTIVE]"
+                    print(f"  {p.summary()}{status}")
+
+        elif sub == "remove":
+            policy_id: str = getattr(args, "policy_id", "")
+            if store.remove(policy_id):
+                print(f"✓ Removed policy [{policy_id}]")
+            else:
+                print(f"Policy [{policy_id}] not found.", file=sys.stderr)
+                sys.exit(1)
+
+        elif sub == "check":
+            action: str = getattr(args, "action", "")
+            parser = NLPolicyParser()
+            active_policies = store.get_active_policies()
+            violations = parser.check_compliance(action, active_policies)
+            if as_json:
+                print(json.dumps({"action": action, "violations": violations}, indent=2))
+            elif violations:
+                print(f"⚠️  {len(violations)} violation(s) for: {action!r}")
+                for v in violations:
+                    print(f"  • {v}")
+                sys.exit(1)
+            else:
+                print(f"✓ No policy violations for: {action!r}")
+
+        else:
+            print("Usage: apyrobo policy <add|list|remove|check> [options]")
+            print("  add <description>    Add a natural language safety policy")
+            print("  list [--all]         List active (or all) policies")
+            print("  remove <id>          Remove a policy by ID")
+            print("  check <action>       Check if an action would violate policies")
+    finally:
+        store.close()
+
+
+# ---------------------------------------------------------------------------
+# Registry command
+# ---------------------------------------------------------------------------
+
+def cmd_registry(args: argparse.Namespace) -> None:
+    """apyrobo registry search/publish/install — skill package registry."""
+    from apyrobo.registry import SkillRegistryClient, SkillPackage, PublishRequest
+
+    registry_url: str = getattr(args, "registry_url", "https://registry.apyrobo.dev")
+    sub: str = getattr(args, "registry_command", "") or ""
+    as_json: bool = getattr(args, "json", False)
+
+    client = SkillRegistryClient(registry_url)
+
+    if sub == "search":
+        query: str = getattr(args, "query", "")
+        try:
+            results = client.search(query)
+        except Exception as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if as_json:
+            print(json.dumps([r.model_dump() for r in results], indent=2))
+        elif not results:
+            print(f"No packages found for {query!r}.")
+        else:
+            print(f"{'Package':<35} {'Version':<12} {'Description'}")
+            print("-" * 80)
+            for pkg in results:
+                desc = pkg.description[:40] + ("…" if len(pkg.description) > 40 else "")
+                print(f"{pkg.name:<35} {pkg.version:<12} {desc}")
+
+    elif sub == "install":
+        name: str = getattr(args, "package_name", "")
+        version: str = getattr(args, "package_version", "latest") or "latest"
+        dry_run: bool = getattr(args, "dry_run", False)
+        try:
+            if not dry_run:
+                print(f"Fetching {name!r} ({version}) from {registry_url} …")
+            ok = client.install(name, version, dry_run=dry_run)
+            if ok and not dry_run:
+                print(f"✓ Installed {name} ({version})")
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except RuntimeError as exc:
+            print(f"Install failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    elif sub == "publish":
+        import os
+        token: str = getattr(args, "token", "") or os.environ.get("APYROBO_REGISTRY_TOKEN", "")
+        if not token:
+            print(
+                "Error: --token is required (or set APYROBO_REGISTRY_TOKEN env var)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Read package metadata from a JSON file or build from args
+        pkg_json: str | None = getattr(args, "pkg_json", None)
+        if pkg_json:
+            try:
+                with open(pkg_json) as f:
+                    pkg_data = json.load(f)
+                pkg = SkillPackage(**pkg_data)
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"Error reading package metadata: {exc}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            # Build from individual flags
+            required = {"name", "version", "description", "author", "license",
+                        "download_url", "checksum", "apyrobo_version_min"}
+            missing = [f for f in required if not getattr(args, f, None)]
+            if missing:
+                flag_names = ", ".join("--" + f.replace("_", "-") for f in missing)
+                print(f"Error: missing required fields: {flag_names}", file=sys.stderr)
+                sys.exit(1)
+            try:
+                pkg = SkillPackage(
+                    name=args.name,
+                    version=args.version,
+                    description=args.description,
+                    author=args.author,
+                    license=args.license,
+                    download_url=args.download_url,
+                    checksum=args.checksum,
+                    apyrobo_version_min=args.apyrobo_version_min,
+                    tags=(getattr(args, "tags", None) or []),
+                )
+            except ValueError as exc:
+                print(f"Error: invalid package metadata: {exc}", file=sys.stderr)
+                sys.exit(1)
+
+        try:
+            ok = client.publish(pkg, token)
+            if ok:
+                print(f"✓ Published {pkg.name} ({pkg.version}) to {registry_url}")
+            else:
+                print("Publish failed (registry returned non-ok status)", file=sys.stderr)
+                sys.exit(1)
+        except Exception as exc:
+            print(f"Publish error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    else:
+        print("Usage: apyrobo registry <search|install|publish> [options]")
+        print("  search <query>         Search the skill registry")
+        print("  install <package>      Install a skill package")
+        print("  publish                Publish a skill package")
+        print(f"\nRegistry URL: {registry_url}")
 
 
 # ---------------------------------------------------------------------------
@@ -1514,6 +1790,33 @@ def cmd_profiles(args: argparse.Namespace) -> None:
     as_json: bool = getattr(args, "json", False)
 
     reg = ProfileRegistry()
+
+    if sub == "detect":
+        from apyrobo.profiles.schema import detect_profile
+        if not as_json:
+            print("Scanning hardware and Ollama…")
+        result = detect_profile()
+        if as_json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            conf_icon = {"high": "✅", "medium": "⚡", "low": "⚠"}.get(result.confidence, "?")
+            print(f"\n  Recommended profile: {result.recommended_profile}  {conf_icon} ({result.confidence} confidence)")
+            print(f"  Reason: {result.reason}")
+            print()
+            print(f"  Ollama: {'running' if result.ollama_available else 'not detected'}", end="")
+            if result.ollama_models:
+                print(f"  ({len(result.ollama_models)} models: {', '.join(result.ollama_models[:3])}{'…' if len(result.ollama_models) > 3 else ''})")
+            else:
+                print()
+            print(f"  GPU:    {'yes — ' + result.gpu_name if result.gpu_detected else 'not detected'}")
+            print(f"  RAM:    {result.ram_gb:.0f} GB")
+            if result.notes:
+                print()
+                for note in result.notes:
+                    print(f"  ℹ  {note}")
+            print()
+            print(f"  To use: apyrobo execute 'your task' --profile {result.recommended_profile}")
+        return
 
     if sub == "show" and name:
         profile = reg.get(name)
@@ -1546,6 +1849,394 @@ def cmd_profiles(args: argparse.Namespace) -> None:
             gpu = "yes" if p.gpu_available else "no"
             desc = p.description[:40] if len(p.description) > 40 else p.description
             print(f"{p.name:<20} {p.llm_model:<35} {gpu:>5}  {desc}")
+
+
+# ---------------------------------------------------------------------------
+# apyrobo init — scaffold a new pip-installable skill package
+# ---------------------------------------------------------------------------
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Scaffold a new pip-installable APYROBO skill package."""
+    import pathlib
+    import textwrap
+
+    raw_name: str = args.name.lower().strip()
+    # Normalise to kebab-case for the package name, snake_case for the module
+    pkg_name = "apyrobo-skills-" + raw_name.replace("_", "-")
+    module_name = "apyrobo_skills_" + raw_name.replace("-", "_")
+    out_dir = pathlib.Path(getattr(args, "directory", None) or raw_name)
+
+    if out_dir.exists() and not getattr(args, "force", False):
+        print(f"Error: directory '{out_dir}' already exists. Use --force to overwrite.", file=sys.stderr)
+        sys.exit(1)
+
+    src_dir = out_dir / "src" / module_name
+    tests_dir = out_dir / "tests"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    tests_dir.mkdir(parents=True, exist_ok=True)
+
+    author = getattr(args, "author", "") or ""
+    description = getattr(args, "description", "") or f"APYROBO skill package for {raw_name}"
+
+    # pyproject.toml
+    (out_dir / "pyproject.toml").write_text(textwrap.dedent(f"""\
+        [build-system]
+        requires = ["setuptools>=68"]
+        build-backend = "setuptools.backends.legacy:build"
+
+        [project]
+        name = "{pkg_name}"
+        version = "0.1.0"
+        description = "{description}"
+        requires-python = ">=3.10"
+        dependencies = ["apyrobo>=3.0.0"]
+        {('authors = [{name = ' + repr(author) + '}]') if author else ""}
+
+        [project.entry-points."apyrobo.skills"]
+        {module_name} = "{module_name}:register"
+
+        [tool.pytest.ini_options]
+        testpaths = ["tests"]
+    """))
+
+    # src/<module>/__init__.py
+    (src_dir / "__init__.py").write_text(textwrap.dedent(f"""\
+        \"\"\"APYROBO skill package: {pkg_name}.\"\"\"
+        from .skills import register
+
+        __all__ = ["register"]
+    """))
+
+    # src/<module>/skills.py
+    skill_fn_name = raw_name.replace("-", "_")
+    (src_dir / "skills.py").write_text(textwrap.dedent(f"""\
+        \"\"\"Skills for {pkg_name}.\"\"\"
+        from apyrobo.skills.decorators import skill
+        from apyrobo.skills.library import SkillLibrary
+
+
+        @skill(
+            name="{skill_fn_name}_hello",
+            description="Example skill — say hello from {raw_name}",
+            required_capabilities=[],
+        )
+        def {skill_fn_name}_hello(robot, message: str = "hello") -> bool:
+            print(f"[{raw_name}] {{message}}")
+            return True
+
+
+        def register(library: SkillLibrary) -> None:
+            \"\"\"Entry-point called by APYROBO on startup.\"\"\"
+            library.register_decorated()
+    """))
+
+    # tests/__init__.py
+    (tests_dir / "__init__.py").write_text("")
+
+    # tests/test_skills.py
+    (tests_dir / "test_skills.py").write_text(textwrap.dedent(f"""\
+        \"\"\"Smoke tests for {pkg_name}.\"\"\"
+        import pytest
+        from apyrobo.core.robot import Robot
+
+
+        @pytest.fixture
+        def robot():
+            return Robot.discover("mock://test")
+
+
+        def test_{skill_fn_name}_hello(robot):
+            from {module_name}.skills import {skill_fn_name}_hello
+            assert {skill_fn_name}_hello(robot) is True
+
+
+        def test_{skill_fn_name}_hello_custom_message(robot):
+            from {module_name}.skills import {skill_fn_name}_hello
+            assert {skill_fn_name}_hello(robot, message="world") is True
+    """))
+
+    # README.md
+    (out_dir / "README.md").write_text(textwrap.dedent(f"""\
+        # {pkg_name}
+
+        {description}
+
+        ## Quick start
+
+        ```bash
+        pip install -e .
+        apyrobo execute "{skill_fn_name} hello" --robot mock://turtlebot4
+        ```
+
+        ## Development
+
+        ```bash
+        pip install -e ".[dev]"
+        pytest
+        ```
+    """))
+
+    # .github/workflows/ci.yml
+    gh_dir = out_dir / ".github" / "workflows"
+    gh_dir.mkdir(parents=True, exist_ok=True)
+    (gh_dir / "ci.yml").write_text(textwrap.dedent(f"""\
+        name: CI
+
+        on: [push, pull_request]
+
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v4
+              - uses: actions/setup-python@v5
+                with:
+                  python-version: "3.12"
+              - run: pip install apyrobo pytest
+              - run: pip install -e .
+              - run: pytest
+    """))
+
+    print(f"Created: {out_dir}/")
+    print(f"  Package:  {pkg_name}")
+    print(f"  Module:   {module_name}")
+    print(f"  Skill:    {skill_fn_name}_hello")
+    print()
+    print("Next steps:")
+    print(f"  cd {out_dir}")
+    print(f"  pip install -e .")
+    print(f"  apyrobo test-skill {skill_fn_name}_hello --robot mock://turtlebot4")
+    print(f"  pytest")
+
+
+# ---------------------------------------------------------------------------
+# apyrobo shell — interactive REPL with robot + skills pre-loaded
+# ---------------------------------------------------------------------------
+
+def cmd_shell(args: argparse.Namespace) -> None:
+    """Drop into a Python REPL with robot, agent, and all skills pre-imported."""
+    import code as _code
+
+    robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
+    provider_name: str = getattr(args, "provider", "rule")
+
+    print(f"Connecting to {robot_uri!r} …")
+    try:
+        robot = Robot.discover(robot_uri)
+    except Exception as exc:
+        print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    provider, model = _resolve_provider(provider_name)
+    try:
+        agent = Agent(provider=provider, **({"model": model} if model else {}))
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    caps = robot.capabilities()
+
+    from apyrobo.skills.skill import BUILTIN_SKILLS
+    from apyrobo.skills.executor import SkillGraph
+
+    banner = (
+        "\n"
+        "  APYROBO Interactive Shell\n"
+        "  ─────────────────────────────────────────────────────\n"
+        f"  robot    → {caps.name!r} ({robot_uri})\n"
+        f"  agent    → {provider} provider\n"
+        f"  skills   → {len(BUILTIN_SKILLS)} built-in skills available\n"
+        "\n"
+        "  Try:\n"
+        "    graph = agent.plan('navigate to dock', robot)\n"
+        "    graph.get_execution_order()\n"
+        "    robot.move(1.0, 0.0)\n"
+        "    robot.capabilities()\n"
+        "\n"
+        "  Type exit() or Ctrl-D to quit.\n"
+    )
+
+    local_ns: dict = {
+        "robot": robot,
+        "agent": agent,
+        "Robot": Robot,
+        "Agent": Agent,
+        "SkillGraph": SkillGraph,  # type: ignore[possibly-undefined]
+        "BUILTIN_SKILLS": BUILTIN_SKILLS,
+    }
+
+    _code.interact(banner=banner, local=local_ns, exitmsg="Goodbye.")
+
+
+# ---------------------------------------------------------------------------
+# apyrobo tutorial — interactive guided walkthrough (mock mode only)
+# ---------------------------------------------------------------------------
+
+_TUTORIAL_STEPS = [
+    {
+        "title": "Step 1 — Discover a robot",
+        "description": (
+            "APYROBO talks to robots through URIs like ros2://turtlebot4 or mock://test.\n"
+            "The 'mock://' prefix spins up an in-process simulator — no hardware needed."
+        ),
+        "code": "robot = Robot.discover('mock://turtlebot4')\nprint(robot.capabilities().name)",
+        "expect": "TurtleBot4",
+    },
+    {
+        "title": "Step 2 — Inspect capabilities",
+        "description": (
+            "Every robot exposes its capabilities so the planner knows what it can do.\n"
+            "The mock TurtleBot4 supports navigation, cameras, and basic manipulation."
+        ),
+        "code": "caps = robot.capabilities()\nfor c in caps.capabilities:\n    print(f'  {c.name}: {c.description}')",
+        "expect": None,
+    },
+    {
+        "title": "Step 3 — Plan a task",
+        "description": (
+            "The Agent turns a natural-language task into a skill graph.\n"
+            "The built-in rule-based planner works without any API key."
+        ),
+        "code": "agent = Agent(provider='rule')\ngraph = agent.plan('navigate to the dock', robot)\nfor s in graph.get_execution_order():\n    print(f'  {s.skill_id}: {s.name}')",
+        "expect": None,
+    },
+    {
+        "title": "Step 4 — Execute the plan",
+        "description": (
+            "SkillExecutor runs each skill in the graph, respecting dependencies\n"
+            "and enforcing safety policies at every step."
+        ),
+        "code": (
+            "from apyrobo.skills.executor import SkillExecutor\n"
+            "from apyrobo.core.schemas import TaskStatus\n"
+            "executor = SkillExecutor(robot)\n"
+            "result = executor.execute_graph(graph)\n"
+            "print('Result:', result.status.value)"
+        ),
+        "expect": "completed",
+    },
+    {
+        "title": "Step 5 — Write your own skill",
+        "description": (
+            "Skills are plain Python functions decorated with @skill.\n"
+            "They receive the robot and any parameters, and return True on success."
+        ),
+        "code": (
+            "from apyrobo.skills.decorators import skill\n\n"
+            "@skill(name='wave', description='Wave the robot arm')\n"
+            "def wave(robot, repetitions: int = 3) -> bool:\n"
+            "    for i in range(repetitions):\n"
+            "        print(f'  wave {i+1}/{repetitions}')\n"
+            "    return True\n\n"
+            "wave(robot)"
+        ),
+        "expect": None,
+    },
+    {
+        "title": "Step 6 — Test a skill",
+        "description": (
+            "apyrobo test-skill runs a skill against a mock robot and prints timing.\n"
+            "For your own skill files: apyrobo test-skill my_skill.py"
+        ),
+        "code": None,  # command-line demo
+        "cli": "apyrobo test-skill navigate_to --robot mock://turtlebot4",
+        "expect": None,
+    },
+]
+
+
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """Start the HTMX live dashboard connected to a robot."""
+    robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
+    port: int = getattr(args, "port", 8000)
+    host: str = getattr(args, "host", "0.0.0.0")
+
+    try:
+        import uvicorn  # type: ignore[import]
+    except ImportError:
+        print(
+            "Error: uvicorn is required for the dashboard.\n"
+            "Install with: pip install 'apyrobo[dashboard]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Connecting to {robot_uri!r} …")
+    try:
+        robot = Robot.discover(robot_uri)
+        caps = robot.capabilities()
+        print(f"Connected: {caps.name}")
+    except Exception as exc:
+        print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    from apyrobo.dashboard import RobotDashboard
+    dash = RobotDashboard(robot, robot_uri=robot_uri)
+    app = dash.create_fastapi_app()
+
+    print(f"Dashboard starting on http://{host if host != '0.0.0.0' else 'localhost'}:{port}")
+    print("  Press Ctrl+C to stop\n")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def cmd_tutorial(args: argparse.Namespace) -> None:
+    """Interactive guided walkthrough — runs entirely in mock mode, no hardware needed."""
+    interactive: bool = not getattr(args, "non_interactive", False)
+
+    print()
+    print("  ╔══════════════════════════════════════════════════╗")
+    print("  ║   APYROBO Interactive Tutorial                   ║")
+    print("  ║   Zero hardware required — runs in mock mode     ║")
+    print("  ╚══════════════════════════════════════════════════╝")
+    print()
+
+    from apyrobo.core.robot import Robot as _Robot
+    from apyrobo.skills.agent import Agent as _Agent
+
+    ns: dict = {"Robot": _Robot, "Agent": _Agent}
+
+    for i, step in enumerate(_TUTORIAL_STEPS, 1):
+        total = len(_TUTORIAL_STEPS)
+        print(f"  ┌─ {step['title']} ({i}/{total})")
+        print(f"  │")
+        for line in step["description"].splitlines():
+            print(f"  │  {line}")
+        print(f"  │")
+
+        if step.get("cli"):
+            print(f"  │  $ {step['cli']}")
+        elif step.get("code"):
+            for line in step["code"].splitlines():
+                print(f"  │  >>> {line}" if not line.startswith(" ") else f"  │  ... {line}")
+
+        print(f"  │")
+
+        if interactive and i < total:
+            try:
+                inp = input("  └─ Press Enter to continue (or 'q' to quit) … ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if inp in ("q", "quit", "exit"):
+                print("  Exiting tutorial. Run 'apyrobo tutorial' any time to restart.")
+                break
+        else:
+            print(f"  └─")
+
+        if step.get("code") and step.get("expect") is None and not step.get("cli"):
+            try:
+                exec(step["code"], ns)  # noqa: S102
+            except Exception:
+                pass
+
+        print()
+
+    print("  Tutorial complete!")
+    print("  Explore further:")
+    print("    apyrobo shell --robot mock://turtlebot4   # interactive REPL")
+    print("    apyrobo init my-robot                     # scaffold a skill package")
+    print("    apyrobo doctor                            # diagnose your environment")
+    print()
 
 
 # ---------------------------------------------------------------------------
@@ -1715,6 +2406,45 @@ def main() -> None:
         help="Path to SQLite database (default: ./registry.db)",
     )
 
+    _reg_url_kwargs = dict(
+        metavar="URL", default="https://registry.apyrobo.dev",
+        help="Registry base URL (default: https://registry.apyrobo.dev)",
+    )
+
+    # registry search <query>
+    p_reg_search = registry_sub.add_parser("search", help="Search the skill registry")
+    p_reg_search.add_argument("query", nargs="?", default="", help="Search query")
+    p_reg_search.add_argument("--registry-url", dest="registry_url", **_reg_url_kwargs)
+    p_reg_search.add_argument("--json", action="store_true", help="Output JSON")
+
+    # registry install <package> [--version VERSION]
+    p_reg_install = registry_sub.add_parser("install", help="Install a skill package from the registry")
+    p_reg_install.add_argument("package_name", help="Registry package name")
+    p_reg_install.add_argument("--version", dest="package_version", default="latest",
+                               help="Version to install (default: latest)")
+    p_reg_install.add_argument("--dry-run", dest="dry_run", action="store_true",
+                               help="Print install command without running it")
+    p_reg_install.add_argument("--registry-url", dest="registry_url", **_reg_url_kwargs)
+
+    # registry publish — with pkg.json or individual flags
+    p_reg_publish = registry_sub.add_parser("publish", help="Publish a skill package to the registry")
+    p_reg_publish.add_argument("--pkg-json", dest="pkg_json", metavar="FILE", default=None,
+                               help="Path to package JSON metadata file")
+    p_reg_publish.add_argument("--name", default=None, help="Package name")
+    p_reg_publish.add_argument("--version", default=None, help="SemVer version")
+    p_reg_publish.add_argument("--description", default=None, help="Package description")
+    p_reg_publish.add_argument("--author", default=None, help="Author name")
+    p_reg_publish.add_argument("--license", default=None, help="SPDX license identifier")
+    p_reg_publish.add_argument("--download-url", dest="download_url", default=None,
+                               help="URL to wheel/tarball")
+    p_reg_publish.add_argument("--checksum", default=None, help="SHA-256 checksum")
+    p_reg_publish.add_argument("--apyrobo-version-min", dest="apyrobo_version_min",
+                               default=None, help="Minimum apyrobo version required")
+    p_reg_publish.add_argument("--tags", nargs="*", default=[], help="Searchable tags")
+    p_reg_publish.add_argument("--token", default=None,
+                               help="Registry auth token (or APYROBO_REGISTRY_TOKEN env var)")
+    p_reg_publish.add_argument("--registry-url", dest="registry_url", **_reg_url_kwargs)
+
     # skill — remote registry client commands
     p_skill = sub.add_parser("skill", help="Search and publish skills in the registry")
     skill_sub = p_skill.add_subparsers(dest="skill_command")
@@ -1767,13 +2497,29 @@ def main() -> None:
                           help="Whisper model size (base/small/medium/large) or model path")
 
     # serve — orchestration server
-    p_serve = sub.add_parser("serve", help="Start a stdio orchestration server")
+    p_serve = sub.add_parser("serve", help="Start an orchestration server (stdio or websocket)")
     p_serve.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
                          help="Robot URI (default: mock://turtlebot4)")
     p_serve.add_argument("--provider", default="rule",
                          help="LLM provider (default: rule)")
     p_serve.add_argument("--profile", default=None, metavar="PROFILE",
                          help="Compute profile to apply")
+    p_serve.add_argument(
+        "--transport", default="stdio", choices=["stdio", "websocket", "slack"],
+        help="Transport layer: 'stdio' (default), 'websocket', or 'slack'",
+    )
+    p_serve.add_argument(
+        "--ws-port", dest="ws_port", type=int, default=8765, metavar="PORT",
+        help="WebSocket port when --transport websocket is used (default: 8765)",
+    )
+    p_serve.add_argument(
+        "--slack-port", dest="slack_port", type=int, default=3000, metavar="PORT",
+        help="HTTP port for Slack adapter when not using Socket Mode (default: 3000)",
+    )
+    p_serve.add_argument(
+        "--slack-command", dest="slack_command", default="/apyrobo", metavar="CMD",
+        help="Slash command to register with the Slack adapter (default: /apyrobo)",
+    )
 
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
@@ -1781,7 +2527,66 @@ def main() -> None:
     p_profiles_show = profiles_sub.add_parser("show", help="Show details for a profile")
     p_profiles_show.add_argument("profile_name", help="Profile name")
     p_profiles_show.add_argument("--json", action="store_true")
+    p_profiles_detect = profiles_sub.add_parser("detect",
+                                                 help="Auto-detect the best profile for this machine")
+    p_profiles_detect.add_argument("--json", action="store_true", help="Output as JSON")
     p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # policy — natural language safety policies
+    _db_help = f"Path to policy database (default: {_DEFAULT_POLICY_DB})"
+    p_policy = sub.add_parser("policy", help="Manage natural language safety policies")
+    policy_sub = p_policy.add_subparsers(dest="policy_command")
+
+    p_pol_add = policy_sub.add_parser("add", help="Add a natural language safety policy")
+    p_pol_add.add_argument("description", help="Natural language safety rule")
+    p_pol_add.add_argument("--severity", choices=["hard", "soft"], default="hard",
+                           help="Policy severity: 'hard' blocks, 'soft' warns (default: hard)")
+    p_pol_add.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+    p_pol_add.add_argument("--json", action="store_true", help="Output policy JSON")
+
+    p_pol_list = policy_sub.add_parser("list", help="List safety policies")
+    p_pol_list.add_argument("--all", action="store_true", help="Include inactive policies")
+    p_pol_list.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+    p_pol_list.add_argument("--json", action="store_true", help="Output JSON")
+
+    p_pol_remove = policy_sub.add_parser("remove", help="Remove a safety policy by ID")
+    p_pol_remove.add_argument("policy_id", help="Policy ID to remove")
+    p_pol_remove.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+
+    p_pol_check = policy_sub.add_parser("check", help="Check an action against active policies")
+    p_pol_check.add_argument("action", help="Action description to check")
+    p_pol_check.add_argument("--db", default=_DEFAULT_POLICY_DB, help=_db_help)
+    p_pol_check.add_argument("--json", action="store_true", help="Output JSON")
+
+    # dashboard — live HTMX robot dashboard
+    p_dash = sub.add_parser("dashboard", help="Start the live HTMX robot dashboard")
+    p_dash.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
+                        help="Robot URI (default: mock://turtlebot4)")
+    p_dash.add_argument("--port", type=int, default=8000, metavar="PORT",
+                        help="Port to listen on (default: 8000)")
+    p_dash.add_argument("--host", default="0.0.0.0", metavar="HOST",
+                        help="Bind host (default: 0.0.0.0)")
+
+    # init — project scaffold
+    p_init = sub.add_parser("init", help="Scaffold a new pip-installable skill package")
+    p_init.add_argument("name", help="Robot/platform name (e.g. 'my-robot')")
+    p_init.add_argument("--description", default="", help="One-line package description")
+    p_init.add_argument("--author", default="", help="Author name")
+    p_init.add_argument("--directory", default=None,
+                        help="Output directory (default: ./<name>)")
+    p_init.add_argument("--force", action="store_true", help="Overwrite existing directory")
+
+    # shell — interactive REPL
+    p_shell = sub.add_parser("shell", help="Interactive Python REPL with robot and skills loaded")
+    p_shell.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
+                         help="Robot URI (default: mock://turtlebot4)")
+    p_shell.add_argument("--provider", default="rule",
+                         help="LLM provider (default: rule)")
+
+    # tutorial — guided walkthrough
+    p_tutorial = sub.add_parser("tutorial", help="Interactive guided tutorial (mock mode, no hardware needed)")
+    p_tutorial.add_argument("--non-interactive", action="store_true",
+                            help="Run all steps without pausing for input")
 
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
@@ -1827,6 +2632,11 @@ def main() -> None:
         "voice": cmd_voice,
         "profiles": cmd_profiles,
         "serve": cmd_serve,
+        "init": cmd_init,
+        "shell": cmd_shell,
+        "tutorial": cmd_tutorial,
+        "dashboard": cmd_dashboard,
+        "policy": cmd_policy,
     }
     commands[args.command](args)
 
@@ -1835,8 +2645,10 @@ def _cmd_registry_dispatch(args: argparse.Namespace) -> None:
     sub = getattr(args, "registry_command", None)
     if sub == "start":
         cmd_registry_start(args)
+    elif sub in ("search", "install", "publish"):
+        cmd_registry(args)
     else:
-        print("Usage: apyrobo registry <start>", file=sys.stderr)
+        print("Usage: apyrobo registry <start|search|install|publish>", file=sys.stderr)
         sys.exit(1)
 
 
