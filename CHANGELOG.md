@@ -41,6 +41,32 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Graceful ImportError with ROS 2 install instructions when rclpy is unavailable
 - All skills have 30s action timeout; return `False` when action server unavailable
 
+**`IsaacSimAdapter` — NVIDIA Isaac Sim integration**
+- `apyrobo/core/isaac_adapter.py` — `IsaacSimAdapter` supports both REST API path (no SDK) and omni SDK path
+- REST path: HTTP endpoints for `/start`, `/stop`, `/step`, `/scene/load`, `/robot/state` against Isaac Sim server
+- SDK path: `omni.isaac.core.World` lifecycle, `load_robot_prim()`, `step_simulation()` — all guarded by `_OMNI_AVAILABLE`
+- URI scheme: `isaac://my_scene` or `isaac://host:port/scene`
+- Graceful `ImportError` with pip install instructions when `omni` not available
+- Full capability advertisement: NAVIGATE, MANIPULATE, SCAN sensors
+
+**`UnitreeAdapter` — Unitree Go2 / H1 adapter**
+- `apyrobo/core/unitree_adapter.py` — `UnitreeAdapter` over UDP/DDS using `unitree_sdk2py` SportClient
+- URI parsing: `unitree://go2@192.168.1.100` → model=go2, host=192.168.1.100; `unitree://h1` → broadcast
+- Go2 capabilities: NAVIGATE, ROTATE, SCAN; H1 adds MANIPULATE, PICK, PLACE
+- Methods: `move(x, y)`, `stop()`, `rotate(angle_rad)`, `stand()`, `sit_down()`, `wave_hand()`, H1 `gripper_open()` / `gripper_close()`
+- `UnitreeState` dataclass tracks position, yaw, velocities
+- Graceful `ImportError` when `unitree_sdk2py` not installed
+
+**`VisionAdapter` — OpenCV vision pipeline**
+- `apyrobo/vision/pipeline.py` — background capture thread + on-demand detection
+- Three detection backends: YOLO (ultralytics), Haar cascades (cv2 built-in), no-GPU required
+- `detect(label=None, *, min_confidence=None)` → sorted `list[Detection]` by confidence descending
+- `Detection` dataclass: label, confidence, `BoundingBox`, optional `pose_3d` from depth frame
+- `estimate_pose(detection, depth_frame)` — reads depth at bounding box center for 3-D pose
+- Skill helpers: `is_present(label)`, `count(label)`, context manager support
+- `apyrobo/vision/__init__.py` exports `VisionAdapter`, `Detection`, `VisionFrame`
+- Works fully on CPU; GPU accelerates YOLO but is not required
+
 ---
 
 ## [Unreleased] — v5.0.0 Five-Minute Success
