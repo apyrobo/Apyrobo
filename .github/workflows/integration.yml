@@ -19,34 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Cache the built integration image between runs.
-      # Key includes Dockerfile.integration and pyproject.toml so any change
-      # to dependencies or the image definition busts the cache.
-      - name: Cache integration Docker image
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.docker-cache
-          key: docker-integration-${{ hashFiles('docker/Dockerfile.integration', 'pyproject.toml') }}
-          restore-keys: docker-integration-
-
-      - name: Load cached image (if available)
-        run: |
-          if [ -f /tmp/.docker-cache/apyrobo-integration.tar.gz ]; then
-            gunzip -c /tmp/.docker-cache/apyrobo-integration.tar.gz | docker load || true
-          fi
-
-      # Build (or reuse cached layers for) the integration image.
-      # Both fake-robot and integration-test share apyrobo-integration:latest.
+      # Build the integration image.
+      # We intentionally skip tar-based image caching: loading a stale image
+      # via docker load can cause Docker to reuse old layers and miss apt
+      # package changes (e.g. ros-humble-rclpy submodule updates).
+      # BuildKit layer caching via the Docker daemon still applies.
       - name: Build integration image
         run: docker compose -f docker/docker-compose.yml --profile integration build
         env:
           DOCKER_BUILDKIT: 1
-
-      - name: Save image to cache
-        run: |
-          mkdir -p /tmp/.docker-cache
-          docker save apyrobo-integration:latest \
-            | gzip > /tmp/.docker-cache/apyrobo-integration.tar.gz
 
       # --exit-code-from propagates pytest's exit code to this step.
       # It implies --abort-on-container-exit, so the fake-robot service is
