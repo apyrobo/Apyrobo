@@ -29,14 +29,16 @@ COPY apyrobo/ ./apyrobo/
 # Ensure the ROS 2 Python packages are on PYTHONPATH at build time AND at
 # runtime, regardless of whether the entrypoint has sourced setup.bash yet.
 # /opt/ros/humble/lib/python3.10/site-packages contains the real rclpy;
-# placing it first ensures it shadows any PyPI stub installed by pip.
+# placing it first ensures it takes precedence over any pip-installed packages.
 ENV PYTHONPATH=/opt/ros/humble/lib/python3.10/site-packages
 
 # Install apyrobo + test dependencies.
-# Do NOT upgrade pip — upgrading pip changes where packages land (/usr/local)
-# which can shift sys.path resolution order and let a PyPI rclpy stub shadow
-# the system rclpy installed by apt above.
-RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
+# pip upgrade is required: the system pip in ros:humble-ros-base (pip 22)
+# cannot install editable packages from pyproject.toml without setup.py
+# (PEP 660 / build_editable hook). ros-humble-rclpy is already apt-pinned
+# above so upgrading pip here cannot shadow it with a PyPI stub.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
     pip install --no-cache-dir -e . && \
     pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
 
