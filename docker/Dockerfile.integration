@@ -52,4 +52,10 @@ ENV PYTHONUNBUFFERED=1 \
     ROS_DOMAIN_ID=42
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
-CMD ["pytest", "-m", "integration", "tests/integration/", "-v", "--tb=short"]
+# Run only the integration-marked tests. Do NOT pass tests/integration/ as an
+# explicit path: pytest 9 with testpaths=["tests"] in pyproject.toml still scans
+# the full testpaths tree and triggers module-level pytest.skip() in the mocked
+# test files, which produces "0 items / 1 skipped" + "no collectors" when an
+# explicit subdirectory path is also given. Relying solely on -m integration
+# lets pytest collect from testpaths naturally and filter by marker.
+CMD ["pytest", "-m", "integration", "-v", "--tb=short"]

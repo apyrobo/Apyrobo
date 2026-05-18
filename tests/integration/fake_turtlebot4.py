@@ -27,7 +27,7 @@ import time
 
 import rclpy
 from rclpy.action import ActionServer
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
@@ -240,11 +240,18 @@ def main() -> None:
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # ExternalShutdownException is raised when rclpy's signal handler
+        # (triggered by SIGTERM/SIGINT from Docker) shuts down the context
+        # while the executor is spinning. Catching it here ensures the
+        # container exits with code 0 rather than 1 (unhandled exception).
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass  # context already shut down by signal handler
 
 
 if __name__ == "__main__":
