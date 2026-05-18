@@ -7,23 +7,11 @@ imported and exercised without a real ROS2 installation.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 import time
 from unittest.mock import MagicMock, call, patch
 import pytest
-
-# If real rclpy is importable (we're in the integration Docker image), bail out
-# at module-import time. The sys.modules.setdefault() block below would otherwise
-# poison std_msgs.msg for sibling integration tests run in the same pytest
-# session.
-if importlib.util.find_spec("rclpy") is not None:
-    pytest.skip(
-        "rclpy is available — mocked-only tests skipped in the integration image "
-        "to avoid sys.modules contamination",
-        allow_module_level=True,
-    )
 
 # ---------------------------------------------------------------------------
 # ROS2 sys.modules mocks — must happen before any ros2_bus import

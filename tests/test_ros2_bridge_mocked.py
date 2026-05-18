@@ -7,25 +7,10 @@ and exercised without a real ROS2 installation.
 
 from __future__ import annotations
 
-import importlib.util
 import math
 import sys
 from unittest.mock import MagicMock, patch, call
 import pytest
-
-# If real rclpy is importable (we're in the integration Docker image), bail out
-# at module-import time. The sys.modules.setdefault() block below would otherwise
-# race the real ROS 2 imports — pytest 9 imports sibling test files during
-# collection more eagerly than pytest 8, and a single MagicMock landing in
-# sys.modules["nav_msgs.msg"] before the real one is loaded breaks every
-# integration test (Odometry resolves to a MagicMock, then create_subscription
-# trips check_for_type_support).
-if importlib.util.find_spec("rclpy") is not None:
-    pytest.skip(
-        "rclpy is available — mocked-only tests skipped in the integration image "
-        "to avoid sys.modules contamination",
-        allow_module_level=True,
-    )
 
 # ---------------------------------------------------------------------------
 # ROS2 sys.modules mocks — must happen before any apyrobo.core.ros2_bridge import
