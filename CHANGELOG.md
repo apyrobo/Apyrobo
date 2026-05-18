@@ -11,6 +11,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+**Multi-agent coordination** (`apyrobo.coordination`)
+- `TaskBus` — shared coordination bus; thread-safe registry of `MultiAgentCoordinator` instances
+- `bus.dispatch(task, required_capability="PICK")` — routes to best available agent by capability, falls back to least-loaded
+- `bus.broadcast(task)` — fans out to ALL agents in parallel, collects results
+- `MultiAgentCoordinator(agent, robot, bus, agent_id, capabilities)` — background thread dequeues tasks, calls `agent.plan()`, delivers `TaskResult`
+- Capability auto-discovery from `robot.capabilities()` when not explicitly set
+- Configurable timeout; failure `TaskResult` on no-agent or planning error
+- `apyrobo/coordination/` package; 30 tests covering routing, lifecycle, broadcast, timeout
+
 **Skill registry CLI** (`apyrobo registry search/install/publish`)
 - `apyrobo registry search <query> [--json]` — search the hosted skill registry; table or JSON output
 - `apyrobo registry install <package> [--version VERSION] [--dry-run]` — resolve package on registry and call pip
