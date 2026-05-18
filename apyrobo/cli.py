@@ -1585,6 +1585,120 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Registry command
+# ---------------------------------------------------------------------------
+
+def cmd_registry(args: argparse.Namespace) -> None:
+    """apyrobo registry search/publish/install — skill package registry."""
+    from apyrobo.registry import SkillRegistryClient, SkillPackage, PublishRequest
+
+    registry_url: str = getattr(args, "registry_url", "https://registry.apyrobo.dev")
+    sub: str = getattr(args, "registry_command", "") or ""
+    as_json: bool = getattr(args, "json", False)
+
+    client = SkillRegistryClient(registry_url)
+
+    if sub == "search":
+        query: str = getattr(args, "query", "")
+        try:
+            results = client.search(query)
+        except Exception as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if as_json:
+            print(json.dumps([r.model_dump() for r in results], indent=2))
+        elif not results:
+            print(f"No packages found for {query!r}.")
+        else:
+            print(f"{'Package':<35} {'Version':<12} {'Description'}")
+            print("-" * 80)
+            for pkg in results:
+                desc = pkg.description[:40] + ("…" if len(pkg.description) > 40 else "")
+                print(f"{pkg.name:<35} {pkg.version:<12} {desc}")
+
+    elif sub == "install":
+        name: str = getattr(args, "package_name", "")
+        version: str = getattr(args, "package_version", "latest") or "latest"
+        dry_run: bool = getattr(args, "dry_run", False)
+        try:
+            if not dry_run:
+                print(f"Fetching {name!r} ({version}) from {registry_url} …")
+            ok = client.install(name, version, dry_run=dry_run)
+            if ok and not dry_run:
+                print(f"✓ Installed {name} ({version})")
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except RuntimeError as exc:
+            print(f"Install failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    elif sub == "publish":
+        import os
+        token: str = getattr(args, "token", "") or os.environ.get("APYROBO_REGISTRY_TOKEN", "")
+        if not token:
+            print(
+                "Error: --token is required (or set APYROBO_REGISTRY_TOKEN env var)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Read package metadata from a JSON file or build from args
+        pkg_json: str | None = getattr(args, "pkg_json", None)
+        if pkg_json:
+            try:
+                with open(pkg_json) as f:
+                    pkg_data = json.load(f)
+                pkg = SkillPackage(**pkg_data)
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"Error reading package metadata: {exc}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            # Build from individual flags
+            required = {"name", "version", "description", "author", "license",
+                        "download_url", "checksum", "apyrobo_version_min"}
+            missing = [f for f in required if not getattr(args, f, None)]
+            if missing:
+                flag_names = ", ".join("--" + f.replace("_", "-") for f in missing)
+                print(f"Error: missing required fields: {flag_names}", file=sys.stderr)
+                sys.exit(1)
+            try:
+                pkg = SkillPackage(
+                    name=args.name,
+                    version=args.version,
+                    description=args.description,
+                    author=args.author,
+                    license=args.license,
+                    download_url=args.download_url,
+                    checksum=args.checksum,
+                    apyrobo_version_min=args.apyrobo_version_min,
+                    tags=(getattr(args, "tags", None) or []),
+                )
+            except ValueError as exc:
+                print(f"Error: invalid package metadata: {exc}", file=sys.stderr)
+                sys.exit(1)
+
+        try:
+            ok = client.publish(pkg, token)
+            if ok:
+                print(f"✓ Published {pkg.name} ({pkg.version}) to {registry_url}")
+            else:
+                print("Publish failed (registry returned non-ok status)", file=sys.stderr)
+                sys.exit(1)
+        except Exception as exc:
+            print(f"Publish error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    else:
+        print("Usage: apyrobo registry <search|install|publish> [options]")
+        print("  search <query>         Search the skill registry")
+        print("  install <package>      Install a skill package")
+        print("  publish                Publish a skill package")
+        print(f"\nRegistry URL: {registry_url}")
+
+
+# ---------------------------------------------------------------------------
 # Profiles command
 # ---------------------------------------------------------------------------
 
@@ -2213,6 +2327,45 @@ def main() -> None:
         help="Path to SQLite database (default: ./registry.db)",
     )
 
+    _reg_url_kwargs = dict(
+        metavar="URL", default="https://registry.apyrobo.dev",
+        help="Registry base URL (default: https://registry.apyrobo.dev)",
+    )
+
+    # registry search <query>
+    p_reg_search = registry_sub.add_parser("search", help="Search the skill registry")
+    p_reg_search.add_argument("query", nargs="?", default="", help="Search query")
+    p_reg_search.add_argument("--registry-url", dest="registry_url", **_reg_url_kwargs)
+    p_reg_search.add_argument("--json", action="store_true", help="Output JSON")
+
+    # registry install <package> [--version VERSION]
+    p_reg_install = registry_sub.add_parser("install", help="Install a skill package from the registry")
+    p_reg_install.add_argument("package_name", help="Registry package name")
+    p_reg_install.add_argument("--version", dest="package_version", default="latest",
+                               help="Version to install (default: latest)")
+    p_reg_install.add_argument("--dry-run", dest="dry_run", action="store_true",
+                               help="Print install command without running it")
+    p_reg_install.add_argument("--registry-url", dest="registry_url", **_reg_url_kwargs)
+
+    # registry publish — with pkg.json or individual flags
+    p_reg_publish = registry_sub.add_parser("publish", help="Publish a skill package to the registry")
+    p_reg_publish.add_argument("--pkg-json", dest="pkg_json", metavar="FILE", default=None,
+                               help="Path to package JSON metadata file")
+    p_reg_publish.add_argument("--name", default=None, help="Package name")
+    p_reg_publish.add_argument("--version", default=None, help="SemVer version")
+    p_reg_publish.add_argument("--description", default=None, help="Package description")
+    p_reg_publish.add_argument("--author", default=None, help="Author name")
+    p_reg_publish.add_argument("--license", default=None, help="SPDX license identifier")
+    p_reg_publish.add_argument("--download-url", dest="download_url", default=None,
+                               help="URL to wheel/tarball")
+    p_reg_publish.add_argument("--checksum", default=None, help="SHA-256 checksum")
+    p_reg_publish.add_argument("--apyrobo-version-min", dest="apyrobo_version_min",
+                               default=None, help="Minimum apyrobo version required")
+    p_reg_publish.add_argument("--tags", nargs="*", default=[], help="Searchable tags")
+    p_reg_publish.add_argument("--token", default=None,
+                               help="Registry auth token (or APYROBO_REGISTRY_TOKEN env var)")
+    p_reg_publish.add_argument("--registry-url", dest="registry_url", **_reg_url_kwargs)
+
     # skill — remote registry client commands
     p_skill = sub.add_parser("skill", help="Search and publish skills in the registry")
     skill_sub = p_skill.add_subparsers(dest="skill_command")
@@ -2386,8 +2539,10 @@ def _cmd_registry_dispatch(args: argparse.Namespace) -> None:
     sub = getattr(args, "registry_command", None)
     if sub == "start":
         cmd_registry_start(args)
+    elif sub in ("search", "install", "publish"):
+        cmd_registry(args)
     else:
-        print("Usage: apyrobo registry <start>", file=sys.stderr)
+        print("Usage: apyrobo registry <start|search|install|publish>", file=sys.stderr)
         sys.exit(1)
 
 

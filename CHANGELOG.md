@@ -7,6 +7,21 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ---
 
+## [Unreleased] — v7.0.0 Category Ownership
+
+### Added
+
+**Skill registry CLI** (`apyrobo registry search/install/publish`)
+- `apyrobo registry search <query> [--json]` — search the hosted skill registry; table or JSON output
+- `apyrobo registry install <package> [--version VERSION] [--dry-run]` — resolve package on registry and call pip
+- `apyrobo registry publish [--pkg-json FILE | --name ... --version ... --token ...]` — publish metadata to registry
+- `SkillRegistryClient.install(name, version, *, dry_run=False)` — resolves via `get()`, runs `pip install <download_url>`
+- Token from `--token` flag or `APYROBO_REGISTRY_TOKEN` env var
+- All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
+- 27 tests covering search/install/publish, error paths, dry-run, token fallback
+
+---
+
 ## [Unreleased] — v6.0.0 Ecosystem Integrations
 
 ### Added

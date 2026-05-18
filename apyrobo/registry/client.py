@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
-import urllib.request
+import subprocess
+import sys
 import urllib.parse
+import urllib.request
 import json
+from typing import Optional
 
 from .models import SkillPackage
 
@@ -94,6 +96,59 @@ class SkillRegistryClient:
         payload = {"package": package.model_dump(), "token": token}
         response = self._post("/skills", payload)
         return response.get("status") == "ok"
+
+    def install(
+        self,
+        name: str,
+        version: str = "latest",
+        *,
+        dry_run: bool = False,
+    ) -> bool:
+        """Download and install a skill package via pip.
+
+        Resolves the package on the registry, then calls
+        ``pip install <download_url>`` using the same Python interpreter
+        that is currently running.
+
+        Parameters
+        ----------
+        name:
+            Registry package name (e.g. ``"apyrobo-skills-patrol"``).
+        version:
+            Exact version to install, or ``"latest"`` (default).
+        dry_run:
+            If True, resolve and print the install command but do not run it.
+
+        Returns
+        -------
+        bool
+            True if installation succeeded (or dry_run was requested).
+
+        Raises
+        ------
+        ValueError:
+            If the package / version is not found in the registry.
+        RuntimeError:
+            If pip exits with a non-zero return code.
+        """
+        pkg = self.get(name, version)
+        if pkg is None:
+            raise ValueError(
+                f"Package {name!r} (version={version!r}) not found in registry at {self.base_url}"
+            )
+
+        cmd = [sys.executable, "-m", "pip", "install", pkg.download_url]
+
+        if dry_run:
+            print("Would run:", " ".join(cmd))
+            return True
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"pip install failed for {name!r}:\n{result.stderr.strip()}"
+            )
+        return True
 
     # ------------------------------------------------------------------
     # HTTP helpers
