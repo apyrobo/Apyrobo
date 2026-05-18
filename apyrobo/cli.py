@@ -1527,6 +1527,8 @@ def cmd_serve(args: argparse.Namespace) -> None:
     provider_name: str = getattr(args, "provider", "rule")
     transport: str = getattr(args, "transport", "stdio")
     ws_port: int = getattr(args, "ws_port", 8765)
+    slack_port: int = getattr(args, "slack_port", 3000)
+    slack_command: str = getattr(args, "slack_command", "/apyrobo")
 
     if profile_name:
         from apyrobo.profiles import get_profile as _gp
@@ -1553,6 +1555,22 @@ def cmd_serve(args: argparse.Namespace) -> None:
         print(
             f"apyrobo serve — robot={robot_uri} provider={provider} "
             f"transport=websocket port={ws_port}",
+            file=sys.stderr, flush=True,
+        )
+    elif transport == "slack":
+        try:
+            from apyrobo.orchestration.slack_adapter import SlackOrchestrationAdapter
+            adapter = SlackOrchestrationAdapter(
+                port=slack_port,
+                command=slack_command,
+                default_robot=robot_uri,
+            )
+        except ImportError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"apyrobo serve — robot={robot_uri} provider={provider} "
+            f"transport=slack command={slack_command} port={slack_port}",
             file=sys.stderr, flush=True,
         )
     else:
@@ -2255,12 +2273,20 @@ def main() -> None:
     p_serve.add_argument("--profile", default=None, metavar="PROFILE",
                          help="Compute profile to apply")
     p_serve.add_argument(
-        "--transport", default="stdio", choices=["stdio", "websocket"],
-        help="Transport layer: 'stdio' (default) or 'websocket'",
+        "--transport", default="stdio", choices=["stdio", "websocket", "slack"],
+        help="Transport layer: 'stdio' (default), 'websocket', or 'slack'",
     )
     p_serve.add_argument(
         "--ws-port", dest="ws_port", type=int, default=8765, metavar="PORT",
         help="WebSocket port when --transport websocket is used (default: 8765)",
+    )
+    p_serve.add_argument(
+        "--slack-port", dest="slack_port", type=int, default=3000, metavar="PORT",
+        help="HTTP port for Slack adapter when not using Socket Mode (default: 3000)",
+    )
+    p_serve.add_argument(
+        "--slack-command", dest="slack_command", default="/apyrobo", metavar="CMD",
+        help="Slash command to register with the Slack adapter (default: /apyrobo)",
     )
 
     # profiles

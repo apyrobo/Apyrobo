@@ -34,6 +34,17 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Integrated into `Agent.plan()` via `telemetry_provider=` kwarg; injected into LLM prompts only (skipped for rule-based provider)
 - `TelemetrySnapshot` dataclass with per-field nullable fields
 
+**`SlackOrchestrationAdapter` — Slack Bolt orchestration**
+- `apyrobo/orchestration/slack_adapter.py` — Bolt-based adapter implementing `OrchestrationAdapter`
+- `apyrobo serve --transport slack --slack-port 3000 --slack-command /apyrobo`
+- `/apyrobo <task> [robot=<uri>]` slash command → `OrchestrationMessage` → planning loop
+- Immediate ACK + confirmation message to channel on command receipt
+- `send()` posts plan (skill list) or error as a Slack message to the originating channel
+- Socket Mode (via `SLACK_APP_TOKEN`) or HTTP mode; auto-detected from env vars
+- `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_APP_TOKEN`, `APYROBO_DEFAULT_ROBOT` env vars
+- Graceful `ImportError` with `pip install 'apyrobo[slack]'` hint
+- 29 tests covering command parsing, enqueue/dequeue, send routing, shutdown, CLI arg parsing
+
 **`apyrobo-skills-ros-nav` — Nav2 skill package**
 - `packages/apyrobo-skills-ros-nav/` — pip-installable, `apyrobo.skills` entry-point
 - Skills: `navigate_to_pose(x, y, yaw, frame_id)`, `follow_path(waypoints)`, `clear_costmaps()`, `nav2_recover()`

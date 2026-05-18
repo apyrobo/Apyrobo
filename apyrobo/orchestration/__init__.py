@@ -7,6 +7,7 @@ from apyrobo.orchestration.adapter import (
     OrchestrationMessage,
     WebSocketOrchestrationAdapter,
 )
+from apyrobo.orchestration.slack_adapter import SlackOrchestrationAdapter
 
 __all__ = [
     "OrchestrationAdapter",
@@ -15,4 +16,5 @@ __all__ = [
     "MockOrchestrationAdapter",
     "OrchestrationMessage",
     "WebSocketOrchestrationAdapter",
+    "SlackOrchestrationAdapter",
 ]
