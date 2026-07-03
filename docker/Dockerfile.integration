@@ -58,4 +58,11 @@ ENTRYPOINT ["/ros_entrypoint.sh"]
 # test files, which produces "0 items / 1 skipped" + "no collectors" when an
 # explicit subdirectory path is also given. Relying solely on -m integration
 # lets pytest collect from testpaths naturally and filter by marker.
-CMD ["pytest", "-m", "integration", "-v", "--tb=short"]
+#
+# -p no:launch_testing: ros-humble-* apt packages pull in the `launch_testing`
+# pytest11 plugin, which auto-registers globally and is unrelated to this
+# suite. Its pytest_pycollect_makemodule hookimpl targets an older pytest
+# hookspec, so newer pytest (installed unpinned above) fails plugin
+# validation at collection time before any test runs. We never use
+# launch_testing here, so disable it explicitly instead of pinning pytest.
+CMD ["pytest", "-p", "no:launch_testing", "-m", "integration", "-v", "--tb=short"]
