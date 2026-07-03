@@ -42,3 +42,7 @@ docker-compose.override.yml
 
 # Skill registry (user data)
 .apyrobo/
+
+# Claude Code / Claire local state
+.claude/
+.claire/
