@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.6
 # =============================================================================
 # APYROBO — Integration test image (ROS 2 Humble + apyrobo + test deps)
 #
@@ -51,28 +52,57 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # PluginValidationError while loading setuptools entry points or while
 # validating pending hooks at collection time, before any real test runs.
 # `-p no:launch_testing` does not prevent this in practice (the plugin still
-# gets loaded ahead of the exclusion pass), so instead strip every
-# entry_points.txt line that mentions launch_testing anywhere — as the entry
-# point NAME (left of `=`) or its module path (right of `=`, which is always
-# a real underscore-separated Python identifier regardless of how the name
-# happens to be spelled). Fails loudly if none are found or a removal
-# doesn't stick, so a wrong assumption surfaces as a clear build error
-# instead of the same mystery crash two steps later.
-RUN files="$(grep -rl 'launch_testing' --include='entry_points.txt' / 2>/dev/null || true)"; \
-    if [ -z "$files" ]; then \
-        echo "ERROR: no entry_points.txt mentioning launch_testing found" >&2; \
-        exit 1; \
-    fi; \
-    for f in $files; do \
-        echo "--- before, $f ---"; grep 'launch_testing' "$f" || true; \
-        sed -i '/launch_testing/d' "$f"; \
-        echo "removed launch_testing pytest11 entries from $f"; \
-    done; \
-    remaining="$(grep -rl 'launch_testing' --include='entry_points.txt' / 2>/dev/null || true)"; \
-    if [ -n "$remaining" ]; then \
-        echo "ERROR: launch_testing entry point still present in: $remaining" >&2; \
-        exit 1; \
-    fi
+# gets loaded ahead of the exclusion pass), so instead strip only the
+# pytest11-style entry_points.txt lines that reference launch_testing: a
+# bare `name = module.path` with no `:callable` suffix. This deliberately
+# excludes console_scripts-style entries like
+# `launch_test = launch_testing.launch_test:main` (has a colon), which are
+# unrelated CLI tools we must not touch. Fails loudly if nothing matches or
+# a removal doesn't stick, so a wrong assumption surfaces as a clear build
+# error instead of the same mystery crash two steps later.
+RUN python3 - <<'PYEOF'
+import glob, sys
+
+def is_target(line: str) -> bool:
+    return "launch_testing" in line and ":" not in line
+
+paths = [p for p in glob.glob("/**/entry_points.txt", recursive=True)
+         if not p.startswith(("/proc/", "/sys/"))]
+
+changed = []
+for path in paths:
+    try:
+        with open(path) as fh:
+            lines = fh.readlines()
+    except OSError:
+        continue
+    kept, removed = [], []
+    for line in lines:
+        (removed if is_target(line) else kept).append(line)
+    if removed:
+        with open(path, "w") as fh:
+            fh.writelines(kept)
+        changed.append(path)
+        for line in removed:
+            print(f"removed from {path}: {line.strip()}")
+
+if not changed:
+    print("ERROR: no entry_points.txt with a launch_testing pytest11 entry found", file=sys.stderr)
+    sys.exit(1)
+
+remaining = [p for p in paths if any(is_target(l) for l in open(p, errors="ignore"))]
+if remaining:
+    print(f"ERROR: launch_testing pytest11 entry still present in: {remaining}", file=sys.stderr)
+    sys.exit(1)
+
+print("OK — stripped launch_testing pytest11 entries from:", changed)
+PYEOF
+
+# TEMP DIAGNOSTIC — apyrobo/__init__.py swallows the real ros2_bridge import
+# error behind a bare `except Exception: pass` and reports a generic "rclpy
+# not available" RuntimeError at test time. Surface the real traceback at
+# build time so we can see what's actually failing.
+RUN python3 -c "from apyrobo.core import ros2_bridge" 2>&1 || true
 
 # Copy integration test files
 COPY tests/ ./tests/
