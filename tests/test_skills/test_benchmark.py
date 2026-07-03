@@ -246,6 +246,18 @@ class TestThroughputBenchmark:
 
         # Run a quick measurement
         agent = Agent(provider="rule")
+
+        # Warm up before timing. CPython's specializing adaptive interpreter
+        # (PEP 659, 3.11+) builds per-callsite bytecode caches for hot loops;
+        # the intervening test_parallel_swarm_throughput exercises the same
+        # shared executor/agent code through different call shapes, which
+        # de-optimizes those caches. Without a warm-up, this measurement pays
+        # re-specialization cost that the earlier test_throughput_100_tasks
+        # baseline didn't, producing a reproducible ~50% "regression" that
+        # has nothing to do with actual throughput.
+        for _ in range(20):
+            agent.execute("go to 1 1", mock_robot)
+
         start = time.time()
         completed = 0
         for _ in range(100):
