@@ -101,8 +101,17 @@ PYEOF
 # TEMP DIAGNOSTIC — apyrobo/__init__.py swallows the real ros2_bridge import
 # error behind a bare `except Exception: pass` and reports a generic "rclpy
 # not available" RuntimeError at test time. Surface the real traceback at
-# build time so we can see what's actually failing.
-RUN python3 -c "from apyrobo.core import ros2_bridge" 2>&1 || true
+# build time so we can see what's actually failing. A previous version of
+# this diagnostic (no timeout) hung the build indefinitely — importing
+# ros2_bridge apparently blocks rather than raising outright — so this is
+# wrapped in `timeout` to guarantee it can never do that again.
+RUN timeout 30 python3 -c "from apyrobo.core import ros2_bridge" 2>&1; \
+    status=$?; \
+    if [ "$status" -eq 124 ]; then \
+        echo "DIAGNOSTIC: import timed out after 30s (likely blocked on rclpy.init()/DDS discovery at import time)"; \
+    else \
+        echo "DIAGNOSTIC: import exited with status $status"; \
+    fi
 
 # Copy integration test files
 COPY tests/ ./tests/
