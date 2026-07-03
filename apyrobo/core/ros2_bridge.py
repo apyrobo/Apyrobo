@@ -109,7 +109,7 @@ try:
     import rclpy
     from rclpy.node import Node
     from rclpy.action import ActionClient
-    from rclpy.callback_group import ReentrantCallbackGroup
+    from rclpy.callback_groups import ReentrantCallbackGroup
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from geometry_msgs.msg import Twist, PoseStamped, Quaternion
     from nav_msgs.msg import Odometry
@@ -119,12 +119,14 @@ try:
     import tf_transformations  # euler/quaternion conversion
 
     _HAS_ROS2 = True
-except ImportError:
+    _ROS2_IMPORT_ERROR: str | None = None
+except ImportError as _exc:
     import warnings
     _HAS_ROS2 = False
+    _ROS2_IMPORT_ERROR = str(_exc)
     warnings.warn(
-        "rclpy not found — the ros2:// adapter will not be available. "
-        "Robot.discover('ros2://...') will raise RuntimeError. "
+        f"ROS 2 import failed ({_exc}) — the ros2:// adapter will not be "
+        "available. Robot.discover('ros2://...') will raise RuntimeError. "
         "To use ros2://, run APYROBO inside the Docker container: "
         "docker compose -f docker/docker-compose.yml exec apyrobo bash",
         stacklevel=1,

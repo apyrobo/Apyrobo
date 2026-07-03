@@ -89,13 +89,23 @@ if not _ros2_loaded:
 from apyrobo.core.adapters import _ADAPTER_REGISTRY as _REG, CapabilityAdapter as _CA
 
 if "ros2" not in _REG:
+    # Surface the real import failure (e.g. a missing message package), not
+    # a blanket "rclpy missing" guess — ros2_bridge can import fine yet still
+    # leave the adapter unregistered when any one of its ROS imports failed.
+    _ros2_cause = (
+        getattr(_ros2_bridge, "_ROS2_IMPORT_ERROR", None) if _ros2_loaded
+        else "the apyrobo.core.ros2_bridge module failed to import"
+    ) or "unknown import failure"
+
     class _ROS2Unavailable(_CA):
-        """Stub adapter that raises a helpful error when rclpy is not installed."""
+        """Stub adapter that raises a helpful error when ROS 2 imports failed."""
 
         def __init__(self, robot_name: str, **kwargs: object) -> None:
             raise RuntimeError(
-                "The ros2:// adapter requires rclpy, which is only available inside "
-                "the APYROBO Docker container.\n\n"
+                "The ros2:// adapter is unavailable because a ROS 2 import "
+                f"failed: {_ros2_cause}\n\n"
+                "ROS 2 (rclpy and friends) is only available inside the "
+                "APYROBO Docker container.\n\n"
                 "Quick fix:\n"
                 "  docker compose -f docker/docker-compose.yml exec apyrobo bash\n\n"
                 "Without Docker, use mock:// for testing or gazebo:// for sim.\n"

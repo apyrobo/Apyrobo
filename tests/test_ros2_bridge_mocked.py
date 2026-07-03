@@ -68,7 +68,7 @@ ros2_mocks = {
     "rclpy.node": _rclpy_node_mock,
     "rclpy.qos": _rclpy_qos_mock,
     "rclpy.action": _rclpy_action_mock,
-    "rclpy.callback_group": _rclpy_callback_group_mock,
+    "rclpy.callback_groups": _rclpy_callback_group_mock,
     "rclpy.executors": _rclpy_executors_mock,
     "geometry_msgs": _geometry_msgs_mock,
     "geometry_msgs.msg": _geometry_msgs_msg_mock,

@@ -7,67 +7,79 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ---
 
-## [Unreleased] — v7.0.0 Category Ownership
+## [4.0.0] - 2026-07-03
+
+Production Hardening through Category Ownership — the full v4–v7 roadmap in one release: deterministic failure handling, five-minute onboarding, ecosystem adapters, and category-defining docs/demos.
 
 ### Added
 
-**Multi-agent coordination** (`apyrobo.coordination`)
-- `TaskBus` — shared coordination bus; thread-safe registry of `MultiAgentCoordinator` instances
-- `bus.dispatch(task, required_capability="PICK")` — routes to best available agent by capability, falls back to least-loaded
-- `bus.broadcast(task)` — fans out to ALL agents in parallel, collects results
-- `MultiAgentCoordinator(agent, robot, bus, agent_id, capabilities)` — background thread dequeues tasks, calls `agent.plan()`, delivers `TaskResult`
-- Capability auto-discovery from `robot.capabilities()` when not explicitly set
-- Configurable timeout; failure `TaskResult` on no-agent or planning error
-- `apyrobo/coordination/` package; 30 tests covering routing, lifecycle, broadcast, timeout
+**Deterministic failover** (`apyrobo/skills/failover.py`)
+- `FailoverPolicy` maps skill types to `SafeStateAction` (STOP, OPEN_GRIPPER, HOME, DOCK, NONE)
+- `FailoverExecutor` wraps `SkillExecutor` — on any skill failure, runs the configured safe state before returning FAILED
+- Errors during safe-state execution are suppressed; emits `skill.failover` event
+- `FailoverPolicy.default()` ships sensible robotics defaults
 
-**Skill registry CLI** (`apyrobo registry search/install/publish`)
-- `apyrobo registry search <query> [--json]` — search the hosted skill registry; table or JSON output
-- `apyrobo registry install <package> [--version VERSION] [--dry-run]` — resolve package on registry and call pip
-- `apyrobo registry publish [--pkg-json FILE | --name ... --version ... --token ...]` — publish metadata to registry
-- `SkillRegistryClient.install(name, version, *, dry_run=False)` — resolves via `get()`, runs `pip install <download_url>`
-- Token from `--token` flag or `APYROBO_REGISTRY_TOKEN` env var
-- All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
-- 27 tests covering search/install/publish, error paths, dry-run, token fallback
+**Plan rollback** (`apyrobo/skills/rollback.py`)
+- `RollbackRegistry` captures pre-skill state (robot position, gripper state) before each skill runs
+- `RollbackExecutor` calls undo functions in LIFO order on failure, emits `plan.rolled_back` event
+- Undo errors are logged but never mask the original failure
 
-**LLM retrieval-optimized docs** (`docs/concepts/`, `llms.txt`)
-- `docs/concepts/nl_safety_policies.md` — what/when/example/comparison for NL safety policies
-- `docs/concepts/multi_agent_coordination.md` — what/when/example/comparison for TaskBus
-- `docs/concepts/adapter_pattern.md` — what/when/example/comparison for hardware adapters
-- `docs/concepts/index.md` — concept index linking all major APYROBO concepts
-- `llms.txt` at repo root — LLM-readable site map with runnable examples, concept descriptions, and all doc links; follows emerging `llms.txt` convention for LLM discoverability
-- Each concept page follows structured format: what it is → when to use → runnable example → comparison table → related concepts → keyword footer
+**Degraded operation mode** (`apyrobo/skills/agent.py`)
+- `Agent.plan()` catches runtime LLM failures (network errors, rate limits, timeouts) and falls back to `RuleBasedProvider` automatically
+- Emits `agent.degraded` event with reason and provider name; rule-based failures still propagate normally
 
-**Benchmark suite** (`benchmarks/`)
-- `benchmarks/benchmark_suite.py` — 5 canonical tasks: navigate, pick-and-place, patrol, fleet coordination, safety policy
-- Measures setup/plan/exec latency (ms), P95 execution latency, violation recovery time
-- LOC comparison: APYROBO 83 lines vs raw ROS 2 428 lines (5.2× reduction on average)
-- `--json` flag for machine-readable output suitable for regression tracking
-- `benchmarks/.github/workflows/benchmark.yml` — CI workflow; runs on push to main when `apyrobo/` or `benchmarks/` changes; posts table to job summary, uploads JSON artifacts (90-day retention); matrix across Python 3.9/3.11/3.12
+**Crash recovery** (`apyrobo/orchestration/adapter.py`)
+- `OrchestrationServer` accepts an optional `checkpoint_store` (`CheckpointStore`)
+- Each task is persisted before processing and removed on success
+- `resume_incomplete()` returns in-flight tasks lost to a crash on restart
 
-**Killer demo repos** (`demos/`)
-- `demos/drone_survey/demo.py` — 10 drones survey a 10 km² grid in parallel; uses `MockAdapter` + `ThreadPoolExecutor`; anomaly detection with streaming output; 131 lines
-- `demos/warehouse_robots/demo.py` — 3 specialized robots (picker/packer/hauler) fill 5 orders via `TaskBus` capability routing; 156 lines
-- `demos/humanoid_nlp/demo.py` — operator writes 5 NL safety rules; compliance checker blocks 3/6 tasks (speed, no-go zone, battery); runtime policy addition demonstrated; 159 lines
-- All demos: `pip install apyrobo && python demo.py` — no hardware, no API keys, under 30 seconds
+**Per-skill watchdog** (`apyrobo/safety/watchdog.py`)
+- `SkillWatchdog` with per-skill-type timeout and recovery action, fired asynchronously via background timer
+- Built-in rules: `navigate_to`→STOP(60s), `pick`/`place`/`grasp`→OPEN_GRIPPER(20–30s), `report_status`→LOG_ONLY
+- Configurable via `set_timeout()`; `arm()` context manager disarms cleanly on normal exit
 
-**Natural language safety policies** (`apyrobo.safety.nl_policy`)
-- `NLSafetyPolicy` — dataclass with auto UUID, severity (hard/soft), active flag, `to_dict()`/`from_dict()`, `summary()`
-- `NLPolicyParser.parse(description)` — regex-first extraction for speed limits, proximity limits, battery reserves, no-go zones; LLM fallback via `agent.complete()` for unknown patterns; custom fallback
-- `NLPolicyParser.check_compliance(action, policies)` — returns list of violation strings; skips inactive policies
-- `NLPolicyStore(db_path)` — SQLite-backed store; `add()`, `get()`, `remove()`, `deactivate()`, `get_active_policies()`, `get_all_policies()`, `count()`; in-memory mode with `":memory:"`
-- `apyrobo policy add "never exceed 0.5 m/s near humans"` — parse and persist to `~/.apyrobo/policies.db`
-- `apyrobo policy list [--json] [--all]` — tabular or JSON listing of active (or all) policies
-- `apyrobo policy remove <policy-id>` — delete policy from store; exits 1 if not found
-- `apyrobo policy check --action "navigate at 2 m/s"` — check action against all active policies; exits 1 on violations
-- `--db` flag on all subcommands for non-default database path
-- `NLSafetyPolicy`, `NLPolicyParser`, `NLPolicyStore` exported from `apyrobo.safety`
-- 46 tests covering regex patterns, LLM fallback, compliance checking, store operations, all CLI subcommands
+**Hardware-in-the-loop CI** (`.github/workflows/hil-ci.yml`)
+- Self-hosted runner workflow for HIL testing on push/PR to main when skill or adapter code changes
+- Runs against a real robot, uploads artifacts, guarantees safe shutdown in an `always()` step
 
----
+**`apyrobo init` — project scaffold**
+- New `apyrobo init <name>` command generates a complete pip-installable skill package
+- Output includes `pyproject.toml` with `apyrobo.skills` entry-point, `src/<module>/skills.py` with a stub `@skill`-decorated function, `tests/test_skills.py`, `.github/workflows/ci.yml`
+- Handles both kebab-case and snake_case names; normalises to kebab package name + snake module name
+- `--author`, `--description`, `--directory`, `--force` flags
 
-## [Unreleased] — v6.0.0 Ecosystem Integrations
+**`apyrobo shell` — interactive REPL**
+- New `apyrobo shell --robot <uri>` command drops into a Python REPL
+- Pre-imports: `robot`, `agent`, `Robot`, `Agent`, `SkillGraph`, `BUILTIN_SKILLS`
+- Startup banner shows connected robot name, provider, and skill count
+- Supports any robot URI; defaults to `mock://turtlebot4`
 
-### Added
+**`apyrobo tutorial` — guided walkthrough**
+- New `apyrobo tutorial` command: 6-step interactive tour covering discovery, capabilities, planning, execution, writing a skill, and testing
+- Runs entirely in mock mode — no hardware, no API key needed
+- `--non-interactive` flag runs all steps without pausing (CI-friendly)
+- Each step shows the code you'd type and the concept it teaches
+
+**`apyrobo-demo` docker compose environment**
+- `docker/docker-compose-demo.yml` — three services: `apyrobo-demo` (orchestration server), `dashboard` (web UI on port 8000), `mock-fleet` (3 simulated robots)
+- `docker/Dockerfile.demo` — standalone image for deployment
+- `apyrobo/demo/mock_fleet.py` — animated 3-robot status printer with deterministic position simulation
+- `apyrobo demo mock-fleet` entry-point via `__main__`
+
+**`apyrobo dashboard` — HTMX live view**
+- New `apyrobo dashboard --robot <uri> --port 8000` command
+- `RobotDashboard` class: wraps a `Robot`, buffers skill history (deque, last 50) and safety events (deque, last 100)
+- HTMX panels auto-refresh: status every 5s, skill history every 3s, safety every 5s
+- Partial endpoints: `GET /partials/status`, `/partials/history`, `/partials/safety`, `/partials/skills`
+- JSON API: `GET /api/status`, `/api/skills/history`, `/api/skills/available`, `/api/safety/events`
+- Dark terminal-themed UI (consistent with APYROBO's aesthetic)
+- `record_skill()` and `record_safety_event()` hooks for integration with skill executor
+
+**Enhanced `apyrobo test-skill`**
+- Capability mismatch detection: checks `skill_meta.required_capability` against the robot's `capabilities()` before running
+- Emits structured warning with the missing `CapabilityType`, what the robot provides, and a `pip install` fix hint
+- Failure summary section: groups distinct error messages and surfaces actionable hints for common patterns (gripper AttributeError, timeout, capability errors)
+- Separator width expanded from 38 to 50 characters for readability
 
 **`apyrobo profiles detect` — hardware auto-detection**
 - New `apyrobo profiles detect` command probes the local machine and recommends the best profile
@@ -136,50 +148,57 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `apyrobo/vision/__init__.py` exports `VisionAdapter`, `Detection`, `VisionFrame`
 - Works fully on CPU; GPU accelerates YOLO but is not required
 
----
+**Multi-agent coordination** (`apyrobo.coordination`)
+- `TaskBus` — shared coordination bus; thread-safe registry of `MultiAgentCoordinator` instances
+- `bus.dispatch(task, required_capability="PICK")` — routes to best available agent by capability, falls back to least-loaded
+- `bus.broadcast(task)` — fans out to ALL agents in parallel, collects results
+- `MultiAgentCoordinator(agent, robot, bus, agent_id, capabilities)` — background thread dequeues tasks, calls `agent.plan()`, delivers `TaskResult`
+- Capability auto-discovery from `robot.capabilities()` when not explicitly set
+- Configurable timeout; failure `TaskResult` on no-agent or planning error
+- `apyrobo/coordination/` package; 30 tests covering routing, lifecycle, broadcast, timeout
 
-## [Unreleased] — v5.0.0 Five-Minute Success
+**Skill registry CLI** (`apyrobo registry search/install/publish`)
+- `apyrobo registry search <query> [--json]` — search the hosted skill registry; table or JSON output
+- `apyrobo registry install <package> [--version VERSION] [--dry-run]` — resolve package on registry and call pip
+- `apyrobo registry publish [--pkg-json FILE | --name ... --version ... --token ...]` — publish metadata to registry
+- `SkillRegistryClient.install(name, version, *, dry_run=False)` — resolves via `get()`, runs `pip install <download_url>`
+- Token from `--token` flag or `APYROBO_REGISTRY_TOKEN` env var
+- All three subcommands dispatch through `apyrobo registry` top-level with `--registry-url` override
+- 27 tests covering search/install/publish, error paths, dry-run, token fallback
 
-### Added
+**LLM retrieval-optimized docs** (`docs/concepts/`, `llms.txt`)
+- `docs/concepts/nl_safety_policies.md` — what/when/example/comparison for NL safety policies
+- `docs/concepts/multi_agent_coordination.md` — what/when/example/comparison for TaskBus
+- `docs/concepts/adapter_pattern.md` — what/when/example/comparison for hardware adapters
+- `docs/concepts/index.md` — concept index linking all major APYROBO concepts
+- `llms.txt` at repo root — LLM-readable site map with runnable examples, concept descriptions, and all doc links; follows emerging `llms.txt` convention for LLM discoverability
+- Each concept page follows structured format: what it is → when to use → runnable example → comparison table → related concepts → keyword footer
 
-**`apyrobo init` — project scaffold**
-- New `apyrobo init <name>` command generates a complete pip-installable skill package
-- Output includes `pyproject.toml` with `apyrobo.skills` entry-point, `src/<module>/skills.py` with a stub `@skill`-decorated function, `tests/test_skills.py`, `.github/workflows/ci.yml`
-- Handles both kebab-case and snake_case names; normalises to kebab package name + snake module name
-- `--author`, `--description`, `--directory`, `--force` flags
+**Benchmark suite** (`benchmarks/`)
+- `benchmarks/benchmark_suite.py` — 5 canonical tasks: navigate, pick-and-place, patrol, fleet coordination, safety policy
+- Measures setup/plan/exec latency (ms), P95 execution latency, violation recovery time
+- LOC comparison: APYROBO 83 lines vs raw ROS 2 428 lines (5.2× reduction on average)
+- `--json` flag for machine-readable output suitable for regression tracking
+- `benchmarks/.github/workflows/benchmark.yml` — CI workflow; runs on push to main when `apyrobo/` or `benchmarks/` changes; posts table to job summary, uploads JSON artifacts (90-day retention); matrix across Python 3.9/3.11/3.12
 
-**`apyrobo shell` — interactive REPL**
-- New `apyrobo shell --robot <uri>` command drops into a Python REPL
-- Pre-imports: `robot`, `agent`, `Robot`, `Agent`, `SkillGraph`, `BUILTIN_SKILLS`
-- Startup banner shows connected robot name, provider, and skill count
-- Supports any robot URI; defaults to `mock://turtlebot4`
+**Killer demo repos** (`demos/`)
+- `demos/drone_survey/demo.py` — 10 drones survey a 10 km² grid in parallel; uses `MockAdapter` + `ThreadPoolExecutor`; anomaly detection with streaming output; 131 lines
+- `demos/warehouse_robots/demo.py` — 3 specialized robots (picker/packer/hauler) fill 5 orders via `TaskBus` capability routing; 156 lines
+- `demos/humanoid_nlp/demo.py` — operator writes 5 NL safety rules; compliance checker blocks 3/6 tasks (speed, no-go zone, battery); runtime policy addition demonstrated; 159 lines
+- All demos: `pip install apyrobo && python demo.py` — no hardware, no API keys, under 30 seconds
 
-**`apyrobo tutorial` — guided walkthrough**
-- New `apyrobo tutorial` command: 6-step interactive tour covering discovery, capabilities, planning, execution, writing a skill, and testing
-- Runs entirely in mock mode — no hardware, no API key needed
-- `--non-interactive` flag runs all steps without pausing (CI-friendly)
-- Each step shows the code you'd type and the concept it teaches
-
-**`apyrobo-demo` docker compose environment**
-- `docker/docker-compose-demo.yml` — three services: `apyrobo-demo` (orchestration server), `dashboard` (web UI on port 8000), `mock-fleet` (3 simulated robots)
-- `docker/Dockerfile.demo` — standalone image for deployment
-- `apyrobo/demo/mock_fleet.py` — animated 3-robot status printer with deterministic position simulation
-- `apyrobo demo mock-fleet` entry-point via `__main__`
-
-**`apyrobo dashboard` — HTMX live view**
-- New `apyrobo dashboard --robot <uri> --port 8000` command
-- `RobotDashboard` class: wraps a `Robot`, buffers skill history (deque, last 50) and safety events (deque, last 100)
-- HTMX panels auto-refresh: status every 5s, skill history every 3s, safety every 5s
-- Partial endpoints: `GET /partials/status`, `/partials/history`, `/partials/safety`, `/partials/skills`
-- JSON API: `GET /api/status`, `/api/skills/history`, `/api/skills/available`, `/api/safety/events`
-- Dark terminal-themed UI (consistent with APYROBO's aesthetic)
-- `record_skill()` and `record_safety_event()` hooks for integration with skill executor
-
-**Enhanced `apyrobo test-skill`**
-- Capability mismatch detection: checks `skill_meta.required_capability` against the robot's `capabilities()` before running
-- Emits structured warning with the missing `CapabilityType`, what the robot provides, and a `pip install` fix hint
-- Failure summary section: groups distinct error messages and surfaces actionable hints for common patterns (gripper AttributeError, timeout, capability errors)
-- Separator width expanded from 38 to 50 characters for readability
+**Natural language safety policies** (`apyrobo.safety.nl_policy`)
+- `NLSafetyPolicy` — dataclass with auto UUID, severity (hard/soft), active flag, `to_dict()`/`from_dict()`, `summary()`
+- `NLPolicyParser.parse(description)` — regex-first extraction for speed limits, proximity limits, battery reserves, no-go zones; LLM fallback via `agent.complete()` for unknown patterns; custom fallback
+- `NLPolicyParser.check_compliance(action, policies)` — returns list of violation strings; skips inactive policies
+- `NLPolicyStore(db_path)` — SQLite-backed store; `add()`, `get()`, `remove()`, `deactivate()`, `get_active_policies()`, `get_all_policies()`, `count()`; in-memory mode with `":memory:"`
+- `apyrobo policy add "never exceed 0.5 m/s near humans"` — parse and persist to `~/.apyrobo/policies.db`
+- `apyrobo policy list [--json] [--all]` — tabular or JSON listing of active (or all) policies
+- `apyrobo policy remove <policy-id>` — delete policy from store; exits 1 if not found
+- `apyrobo policy check --action "navigate at 2 m/s"` — check action against all active policies; exits 1 on violations
+- `--db` flag on all subcommands for non-default database path
+- `NLSafetyPolicy`, `NLPolicyParser`, `NLPolicyStore` exported from `apyrobo.safety`
+- 46 tests covering regex patterns, LLM fallback, compliance checking, store operations, all CLI subcommands
 
 ---
 
