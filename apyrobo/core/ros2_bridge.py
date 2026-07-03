@@ -109,7 +109,7 @@ try:
     import rclpy
     from rclpy.node import Node
     from rclpy.action import ActionClient
-    from rclpy.callback_group import ReentrantCallbackGroup
+    from rclpy.callback_groups import ReentrantCallbackGroup
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from geometry_msgs.msg import Twist, PoseStamped, Quaternion
     from nav_msgs.msg import Odometry

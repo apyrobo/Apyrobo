@@ -11,7 +11,7 @@
 FROM ros:humble-ros-base
 
 # Install ROS 2 message packages needed by the adapter and fake robot.
-# ros-humble-rclpy is installed explicitly so its submodules (callback_group,
+# ros-humble-rclpy is installed explicitly so its submodules (callback_groups,
 # executors, etc.) are guaranteed to be present via apt and not shadowed by
 # any PyPI stub that pip --upgrade might introduce.
 # ros-humble-tf-transformations provides the tf_transformations module
@@ -128,31 +128,20 @@ ENV PYTHONUNBUFFERED=1 \
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
 
-# TEMP DIAGNOSTIC — apyrobo/__init__.py swallows the real ros2_bridge import
-# error behind a bare `except Exception: pass` and reports a generic "rclpy
-# not available" RuntimeError at test time. A plain `RUN python3 -c
-# "from apyrobo.core import ros2_bridge"` earlier in this file (before ENV/
-# ENTRYPOINT were set) succeeded cleanly, yet the actual test run still hits
-# the stub adapter's RuntimeError. This runs the same check *through*
-# /ros_entrypoint.sh, after ENV PYTHONPATH/ROS_DOMAIN_ID are set, matching
-# actual container-start conditions (source setup.bash may reorder
-# PYTHONPATH) to see whether that's what's different.
-RUN timeout 30 /ros_entrypoint.sh python3 -c "\
-import sys; \
-print('PYTHONPATH=', sys.path); \
+# Build-time gate: the ros2 adapter must actually register, through the same
+# entrypoint the tests use. ros2_bridge sets _HAS_ROS2=False and skips
+# registration when ANY of its ROS imports fails (a wrong module name hid
+# behind this for days — rclpy.callback_group vs rclpy.callback_groups), so
+# checking the registry here fails the build with the real import error
+# (ros2_bridge._ROS2_IMPORT_ERROR) instead of failing every test later with
+# the stub adapter's RuntimeError.
+RUN timeout 60 /ros_entrypoint.sh python3 -c "\
 from apyrobo.core import ros2_bridge; \
-print('_HAS_ROS2=', ros2_bridge._HAS_ROS2); \
-import apyrobo; \
-from apyrobo.core.adapters import _ADAPTER_REGISTRY; \
-print('ros2 in registry:', 'ros2' in _ADAPTER_REGISTRY); \
-print('registered class:', _ADAPTER_REGISTRY.get('ros2')); \
-" 2>&1; \
-    status=$?; \
-    if [ "$status" -eq 124 ]; then \
-        echo "DIAGNOSTIC: entrypoint-wrapped import timed out after 30s"; \
-    else \
-        echo "DIAGNOSTIC: entrypoint-wrapped import exited with status $status"; \
-    fi
+import sys; \
+err = getattr(ros2_bridge, '_ROS2_IMPORT_ERROR', None); \
+ok = ros2_bridge._HAS_ROS2; \
+print('_HAS_ROS2 =', ok, '| import error:', err); \
+sys.exit(0 if ok else 1)"
 
 # Run only the integration-marked tests. Do NOT pass tests/integration/ as an
 # explicit path: pytest 9 with testpaths=["tests"] in pyproject.toml still scans

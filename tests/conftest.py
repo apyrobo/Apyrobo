@@ -14,6 +14,7 @@ try:
     import rclpy.node  # noqa: F401
     import rclpy.action  # noqa: F401
     import rclpy.qos  # noqa: F401
+    import rclpy.callback_groups  # noqa: F401
     import rclpy.executors  # noqa: F401
     import geometry_msgs  # noqa: F401
     import geometry_msgs.msg  # noqa: F401
