@@ -14,10 +14,15 @@ FROM ros:humble-ros-base
 # ros-humble-rclpy is installed explicitly so its submodules (callback_group,
 # executors, etc.) are guaranteed to be present via apt and not shadowed by
 # any PyPI stub that pip --upgrade might introduce.
+# ros-humble-tf-transformations provides the tf_transformations module
+# imported by apyrobo.core.ros2_bridge (ros-humble-tf2 does NOT include it);
+# without it the bridge's import guard silently sets _HAS_ROS2=False and the
+# ros2:// adapter never registers.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rclpy \
     ros-humble-nav2-msgs \
     ros-humble-tf2 \
+    ros-humble-tf-transformations \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -112,21 +117,6 @@ if remaining:
 print("OK — stripped launch_testing pytest11 entries from:", changed)
 PYEOF
 
-# TEMP DIAGNOSTIC — apyrobo/__init__.py swallows the real ros2_bridge import
-# error behind a bare `except Exception: pass` and reports a generic "rclpy
-# not available" RuntimeError at test time. Surface the real traceback at
-# build time so we can see what's actually failing. A previous version of
-# this diagnostic (no timeout) hung the build indefinitely — importing
-# ros2_bridge apparently blocks rather than raising outright — so this is
-# wrapped in `timeout` to guarantee it can never do that again.
-RUN timeout 30 python3 -c "from apyrobo.core import ros2_bridge" 2>&1; \
-    status=$?; \
-    if [ "$status" -eq 124 ]; then \
-        echo "DIAGNOSTIC: import timed out after 30s (likely blocked on rclpy.init()/DDS discovery at import time)"; \
-    else \
-        echo "DIAGNOSTIC: import exited with status $status"; \
-    fi
-
 # Copy integration test files
 COPY tests/ ./tests/
 
@@ -137,6 +127,33 @@ ENV PYTHONUNBUFFERED=1 \
     ROS_DOMAIN_ID=42
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
+
+# TEMP DIAGNOSTIC — apyrobo/__init__.py swallows the real ros2_bridge import
+# error behind a bare `except Exception: pass` and reports a generic "rclpy
+# not available" RuntimeError at test time. A plain `RUN python3 -c
+# "from apyrobo.core import ros2_bridge"` earlier in this file (before ENV/
+# ENTRYPOINT were set) succeeded cleanly, yet the actual test run still hits
+# the stub adapter's RuntimeError. This runs the same check *through*
+# /ros_entrypoint.sh, after ENV PYTHONPATH/ROS_DOMAIN_ID are set, matching
+# actual container-start conditions (source setup.bash may reorder
+# PYTHONPATH) to see whether that's what's different.
+RUN timeout 30 /ros_entrypoint.sh python3 -c "\
+import sys; \
+print('PYTHONPATH=', sys.path); \
+from apyrobo.core import ros2_bridge; \
+print('_HAS_ROS2=', ros2_bridge._HAS_ROS2); \
+import apyrobo; \
+from apyrobo.core.adapters import _ADAPTER_REGISTRY; \
+print('ros2 in registry:', 'ros2' in _ADAPTER_REGISTRY); \
+print('registered class:', _ADAPTER_REGISTRY.get('ros2')); \
+" 2>&1; \
+    status=$?; \
+    if [ "$status" -eq 124 ]; then \
+        echo "DIAGNOSTIC: entrypoint-wrapped import timed out after 30s"; \
+    else \
+        echo "DIAGNOSTIC: entrypoint-wrapped import exited with status $status"; \
+    fi
+
 # Run only the integration-marked tests. Do NOT pass tests/integration/ as an
 # explicit path: pytest 9 with testpaths=["tests"] in pyproject.toml still scans
 # the full testpaths tree and triggers module-level pytest.skip() in the mocked
