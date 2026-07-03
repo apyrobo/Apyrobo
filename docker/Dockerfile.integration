@@ -60,14 +60,28 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # unrelated CLI tools we must not touch. Fails loudly if nothing matches or
 # a removal doesn't stick, so a wrong assumption surfaces as a clear build
 # error instead of the same mystery crash two steps later.
+#
+# Scan only the Python package roots, with os.walk (never follows symlinks).
+# A previous version globbed /**/entry_points.txt from /: recursive glob
+# follows symlinks, so /proc/self/root -> / made it recurse forever and
+# hang the build.
 RUN python3 - <<'PYEOF'
-import glob, sys
+import os, sys
 
 def is_target(line: str) -> bool:
     return "launch_testing" in line and ":" not in line
 
-paths = [p for p in glob.glob("/**/entry_points.txt", recursive=True)
-         if not p.startswith(("/proc/", "/sys/"))]
+roots = [
+    "/opt/ros/humble/lib/python3.10/site-packages",
+    "/usr/lib/python3/dist-packages",
+    "/usr/local/lib/python3.10/dist-packages",
+]
+
+paths = []
+for root in roots:
+    for dirpath, _dirnames, filenames in os.walk(root):
+        if "entry_points.txt" in filenames:
+            paths.append(os.path.join(dirpath, "entry_points.txt"))
 
 changed = []
 for path in paths:
