@@ -42,32 +42,35 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e . && \
     pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
 
-# ros-humble-* apt packages (transitively) install multiple `launch_testing*`
-# pytest11 plugins (at least `launch_testing` and `launch_testing_ros`), which
+# ros-humble-* apt packages (transitively) install multiple pytest11 plugins
+# whose module paths reference `launch_testing` (observed so far: the
+# `launch_testing` and `launch_testing_ros` distributions), which
 # auto-register globally even though tests/integration/ never uses them.
-# Their hookimpls target an older/different pytest hookspec than what's
-# installed (unpinned) above, so pytest raises PluginValidationError while
-# loading setuptools entry points, before any test can even be collected.
-# `-p no:launch_testing` does not prevent this in practice (the plugin's
-# entry point still gets loaded ahead of the exclusion pass), so instead
-# strip every `<name>launch_testing<name> = ...` pytest11 registration from
-# whichever entry_points.txt files declare them. Fails loudly (rather than a
-# silent no-op) if none are found or a removal doesn't stick, so a wrong
-# assumption here surfaces as a clear build error instead of the same
-# mystery crash two steps later.
-RUN pattern='^[A-Za-z0-9_.-]*launch_testing[A-Za-z0-9_.-]*[[:space:]]*='; \
-    files="$(grep -rlE "$pattern" --include='entry_points.txt' / 2>/dev/null || true)"; \
+# Their hookimpls target hooks pytest doesn't know (either an outdated
+# hookspec or a custom hook pytest never had), so pytest raises
+# PluginValidationError while loading setuptools entry points or while
+# validating pending hooks at collection time, before any real test runs.
+# `-p no:launch_testing` does not prevent this in practice (the plugin still
+# gets loaded ahead of the exclusion pass), so instead strip every
+# entry_points.txt line that mentions launch_testing anywhere — as the entry
+# point NAME (left of `=`) or its module path (right of `=`, which is always
+# a real underscore-separated Python identifier regardless of how the name
+# happens to be spelled). Fails loudly if none are found or a removal
+# doesn't stick, so a wrong assumption surfaces as a clear build error
+# instead of the same mystery crash two steps later.
+RUN files="$(grep -rl 'launch_testing' --include='entry_points.txt' / 2>/dev/null || true)"; \
     if [ -z "$files" ]; then \
-        echo "ERROR: no entry_points.txt declaring a launch_testing* plugin found" >&2; \
+        echo "ERROR: no entry_points.txt mentioning launch_testing found" >&2; \
         exit 1; \
     fi; \
     for f in $files; do \
-        sed -i -E "/$pattern/d" "$f"; \
-        echo "removed launch_testing* pytest11 entries from $f"; \
+        echo "--- before, $f ---"; grep 'launch_testing' "$f" || true; \
+        sed -i '/launch_testing/d' "$f"; \
+        echo "removed launch_testing pytest11 entries from $f"; \
     done; \
-    remaining="$(grep -rlE "$pattern" --include='entry_points.txt' / 2>/dev/null || true)"; \
+    remaining="$(grep -rl 'launch_testing' --include='entry_points.txt' / 2>/dev/null || true)"; \
     if [ -n "$remaining" ]; then \
-        echo "ERROR: launch_testing* entry point still present in: $remaining" >&2; \
+        echo "ERROR: launch_testing entry point still present in: $remaining" >&2; \
         exit 1; \
     fi
 
