@@ -42,6 +42,32 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e . && \
     pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
 
+# ros-humble-* apt packages (transitively) install the `launch_testing`
+# pytest11 plugin, which auto-registers globally even though tests/integration/
+# never uses it. Its pytest_pycollect_makemodule hookimpl targets an older
+# pytest hookspec, so newer pytest (installed unpinned above) raises
+# PluginValidationError while loading setuptools entry points, before any
+# test can even be collected. `-p no:launch_testing` does not prevent this
+# in practice (the plugin's entry point still gets loaded ahead of the
+# exclusion pass), so instead strip its `pytest11` registration from
+# whichever entry_points.txt declares it. Fails loudly (rather than a
+# silent no-op) if the file can't be found or the removal doesn't stick,
+# so a wrong assumption here surfaces as a clear build error.
+RUN files="$(grep -rl '^launch_testing[[:space:]]*=' --include='entry_points.txt' / 2>/dev/null || true)"; \
+    if [ -z "$files" ]; then \
+        echo "ERROR: no entry_points.txt declaring launch_testing found" >&2; \
+        exit 1; \
+    fi; \
+    for f in $files; do \
+        sed -i '/^launch_testing[[:space:]]*=/d' "$f"; \
+        echo "removed launch_testing pytest11 entry point from $f"; \
+    done; \
+    remaining="$(grep -rl '^launch_testing[[:space:]]*=' --include='entry_points.txt' / 2>/dev/null || true)"; \
+    if [ -n "$remaining" ]; then \
+        echo "ERROR: launch_testing entry point still present in: $remaining" >&2; \
+        exit 1; \
+    fi
+
 # Copy integration test files
 COPY tests/ ./tests/
 
