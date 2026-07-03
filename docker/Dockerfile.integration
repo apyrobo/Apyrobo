@@ -42,29 +42,32 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e . && \
     pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
 
-# ros-humble-* apt packages (transitively) install the `launch_testing`
-# pytest11 plugin, which auto-registers globally even though tests/integration/
-# never uses it. Its pytest_pycollect_makemodule hookimpl targets an older
-# pytest hookspec, so newer pytest (installed unpinned above) raises
-# PluginValidationError while loading setuptools entry points, before any
-# test can even be collected. `-p no:launch_testing` does not prevent this
-# in practice (the plugin's entry point still gets loaded ahead of the
-# exclusion pass), so instead strip its `pytest11` registration from
-# whichever entry_points.txt declares it. Fails loudly (rather than a
-# silent no-op) if the file can't be found or the removal doesn't stick,
-# so a wrong assumption here surfaces as a clear build error.
-RUN files="$(grep -rl '^launch_testing[[:space:]]*=' --include='entry_points.txt' / 2>/dev/null || true)"; \
+# ros-humble-* apt packages (transitively) install multiple `launch_testing*`
+# pytest11 plugins (at least `launch_testing` and `launch_testing_ros`), which
+# auto-register globally even though tests/integration/ never uses them.
+# Their hookimpls target an older/different pytest hookspec than what's
+# installed (unpinned) above, so pytest raises PluginValidationError while
+# loading setuptools entry points, before any test can even be collected.
+# `-p no:launch_testing` does not prevent this in practice (the plugin's
+# entry point still gets loaded ahead of the exclusion pass), so instead
+# strip every `<name>launch_testing<name> = ...` pytest11 registration from
+# whichever entry_points.txt files declare them. Fails loudly (rather than a
+# silent no-op) if none are found or a removal doesn't stick, so a wrong
+# assumption here surfaces as a clear build error instead of the same
+# mystery crash two steps later.
+RUN pattern='^[A-Za-z0-9_.-]*launch_testing[A-Za-z0-9_.-]*[[:space:]]*='; \
+    files="$(grep -rlE "$pattern" --include='entry_points.txt' / 2>/dev/null || true)"; \
     if [ -z "$files" ]; then \
-        echo "ERROR: no entry_points.txt declaring launch_testing found" >&2; \
+        echo "ERROR: no entry_points.txt declaring a launch_testing* plugin found" >&2; \
         exit 1; \
     fi; \
     for f in $files; do \
-        sed -i '/^launch_testing[[:space:]]*=/d' "$f"; \
-        echo "removed launch_testing pytest11 entry point from $f"; \
+        sed -i -E "/$pattern/d" "$f"; \
+        echo "removed launch_testing* pytest11 entries from $f"; \
     done; \
-    remaining="$(grep -rl '^launch_testing[[:space:]]*=' --include='entry_points.txt' / 2>/dev/null || true)"; \
+    remaining="$(grep -rlE "$pattern" --include='entry_points.txt' / 2>/dev/null || true)"; \
     if [ -n "$remaining" ]; then \
-        echo "ERROR: launch_testing entry point still present in: $remaining" >&2; \
+        echo "ERROR: launch_testing* entry point still present in: $remaining" >&2; \
         exit 1; \
     fi
 
