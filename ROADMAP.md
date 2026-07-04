@@ -309,6 +309,48 @@ Focus: make apyrobo the neutral AI orchestration standard. Robot-agnostic, AI-ag
 
 ---
 
+## v8.0.0 — The Standard Protocol (July – December 2026)
+
+**Unlock: Permanence.** v1–v7 built the features; v8 makes APYROBO the thing other people build *on*. The goal is that "AI-native robotics orchestration" has a spec, a conformance suite, and a governance story — so that adopting APYROBO (or even forking it) is cheaper than starting from scratch, and implementations in other languages strengthen the standard instead of fragmenting it. Kubernetes won because of the API contract, not the codebase. This milestone extracts APYROBO's contract.
+
+Six months, three phases. Each phase ends in a shippable release.
+
+### Phase 1 — Slim, Stable Core (July – August 2026)
+
+A standard needs a trustworthy reference implementation: small, fast to install, boring to depend on.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :construction: | **`apyrobo-core` split** | Extract the minimal kernel — adapter base, capability model, skill graph, executor, safety layer, config — into a package with near-zero hard dependencies. Everything else becomes an extra: `pip install apyrobo[fleet,voice,vision,registry]`. Targets: install < 15 s, `import apyrobo` < 500 ms, core deps ≤ 5. **Analysis done (`docs/core_split_plan.md`): slim the single package, litellm → `[llm]` extra; unused networkx already dropped.** | |
+| :construction: | **APYROBO Protocol spec v1** | New `spec/` directory: language-agnostic, versioned specification of (1) the capability model, (2) the skill manifest schema, (3) the orchestration wire protocol (the JSON messages already flowing over `apyrobo serve` stdio/WebSocket). JSON Schema files + prose. This is the fork-safe artifact — the thing that outlives any one codebase. **1.0-draft published in `spec/` with drift-guard tests; freezes to 1.0 via RFC in Phase 3.** | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :white_check_mark: | **Versioning reset** | Decouple package versions from roadmap milestone numbers. Re-baseline `API_STABILITY.md` against the v4.x surface (it still said "frozen for v1.x"), publish a deprecation policy with minimum notice windows, and designate the post-split release as the first LTS line with dated support windows. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :white_check_mark: | **Dependency & supply-chain audit** | Pin and minimize dependencies of core, generate an SBOM in release CI, and document the security posture (`SECURITY.md` with reporting process). Standards get audited; be ready before anyone asks. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+
+### Phase 2 — Conformance & Interop (September – October 2026)
+
+A spec nobody can test against is a blog post. Conformance is what turns implementations into an ecosystem.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **Conformance test suite** | `apyrobo conformance <adapter-or-server-uri>` — runs any adapter or protocol implementation (in any language) against the spec: capability declaration, skill dispatch, failure semantics, safety-stop behavior, event stream shape. Machine-readable report + a "APYROBO Conformant" badge program. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Reference non-Python client** | A minimal TypeScript client (`packages/apyrobo-client-ts`) speaking the wire protocol to `apyrobo serve` — submit task, stream events, cancel. Proves the protocol is real and language-agnostic; doubles as the SDK for web dashboards and bots. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Adapter authoring kit v2** | `apyrobo init --adapter` scaffold + rewritten `docs/adapter_authoring.md` walking from zero to a conformance-passing adapter in under an hour. The measure of "strong base" is how fast a stranger can extend it. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :clipboard: | **Protocol fuzzing** | Property-based and fuzz tests over the wire protocol and skill manifest parsers: malformed JSON, out-of-order messages, capability spoofing, oversized payloads. Pass = safe rejection, never undefined behavior. | |
+| :clipboard: | **Simulator demo videos** | Recorded, scripted demos with zero hardware: (1) the three `demos/` scenarios (mock fleet + dashboard, terminal-recorded), (2) TurtleBot4 navigation in Gazebo, (3) arm pick-and-place in MuJoCo. Each driven by a `demos/*/record.sh` so any contributor can re-render them after changes. Published in README, docs, and as short shareable clips. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+
+### Phase 3 — Governance & Gravity (November – December 2026)
+
+Neutral governance is what lets competitors adopt the same standard. Ecosystem gravity is what makes them want to.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :clipboard: | **RFC process** | Changes to `spec/` go through a public RFC template with a comment window; accepted designs recorded as ADRs. Signals that the protocol is a commons, not one maintainer's whim — the precondition for serious adopters. | |
+| :clipboard: | **Seed the registry for real** | Publish the existing skill packages (`ur`, `spot`, `franka`, `px4`, `agv`, `turtlebot4`, `ros-nav`) to PyPI and the hosted registry so `apyrobo registry search` returns real results; curate the first 10 community skills with mentored PRs. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :clipboard: | **Cross-language interop showcase** | One flagship demo: the TypeScript client orchestrates a Gazebo robot through `apyrobo serve`, end to end, recorded. The "it's a protocol, not a library" proof point. | |
+| :clipboard: | **Spec v1.0 announcement** | Freeze protocol spec v1.0, publish the conformance suite results for all first-party adapters, and take it to the community: ROS Discourse, awesome-robotics lists, a launch post walking through the spec. Ends the six months with the standard *public*. | |
+
+---
+
 ## Non-Goals
 
 Things APYROBO intentionally does **not** aim to do:
