@@ -1,5 +1,39 @@
 # Migration Guide
 
+## Migrating to v4.1.0 from v4.0.x
+
+### LLM support is now an extra: `apyrobo[llm]`
+
+`litellm` (and its large dependency tree) is no longer installed by default.
+The bare `pip install apyrobo` now contains only the kernel — adapters,
+capability model, skill graph, rule-based planning, safety.
+
+**If you use LLM or VLM planning** (`Agent(provider="llm")`,
+`provider="routed"`, `ToolCallingAgent`, `MultiTurnAgent`,
+`LiteLLMVLMAdapter`, long-horizon decomposition), install the extra:
+
+```bash
+pip install 'apyrobo[llm]'
+```
+
+**What happens if you don't:**
+
+- `Agent(provider="auto")` degrades to rule-based planning and emits an
+  `agent.degraded` observability event (`reason: litellm_not_installed`) —
+  no crash, same behavior as the existing runtime degraded mode.
+- `Agent(provider="llm")` raises `RuntimeError` with the install hint at
+  planning time.
+- `ToolCallingAgent` and `MultiTurnAgent` fall back to their mock providers,
+  as they already did.
+
+`pip install 'apyrobo[full]'` installs every optional feature (LLM, REST API,
+registry, dashboard, WebSocket, Slack).
+
+Also in this release: the unused `networkx` dependency was removed — it was
+never imported.
+
+---
+
 ## Migrating to v1.0.0 from v0.x
 
 This document covers breaking changes and migration steps when upgrading to

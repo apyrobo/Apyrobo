@@ -68,10 +68,13 @@ is invisible to users.
 
 ### Acceptance criteria for the refactor PR
 
-- [ ] `pip install apyrobo` in a clean venv pulls ≤ 5 packages beyond
+- [x] `pip install apyrobo` in a clean venv pulls ≤ 5 packages beyond
   pydantic's own tree and completes in < 15 s on CI
-- [ ] Bare install: `import apyrobo`, `Robot.discover("mock://x")`, and
+  *(measured: 2.5 s, 8 packages total, import 353 ms)*
+- [x] Bare install: `import apyrobo`, `Robot.discover("mock://x")`, and
   rule-based `Agent.plan()` all work; LLM planning raises with the
-  `apyrobo[llm]` hint
-- [ ] `apyrobo[llm]` behaves exactly as today
-- [ ] Full test suite green in both bare and `[llm]` environments
+  `apyrobo[llm]` hint *(scripts/bare_install_smoke.py, also a CI job)*
+- [x] `apyrobo[llm]` behaves exactly as today *(full suite: 3556 passed)*
+- [x] Full test suite green in both bare and `[llm]` environments
+  *(bare: 3550 passed + 6 litellm-patching tests correctly skipped via
+  importorskip; `[llm]`: 3556 passed)*

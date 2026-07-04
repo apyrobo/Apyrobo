@@ -51,7 +51,10 @@ class LiteLLMVLMAdapter(VLMAdapter):
         try:
             import litellm  # type: ignore[import]
         except ImportError as exc:
-            raise ImportError("litellm is required for LiteLLMVLMAdapter") from exc
+            raise ImportError(
+                "litellm is required for LiteLLMVLMAdapter — "
+                "install it with: pip install 'apyrobo[llm]'"
+            ) from exc
 
         b64 = self._encode_image(image_data)
         messages = [

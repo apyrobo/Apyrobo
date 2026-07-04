@@ -270,7 +270,7 @@ Respond ONLY with a JSON array. No explanation, no markdown."""
         except ImportError:
             raise RuntimeError(
                 "litellm is required for LLMProvider. "
-                "Install it with: pip install litellm"
+                "Install it with: pip install 'apyrobo[llm]'"
             )
 
         system = self.SYSTEM_PROMPT.format(
@@ -312,7 +312,10 @@ Respond ONLY with a JSON array. No explanation, no markdown."""
         try:
             import litellm
         except ImportError:
-            raise RuntimeError("litellm is required for streaming")
+            raise RuntimeError(
+                "litellm is required for streaming. "
+                "Install it with: pip install 'apyrobo[llm]'"
+            )
 
         system = self.SYSTEM_PROMPT.format(
             skills=json.dumps(available_skills, indent=2),
@@ -424,7 +427,10 @@ class ToolCallingProvider(AgentProvider):
         try:
             import litellm
         except ImportError:
-            raise RuntimeError("litellm is required for ToolCallingProvider")
+            raise RuntimeError(
+                "litellm is required for ToolCallingProvider. "
+                "Install it with: pip install 'apyrobo[llm]'"
+            )
 
         tools = self._build_tools(available_skills)
 
@@ -833,7 +839,15 @@ class Agent:
                 logger.info("Agent using LLM provider")
             except ImportError:
                 self._provider = RuleBasedProvider(patterns=self._rule_patterns)
-                logger.info("Agent using rule-based provider (litellm not installed)")
+                logger.info(
+                    "Agent using rule-based provider (litellm not installed — "
+                    "for LLM planning: pip install 'apyrobo[llm]')"
+                )
+                emit_event(
+                    "agent.degraded",
+                    reason="litellm_not_installed",
+                    provider="RuleBasedProvider",
+                )
         else:
             self._provider = get_provider(provider, **kwargs)
 
