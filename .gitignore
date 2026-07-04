@@ -46,3 +46,7 @@ docker-compose.override.yml
 # Claude Code / Claire local state
 .claude/
 .claire/
+
+# Local benchmark telemetry written by tests/test_skills/test_benchmark.py —
+# machine-specific timings, regenerated on every test run
+tests/test_skills/benchmark.json
