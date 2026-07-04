@@ -16,6 +16,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# These tests patch litellm internals (litellm.completion,
+# litellm.exceptions.BadRequestError), so they require the [llm] extra.
+pytest.importorskip("litellm")
+
 from apyrobo.skills.agent import ToolCallingProvider
 
 

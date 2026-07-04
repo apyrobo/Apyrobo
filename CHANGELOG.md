@@ -7,6 +7,25 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **`litellm` moved to the new `llm` extra** — bare `pip install apyrobo` now
+  installs only the kernel (pydantic + pyyaml, ~8 packages, seconds instead of
+  minutes). LLM/VLM planning requires `pip install 'apyrobo[llm]'`;
+  `Agent(provider="auto")` degrades to rule-based planning with an
+  `agent.degraded` event when litellm is absent. See MIGRATION.md.
+- New extras: `llm`, `full` (everything), plus previously documented but
+  missing `websocket`, `slack`, `dashboard`.
+- CI: new bare-install smoke job (`scripts/bare_install_smoke.py`) guards the
+  no-extras kernel contract.
+
+### Removed
+
+- Unused `networkx` dependency (declared as the skill graph engine, never
+  imported — the graph engine is hand-rolled).
+
 ## [4.0.0] - 2026-07-03
 
 Production Hardening through Category Ownership — the full v4–v7 roadmap in one release: deterministic failure handling, five-minute onboarding, ecosystem adapters, and category-defining docs/demos.

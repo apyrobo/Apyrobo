@@ -151,7 +151,10 @@ class LongHorizonPlanner:
         try:
             import litellm  # type: ignore[import]
         except ImportError:
-            logger.warning("litellm not installed; returning empty milestone list")
+            logger.warning(
+                "litellm not installed (pip install 'apyrobo[llm]'); "
+                "returning empty milestone list"
+            )
             return "[]"
 
         robot_desc = (

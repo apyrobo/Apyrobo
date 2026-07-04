@@ -79,15 +79,20 @@ print(result.status)  # → completed
 > **Requirements:** Python 3.10+, pip 21.3+ (run `pip install --upgrade pip` first if on macOS system Python)
 
 ```bash
-pip install apyrobo
+pip install apyrobo            # lean core: adapters, skill graph, rule-based planning, safety
+pip install 'apyrobo[llm]'     # + LLM/VLM planning via LiteLLM
+pip install 'apyrobo[full]'    # + REST API, registry, dashboard, WebSocket, Slack
 ```
+
+The bare install is intentionally small (pydantic + pyyaml) and everything in
+the Quick Start below works with it. LLM planning needs the `llm` extra.
 
 Or from source:
 
 ```bash
 git clone https://github.com/apyrobo/apyrobo.git
 cd apyrobo
-pip install -e ".[dev]"
+pip install -e ".[dev,llm]"
 ```
 
 ### Discover and Command
@@ -139,8 +144,8 @@ result = agent.execute("go to 5, 3 then pick up the object", robot)
 | Provider | Description | Requires |
 |----------|-------------|---------|
 | `rule` | Built-in rule-based planner | Nothing |
-| `llm` | LiteLLM-backed (any model) | `pip install litellm` + API key |
-| `routed` | Edge/cloud routing via InferenceRouter | `pip install litellm` |
+| `llm` | LiteLLM-backed (any model) | `pip install 'apyrobo[llm]'` + API key |
+| `routed` | Edge/cloud routing via InferenceRouter | `pip install 'apyrobo[llm]'` |
 | `auto` | Picks `llm` if litellm is available, else `rule` | — |
 
 ### Compute Profiles
