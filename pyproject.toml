@@ -26,7 +26,6 @@ classifiers = [
 dependencies = [
     "pydantic>=2.0",
     "litellm>=1.0",        # Model-agnostic LLM interface
-    "networkx>=3.0",        # Skill graph engine
     "pyyaml>=6.0",
 ]
 
