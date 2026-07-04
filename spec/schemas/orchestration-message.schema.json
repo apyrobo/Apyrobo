@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apyrobo.dev/spec/1.0/orchestration-message.schema.json",
+  "title": "OrchestrationMessage",
+  "description": "A single task sent to, or response sent from, an APYROBO orchestration server. See spec/wire-protocol.md.",
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "Natural-language task description. The only field a client is required to send."
+    },
+    "robot_uri": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9+.-]*://.+$",
+      "description": "Target robot URI, e.g. mock://turtlebot4. Defaulted by the server when absent."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form on requests. On responses, carries the result.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Response outcome. \"planned\" or \"error\" in spec 1.0; consumers must ignore unknown values."
+        },
+        "skills": {
+          "type": "array",
+          "description": "Present when status is \"planned\": the ordered skill plan.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "skill_id": {"type": "string"},
+              "name": {"type": "string"}
+            },
+            "required": ["skill_id", "name"]
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Present when status is \"planned\": number of skills in the plan."
+        },
+        "error": {
+          "type": "string",
+          "description": "Present when status is \"error\": human-readable failure reason."
+        },
+        "spec": {
+          "type": "string",
+          "description": "Optional: the spec version the sender implements, e.g. \"1.0\"."
+        }
+      }
+    },
+    "source": {
+      "type": "string",
+      "description": "Sender identifier. The reference server sets \"orchestration_server\" on responses."
+    }
+  },
+  "required": ["task"]
+}

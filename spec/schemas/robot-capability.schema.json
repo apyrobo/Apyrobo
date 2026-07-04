@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apyrobo.dev/spec/1.0/robot-capability.schema.json",
+  "title": "RobotCapability",
+  "description": "Complete capability profile for one robot, returned by an adapter's get_capabilities. See spec/capability-model.md.",
+  "type": "object",
+  "properties": {
+    "robot_id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "capabilities": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/capability"},
+      "default": []
+    },
+    "joints": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/jointInfo"},
+      "default": []
+    },
+    "sensors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/sensorInfo"},
+      "default": []
+    },
+    "max_speed": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Maximum speed in m/s. Planners must not exceed it."
+    },
+    "workspace": {
+      "type": "object",
+      "description": "Bounding box or polygon describing reachable workspace."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Vendor info, firmware version, etc. Ignored by planners."
+    }
+  },
+  "required": ["robot_id", "name"],
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "properties": {
+        "capability_type": {
+          "type": "string",
+          "enum": ["navigate", "rotate", "pick", "place", "scan", "speak", "manipulate", "dock", "custom"],
+          "description": "Consumers must treat values unknown to them as \"custom\"."
+        },
+        "name": {"type": "string", "minLength": 1},
+        "parameters": {
+          "type": "object",
+          "description": "JSON Schema fragment describing accepted arguments.",
+          "default": {}
+        },
+        "description": {"type": "string", "default": ""}
+      },
+      "required": ["capability_type", "name"]
+    },
+    "jointInfo": {
+      "type": "object",
+      "properties": {
+        "joint_id": {"type": "string"},
+        "name": {"type": "string"},
+        "min_position": {"type": ["number", "null"]},
+        "max_position": {"type": ["number", "null"]},
+        "max_velocity": {"type": ["number", "null"]}
+      },
+      "required": ["joint_id", "name"]
+    },
+    "sensorInfo": {
+      "type": "object",
+      "properties": {
+        "sensor_id": {"type": "string"},
+        "sensor_type": {
+          "type": "string",
+          "enum": ["camera", "lidar", "imu", "depth", "force_torque", "gps"]
+        },
+        "topic": {"type": ["string", "null"], "description": "ROS 2 topic this sensor publishes on."},
+        "frame_id": {"type": ["string", "null"], "description": "TF frame for this sensor."},
+        "hz": {"type": ["number", "null"], "minimum": 0, "description": "Publishing rate in Hz."}
+      },
+      "required": ["sensor_id", "sensor_type"]
+    }
+  }
+}

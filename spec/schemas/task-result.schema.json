@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apyrobo.dev/spec/1.0/task-result.schema.json",
+  "title": "TaskResult",
+  "description": "Outcome of a completed (or failed) task execution. See spec/capability-model.md.",
+  "type": "object",
+  "properties": {
+    "task_name": {"type": "string", "minLength": 1},
+    "status": {
+      "type": "string",
+      "enum": ["pending", "started", "in_progress", "completed", "failed", "aborted"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.0
+    },
+    "steps_completed": {"type": "integer", "minimum": 0, "default": 0},
+    "steps_total": {"type": "integer", "minimum": 0, "default": 0},
+    "error": {"type": ["string", "null"]},
+    "recovery_actions_taken": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["retry", "reroute", "escalate", "abort"]
+      },
+      "default": []
+    },
+    "metadata": {"type": "object", "default": {}}
+  },
+  "required": ["task_name", "status"]
+}
