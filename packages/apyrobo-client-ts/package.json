@@ -1,0 +1,42 @@
+{
+  "name": "apyrobo-client",
+  "version": "0.1.0",
+  "description": "TypeScript client for the APYROBO orchestration wire protocol (spec 1.0-draft)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "pretest": "tsc && tsc -p tsconfig.test.json",
+    "test": "node --test \"dist-test/test/*.test.js\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apyrobo/Apyrobo.git",
+    "directory": "packages/apyrobo-client-ts"
+  },
+  "keywords": [
+    "robotics",
+    "apyrobo",
+    "orchestration",
+    "websocket"
+  ],
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
+  }
+}
