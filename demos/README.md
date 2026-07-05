@@ -8,6 +8,12 @@ Three standalone `clone → run → wow` demos. Each runs on a laptop with no ha
 | [warehouse_robots/](warehouse_robots/) | 3 robots fill orders via `TaskBus` | `python warehouse_robots/demo.py` |
 | [humanoid_nlp/](humanoid_nlp/) | NL safety policies enforced at runtime | `python humanoid_nlp/demo.py` |
 
+Each directory ships a recorded run (`demo.gif` / `demo.mp4`) plus the
+[vhs](https://github.com/charmbracelet/vhs) tape and `record.sh` that made it —
+change a demo, run `./record.sh`, and the video regenerates. Recordings pace
+their output via `APYROBO_DEMO_PACE` (the artificial sleeps are subtracted
+from the printed timing stats).
+
 ## Quick start
 
 ```bash

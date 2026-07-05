@@ -1,5 +1,9 @@
 # Demo: Humanoid Task Delegation with Natural Language Safety
 
+<img src="demo.gif" alt="Demo: Humanoid Task Delegation with Natural Language Safety — terminal recording" width="720">
+
+_Re-render: `./record.sh` (requires [vhs](https://github.com/charmbracelet/vhs))_
+
 Operators write safety rules in plain English. APYROBO parses them, stores them
 in SQLite, and enforces them before any task executes on the robot.
 

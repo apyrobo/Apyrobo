@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import math
+import os
 import random
 import sys
 import time
@@ -20,6 +21,19 @@ from dataclasses import dataclass, field
 sys.path.insert(0, __file__.rsplit("/demos/", 1)[0])  # repo root when cloned
 
 from apyrobo import Agent, MockAdapter, Robot, SkillExecutor
+
+# Recording pace: seconds between visible steps so demo videos play at a
+# watchable speed (set by demos/*/record.sh; 0 = full speed). Paced time is
+# tracked so the printed timing stats reflect real work, not the sleeps.
+_PACE = float(os.environ.get("APYROBO_DEMO_PACE", "0") or 0)
+_PACED_S = 0.0
+
+
+def _pace() -> None:
+    global _PACED_S
+    if _PACE > 0:
+        time.sleep(_PACE)
+        _PACED_S += _PACE
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -102,15 +116,19 @@ def main() -> None:
             status = "⚠ anomaly" if r.anomalies else "✓ clear"
             print(f"  [{r.drone_id}] sector {r.sector} → {status}  ({r.duration_s*1000:.0f} ms)")
             results.append(r)
+            _pace()
 
-    fleet_duration = time.monotonic() - t_fleet_start
+    fleet_duration = time.monotonic() - t_fleet_start - _PACED_S
     single_drone_estimate = sum(r.duration_s for r in results)
 
     anomaly_count = sum(len(r.anomalies) for r in results)
     print("\n" + "=" * 60)
     print(f"  Survey complete in {fleet_duration*1000:.0f} ms wall-clock time")
-    print(f"  Sequential equivalent: {single_drone_estimate*1000:.0f} ms  "
-          f"(fleet is {single_drone_estimate/fleet_duration:.1f}× faster)")
+    if single_drone_estimate > fleet_duration:
+        # Only meaningful when per-sector work outweighs thread overhead
+        # (i.e. real flights, not instant mocks).
+        print(f"  Sequential equivalent: {single_drone_estimate*1000:.0f} ms  "
+              f"(fleet is {single_drone_estimate/fleet_duration:.1f}× faster)")
     print(f"  Sectors covered: {len(results)}/{NUM_DRONES}  "
           f"({sum(r.coverage_pct for r in results)/len(results):.0f}% avg coverage)")
     print(f"  Anomalies detected: {anomaly_count}")

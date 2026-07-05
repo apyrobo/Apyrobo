@@ -1,5 +1,9 @@
 # Demo: 10-Drone Coordinated Survey
 
+<img src="demo.gif" alt="Demo: 10-Drone Coordinated Survey — terminal recording" width="720">
+
+_Re-render: `./record.sh` (requires [vhs](https://github.com/charmbracelet/vhs))_
+
 10 drones survey a 10 km² grid in parallel — no hardware required.
 
 ```bash
