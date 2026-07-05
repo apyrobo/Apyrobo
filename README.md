@@ -290,7 +290,7 @@ apyrobo/
 │   ├── observability.py  # Structured logging, metrics, tracing, alerting
 │   ├── persistence.py    # State store (JSON, SQLite, Redis)
 │   └── dashboard.py      # FastAPI metrics/health dashboard
-├── packages/             # Pip-installable skill packages (UR, Spot, Franka, …)
+├── packages/             # Skill packages (UR, Spot, Franka, …) + TypeScript wire-protocol client
 ├── tests/                # 2000+ pytest tests (skills, safety, swarm, chaos)
 ├── examples/
 │   └── workflows/        # 10 ready-made multi-robot workflow scripts
@@ -366,6 +366,7 @@ docker-compose up apyrobo-api
 | [Adapter Authoring Guide](docs/adapter_authoring.md) | Add support for new hardware |
 | [Protocol Spec](spec/README.md) | The language-agnostic APYROBO protocol, 1.0-draft |
 | [Conformance Suite](docs/conformance.md) | Test any adapter or server against the spec |
+| [TypeScript Client](packages/apyrobo-client-ts/README.md) | Wire-protocol SDK for web dashboards and bots |
 | [API Reference](docs/api_reference.md) | Auto-generated from docstrings |
 | [APYROBO vs Alternatives](docs/comparison.md) | Comparison with RAI, ROS-LLM |
 | [Roadmap](ROADMAP.md) | Public milestones and contribution areas |

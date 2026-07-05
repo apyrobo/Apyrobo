@@ -83,6 +83,42 @@ jobs:
         run: python scripts/bare_install_smoke.py
 
   # ------------------------------------------------------------------
+  # Reference TypeScript client: build, unit tests, and cross-language
+  # integration against the real `apyrobo serve` over stdio
+  # ------------------------------------------------------------------
+  ts-client:
+    name: TypeScript client (build + cross-language tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/apyrobo-client-ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install apyrobo (reference server)
+        run: pip install "$GITHUB_WORKSPACE"
+
+      - name: Install and build
+        run: |
+          npm install
+          npm run build
+
+      - name: Run tests (unit + integration vs apyrobo serve)
+        run: npm test
+        env:
+          APYROBO_SERVE: apyrobo serve
+
+  # ------------------------------------------------------------------
   # CI-05: Docker container test job (exercises docker-compose.yml)
   # ------------------------------------------------------------------
   docker-test:

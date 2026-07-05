@@ -10,7 +10,9 @@ reference implementation.
 The specification is the durable artifact. The Python package in
 [`apyrobo/`](../apyrobo/) is the *reference implementation* of this spec, not
 its definition. Where the two disagree, that is a bug in one of them and should
-be reported.
+be reported. A reference *client* in TypeScript lives in
+[`packages/apyrobo-client-ts/`](../packages/apyrobo-client-ts/) — proof that
+the wire protocol needs nothing from Python.
 
 ## Documents
 
