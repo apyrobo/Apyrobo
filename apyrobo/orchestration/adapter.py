@@ -70,11 +70,28 @@ class OrchestrationMessage:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "OrchestrationMessage":
+        """Parse a wire dict, normalizing out-of-spec field types.
+
+        Hostile or buggy clients may send any JSON type in any field; the
+        parsed message always has spec-shaped fields so downstream code
+        (and the echoed response) stays schema-valid. A non-string ``task``
+        is kept as its JSON text — the same "treat raw input as the task"
+        rule the transports apply to malformed frames (wire-protocol §2.3).
+        """
+        task = data.get("task", "")
+        if not isinstance(task, str):
+            try:
+                task = json.dumps(task)
+            except (TypeError, ValueError):
+                task = str(task)
+        robot_uri = data.get("robot_uri", "")
+        metadata = data.get("metadata", {})
+        source = data.get("source", "")
         return cls(
-            task=data.get("task", ""),
-            robot_uri=data.get("robot_uri", ""),
-            metadata=data.get("metadata", {}),
-            source=data.get("source", ""),
+            task=task,
+            robot_uri=robot_uri if isinstance(robot_uri, str) else "",
+            metadata=metadata if isinstance(metadata, dict) else {},
+            source=source if isinstance(source, str) else "",
         )
 
 
@@ -313,10 +330,15 @@ class StdioOrchestrationAdapter(OrchestrationAdapter):
             return None
         try:
             data = json.loads(line)
-            return OrchestrationMessage.from_dict(data)
         except json.JSONDecodeError as exc:
             logger.warning("StdioOrchestrationAdapter: bad JSON (%s): %r", exc, line)
             return OrchestrationMessage(task=line)  # treat raw text as task
+        if not isinstance(data, dict):
+            # Valid JSON but not a message object ("[1, 2]", "42", …) —
+            # same malformed-input rule per wire-protocol §2.3.
+            logger.warning("StdioOrchestrationAdapter: non-object JSON: %r", line)
+            return OrchestrationMessage(task=line)
+        return OrchestrationMessage.from_dict(data)
 
     def send(self, msg: OrchestrationMessage) -> None:
         print(json.dumps(msg.to_dict()), file=self._out, flush=True)

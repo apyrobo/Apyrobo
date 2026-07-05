@@ -18,6 +18,19 @@ from apyrobo.core.schemas import BaseModel, Field, CapabilityType
 logger = logging.getLogger(__name__)
 
 
+def _capability_or_custom(value: Any) -> CapabilityType:
+    """Map unknown capability-type values to CUSTOM.
+
+    capability-model.md §1: new enum values are a minor spec revision;
+    consumers MUST treat unknown values as opaque rather than fail.
+    """
+    try:
+        return CapabilityType(value)
+    except ValueError:
+        logger.debug("Unknown capability type %r — treating as custom", value)
+        return CapabilityType.CUSTOM
+
+
 class SkillStatus(str, Enum):
     """Execution state of a skill."""
     PENDING = "pending"
@@ -85,7 +98,9 @@ class Skill(BaseModel):
             skill_id=data["skill_id"],
             name=data["name"],
             description=data.get("description", ""),
-            required_capability=CapabilityType(data.get("required_capability", "custom")),
+            required_capability=_capability_or_custom(
+                data.get("required_capability", "custom")
+            ),
             preconditions=[Condition(**c) for c in data.get("preconditions", [])],
             postconditions=[Condition(**c) for c in data.get("postconditions", [])],
             parameters=data.get("parameters", {}),
