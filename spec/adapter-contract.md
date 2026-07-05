@@ -6,7 +6,8 @@
 A *capability adapter* translates APYROBO's semantic commands into one
 platform's native interface — ROS 2, a vendor SDK, MQTT, HTTP, or a
 simulator. This document is the behavioral contract an adapter must satisfy
-to be conformant; it is what the future `apyrobo conformance` suite will test.
+to be conformant; `apyrobo conformance <scheme://name>` tests it
+([docs/conformance.md](../docs/conformance.md)).
 
 ## 1. Robot URIs
 

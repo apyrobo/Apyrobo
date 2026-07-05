@@ -20,36 +20,36 @@ from apyrobo.nav2 import (
 class TestMockNav2Adapter:
     def test_connect_sets_connected(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.run(adapter.connect())
         assert adapter._connected is True
 
     def test_disconnect_clears_connected(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        asyncio.get_event_loop().run_until_complete(adapter.disconnect())
+        asyncio.run(adapter.connect())
+        asyncio.run(adapter.disconnect())
         assert adapter._connected is False
 
     def test_navigate_to_returns_success(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.run(adapter.connect())
         goal = NavigationGoal(x=1.0, y=2.0)
-        result = asyncio.get_event_loop().run_until_complete(adapter.navigate_to(goal))
+        result = asyncio.run(adapter.navigate_to(goal))
         assert isinstance(result, NavigationResult)
         assert result.success is True
 
     def test_navigate_to_updates_pose(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.run(adapter.connect())
         goal = NavigationGoal(x=3.5, y=-1.0, yaw=1.57)
-        asyncio.get_event_loop().run_until_complete(adapter.navigate_to(goal))
+        asyncio.run(adapter.navigate_to(goal))
         pose = adapter.get_current_pose()
         assert pose["x"] == pytest.approx(3.5)
         assert pose["y"] == pytest.approx(-1.0)
 
     def test_cancel_navigation(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        asyncio.get_event_loop().run_until_complete(adapter.cancel_navigation())
+        asyncio.run(adapter.connect())
+        asyncio.run(adapter.cancel_navigation())
         assert adapter.is_navigating() is False
 
     def test_get_current_pose_returns_dict(self):
@@ -62,15 +62,15 @@ class TestMockNav2Adapter:
 
     def test_is_navigating_false_after_complete(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.run(adapter.connect())
         goal = NavigationGoal(x=0.0, y=0.0)
-        asyncio.get_event_loop().run_until_complete(adapter.navigate_to(goal))
+        asyncio.run(adapter.navigate_to(goal))
         assert adapter.is_navigating() is False
 
     def test_navigate_not_connected_fails(self):
         adapter = MockNav2Adapter()
         goal = NavigationGoal(x=1.0, y=1.0)
-        result = asyncio.get_event_loop().run_until_complete(adapter.navigate_to(goal))
+        result = asyncio.run(adapter.navigate_to(goal))
         assert result.success is False
 
     def test_set_initial_pose(self):
@@ -120,13 +120,13 @@ class TestNav2AdapterStubMode:
 
     def test_stub_connect_succeeds(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.run(adapter.connect())
         assert adapter._connected is True
 
     def test_stub_navigate_returns_success(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        result = asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        result = asyncio.run(
             adapter.navigate_to(NavigationGoal(x=0.5, y=0.5))
         )
         assert result.success is True
@@ -140,24 +140,24 @@ class TestNav2AdapterStubMode:
 class TestNavigateToXY:
     def test_navigate_to_xy_success(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        result = asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        result = asyncio.run(
             adapter.navigate_to_xy(1.0, 2.0)
         )
         assert result.success is True
 
     def test_navigate_to_xy_updates_pose(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        asyncio.get_event_loop().run_until_complete(adapter.navigate_to_xy(3.0, 4.0, theta=1.0))
+        asyncio.run(adapter.connect())
+        asyncio.run(adapter.navigate_to_xy(3.0, 4.0, theta=1.0))
         pose = adapter.get_current_pose()
         assert pose["x"] == pytest.approx(3.0)
         assert pose["y"] == pytest.approx(4.0)
 
     def test_navigate_to_xy_theta_stored(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        asyncio.get_event_loop().run_until_complete(adapter.navigate_to_xy(0.0, 0.0, theta=1.57))
+        asyncio.run(adapter.connect())
+        asyncio.run(adapter.navigate_to_xy(0.0, 0.0, theta=1.57))
         pose = adapter.get_current_pose()
         assert pose["yaw"] == pytest.approx(1.57)
 
@@ -165,16 +165,16 @@ class TestNavigateToXY:
 class TestFollowWaypoints:
     def test_follow_empty_waypoints(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        results = asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        results = asyncio.run(
             adapter.follow_waypoints([])
         )
         assert results == []
 
     def test_follow_single_waypoint_success(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        results = asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        results = asyncio.run(
             adapter.follow_waypoints([{"x": 1.0, "y": 2.0}])
         )
         assert len(results) == 1
@@ -182,9 +182,9 @@ class TestFollowWaypoints:
 
     def test_follow_multiple_waypoints(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
+        asyncio.run(adapter.connect())
         wps = [{"x": 1.0, "y": 0.0}, {"x": 2.0, "y": 0.0}, {"x": 3.0, "y": 0.0}]
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             adapter.follow_waypoints(wps)
         )
         assert len(results) == 3
@@ -192,16 +192,16 @@ class TestFollowWaypoints:
 
     def test_follow_waypoints_with_theta(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        results = asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        results = asyncio.run(
             adapter.follow_waypoints([{"x": 1.0, "y": 1.0, "theta": 0.5}])
         )
         assert results[0].success is True
 
     def test_follow_waypoints_pose_updates_to_last(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        asyncio.run(
             adapter.follow_waypoints([{"x": 1.0, "y": 0.0}, {"x": 5.0, "y": 0.0}])
         )
         pose = adapter.get_current_pose()
@@ -230,8 +230,8 @@ class TestGetNavigationStatus:
 
     def test_status_idle_after_navigation_complete(self):
         adapter = MockNav2Adapter()
-        asyncio.get_event_loop().run_until_complete(adapter.connect())
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(adapter.connect())
+        asyncio.run(
             adapter.navigate_to(NavigationGoal(x=1.0, y=0.0))
         )
         assert adapter.get_navigation_status() == "idle"

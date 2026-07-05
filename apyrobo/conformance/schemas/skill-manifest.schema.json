@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apyrobo.dev/spec/1.0/skill-manifest.schema.json",
+  "title": "SkillManifest",
+  "description": "Metadata descriptor for one discoverable skill. See spec/skill-manifest.md.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique within a registry; the verb agents plan with."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+",
+      "description": "Semantic version."
+    },
+    "description": {
+      "type": "string",
+      "description": "One clear sentence, written for an LLM planner."
+    },
+    "parameters": {
+      "type": "object",
+      "description": "JSON Schema for the skill's arguments; usable directly as an LLM tool definition."
+    },
+    "requirements": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Capability requirements that must ALL be satisfied. Empty means available on every robot."
+    },
+    "ros_topics": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Informational only; not used for matching."
+    }
+  },
+  "required": ["name", "version", "description", "parameters"]
+}

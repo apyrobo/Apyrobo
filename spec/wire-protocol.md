@@ -58,8 +58,8 @@ respond with a `status: "error"` message; they MUST do one or the other.
 
 ## 3. Responses
 
-The server echoes `task` and `robot_uri` and reports the outcome in
-`metadata.status`:
+The server echoes `task` and `robot_uri` (the resolved default-robot URI
+when the request omitted it) and reports the outcome in `metadata.status`:
 
 **Success** — the task was planned:
 

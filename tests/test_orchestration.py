@@ -25,7 +25,10 @@ class TestOrchestrationMessage:
     def test_defaults(self):
         msg = OrchestrationMessage(task="go to dock")
         assert msg.task == "go to dock"
-        assert msg.robot_uri == "mock://turtlebot4"
+        # Empty robot_uri means "server's default robot" and is omitted from
+        # the wire form so the message stays schema-valid.
+        assert msg.robot_uri == ""
+        assert "robot_uri" not in msg.to_dict()
         assert msg.metadata == {}
         assert msg.source == ""
 
@@ -45,7 +48,7 @@ class TestOrchestrationMessage:
 
     def test_from_dict_defaults(self):
         msg = OrchestrationMessage.from_dict({"task": "hello"})
-        assert msg.robot_uri == "mock://turtlebot4"
+        assert msg.robot_uri == ""
 
     def test_round_trip(self):
         original = OrchestrationMessage(

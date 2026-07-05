@@ -11,7 +11,7 @@ def mock_adapter():
 
 @pytest.fixture
 def connected_adapter(mock_adapter):
-    asyncio.get_event_loop().run_until_complete(mock_adapter.connect())
+    asyncio.run(mock_adapter.connect())
     return mock_adapter
 
 
@@ -23,7 +23,7 @@ def test_config_defaults():
 
 
 def test_mock_connect_sets_connected(mock_adapter):
-    asyncio.get_event_loop().run_until_complete(mock_adapter.connect())
+    asyncio.run(mock_adapter.connect())
     assert mock_adapter._connected is True
 
 
@@ -57,7 +57,7 @@ def test_mock_reset(connected_adapter):
 
 
 def test_mock_disconnect(connected_adapter):
-    asyncio.get_event_loop().run_until_complete(connected_adapter.disconnect())
+    asyncio.run(connected_adapter.disconnect())
     assert connected_adapter._connected is False
 
 
@@ -92,6 +92,6 @@ def test_render_returns_none_or_bytes(connected_adapter):
 
 def test_stub_mode_without_mujoco():
     adapter = MuJoCoAdapter(model_path="nonexistent.xml")
-    asyncio.get_event_loop().run_until_complete(adapter.connect())
+    asyncio.run(adapter.connect())
     assert adapter._connected is True
     assert "time" in adapter.get_state()

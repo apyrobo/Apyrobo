@@ -364,6 +364,8 @@ docker-compose up apyrobo-api
 | [Architecture](docs/architecture.md) | Design principles and data flow |
 | [Skill Authoring Guide](docs/skill_authoring.md) | Write, test, and publish custom skills |
 | [Adapter Authoring Guide](docs/adapter_authoring.md) | Add support for new hardware |
+| [Protocol Spec](spec/README.md) | The language-agnostic APYROBO protocol, 1.0-draft |
+| [Conformance Suite](docs/conformance.md) | Test any adapter or server against the spec |
 | [API Reference](docs/api_reference.md) | Auto-generated from docstrings |
 | [APYROBO vs Alternatives](docs/comparison.md) | Comparison with RAI, ROS-LLM |
 | [Roadmap](ROADMAP.md) | Public milestones and contribution areas |
