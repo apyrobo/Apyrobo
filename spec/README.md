@@ -39,6 +39,13 @@ The test suite validates the reference implementation's serialized output
 against these schemas (`tests/test_spec_schemas.py`), so the spec and the code
 cannot silently drift apart.
 
+## Testing an implementation
+
+`apyrobo conformance <target>` runs any adapter or wire-protocol server —
+in any language — against this spec and emits a machine-readable report.
+See [docs/conformance.md](../docs/conformance.md) for the check catalog and
+the "APYROBO Conformant" badge program.
+
 ## Conformance language
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be

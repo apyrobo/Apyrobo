@@ -172,3 +172,33 @@ class TestTaskSchemas:
                 {"task_name": "t", "priority": 11},
                 "task-request.schema.json",
             )
+
+
+# ---------------------------------------------------------------------------
+# Packaged schema copies — apyrobo/conformance/schemas/
+# ---------------------------------------------------------------------------
+
+class TestPackagedSchemaCopies:
+    """The conformance suite ships copies of spec/schemas/ inside the wheel.
+
+    They must stay byte-identical to the normative spec files — if this
+    fails, re-copy: cp spec/schemas/*.json apyrobo/conformance/schemas/
+    """
+
+    PKG_DIR = (
+        Path(__file__).resolve().parent.parent
+        / "apyrobo" / "conformance" / "schemas"
+    )
+
+    def test_same_file_set(self):
+        spec_names = {p.name for p in SCHEMA_DIR.glob("*.json")}
+        pkg_names = {p.name for p in self.PKG_DIR.glob("*.json")}
+        assert spec_names == pkg_names
+
+    def test_copies_are_byte_identical(self):
+        for spec_file in SCHEMA_DIR.glob("*.json"):
+            packaged = self.PKG_DIR / spec_file.name
+            assert packaged.read_bytes() == spec_file.read_bytes(), (
+                f"{packaged} has drifted from {spec_file} — "
+                "re-copy spec/schemas/ into apyrobo/conformance/schemas/"
+            )

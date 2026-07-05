@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apyrobo.dev/spec/1.0/task-request.schema.json",
+  "title": "TaskRequest",
+  "description": "A task submitted to APYROBO for execution. See spec/capability-model.md.",
+  "type": "object",
+  "properties": {
+    "task_name": {"type": "string", "minLength": 1},
+    "parameters": {"type": "object", "default": {}},
+    "priority": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 1,
+      "description": "Higher is more urgent."
+    },
+    "safety_policy": {"$ref": "#/$defs/safetyPolicyRef"},
+    "target_robot_id": {
+      "type": ["string", "null"],
+      "description": "Specific robot, or null for fleet auto-assignment."
+    }
+  },
+  "required": ["task_name"],
+  "$defs": {
+    "safetyPolicyRef": {
+      "type": "object",
+      "properties": {
+        "policy_name": {"type": "string", "default": "default"},
+        "max_speed": {
+          "type": ["number", "null"],
+          "description": "When both policy and robot declare max_speed, the lower value governs."
+        },
+        "collision_zones": {
+          "type": "array",
+          "items": {"type": "object"},
+          "default": []
+        },
+        "human_proximity_limit": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Minimum distance to humans in metres."
+        }
+      }
+    }
+  }
+}

@@ -1580,8 +1580,53 @@ def cmd_serve(args: argparse.Namespace) -> None:
             file=sys.stderr, flush=True,
         )
 
-    server = OrchestrationServer(adapter, agent, default_robot=robot)
+    server = OrchestrationServer(
+        adapter, agent, default_robot=robot, default_robot_uri=robot_uri
+    )
     server.run()
+
+
+# ---------------------------------------------------------------------------
+# Conformance command
+# ---------------------------------------------------------------------------
+
+def cmd_conformance(args: argparse.Namespace) -> None:
+    """Run the APYROBO Protocol conformance suite against a target."""
+    from apyrobo.conformance import run_conformance
+
+    target: str = args.target
+    robot_uri: str = getattr(args, "robot", "mock://conformance-probe")
+    timeout: float = getattr(args, "timeout", 15.0)
+    as_json: bool = getattr(args, "json", False)
+    output: str | None = getattr(args, "output", None)
+    strict: bool = getattr(args, "strict", False)
+
+    if "://" in target and not target.startswith(("ws://", "wss://")):
+        print(
+            "Note: adapter conformance issues real commands (move/stop/"
+            "disconnect). Run against a simulator or mock, never a robot "
+            "near people.",
+            file=sys.stderr,
+        )
+
+    try:
+        report = run_conformance(target, robot_uri=robot_uri, timeout=timeout)
+    except (ValueError, ImportError, ConnectionError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    if output:
+        with open(output, "w") as f:
+            f.write(report.to_json() + "\n")
+        print(f"Report written to {output}", file=sys.stderr)
+    if as_json:
+        print(report.to_json())
+    else:
+        print(report.render_text())
+
+    summary = report.summary
+    failed = not report.conformant or (strict and summary["warn"] > 0)
+    sys.exit(1 if failed else 0)
 
 
 # ---------------------------------------------------------------------------
@@ -2348,6 +2393,27 @@ def main() -> None:
     p_conn.add_argument("--json", action="store_true", dest="json",
                         help="Machine-readable JSON output")
 
+    p_conf = sub.add_parser(
+        "conformance",
+        help="Run the APYROBO Protocol conformance suite against an adapter or server",
+    )
+    p_conf.add_argument(
+        "target",
+        help="Adapter URI (mock://bot), WebSocket server (ws://host:8765), "
+             "or spawned stdio server (stdio:'apyrobo serve')",
+    )
+    p_conf.add_argument("--robot", default="mock://conformance-probe",
+                        help="robot_uri used in wire-protocol probes "
+                             "(default: mock://conformance-probe)")
+    p_conf.add_argument("--timeout", type=float, default=15.0, metavar="N",
+                        help="Seconds to wait for each server response (default 15)")
+    p_conf.add_argument("--json", action="store_true",
+                        help="Print the machine-readable JSON report to stdout")
+    p_conf.add_argument("--output", metavar="FILE",
+                        help="Also write the JSON report to FILE")
+    p_conf.add_argument("--strict", action="store_true",
+                        help="Treat SHOULD-level warnings as failures (exit 1)")
+
     # doctor / diagnose — environment diagnostics
     sub.add_parser("doctor", help="Diagnose the local environment and show fix hints")
     p_diag = sub.add_parser(
@@ -2623,6 +2689,7 @@ def main() -> None:
         "config": cmd_config,
         "pkg": cmd_pkg,
         "connect": cmd_connect,
+        "conformance": cmd_conformance,
         "doctor": cmd_doctor,
         "diagnose": cmd_diagnose,
         "test-skill": cmd_test_skill,

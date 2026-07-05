@@ -54,7 +54,7 @@ dashboard = [
     "uvicorn[standard]>=0.27",
 ]
 websocket = [
-    "websockets>=12.0",
+    "websockets>=13.0",   # modern asyncio API (websockets.asyncio.*)
 ]
 slack = [
     "slack-bolt>=1.18",
@@ -62,8 +62,11 @@ slack = [
 llm = [
     "litellm>=1.0",        # Model-agnostic LLM/VLM interface
 ]
+conformance = [
+    "jsonschema>=4.21",    # schema-validation checks in `apyrobo conformance`
+]
 full = [
-    "apyrobo[llm,api,registry,dashboard,websocket,slack]",
+    "apyrobo[llm,api,registry,dashboard,websocket,slack,conformance]",
 ]
 ros = [
     # ROS 2 deps are installed system-wide via apt in Docker
@@ -82,6 +85,11 @@ Issues = "https://github.com/apyrobo/Apyrobo/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["apyrobo*"]
+
+[tool.setuptools.package-data]
+# Copies of spec/schemas/ shipped for `apyrobo conformance`; the drift test
+# in tests/test_spec_schemas.py keeps them byte-identical to the spec.
+"apyrobo.conformance" = ["schemas/*.json"]
 
 [tool.ruff]
 target-version = "py310"
