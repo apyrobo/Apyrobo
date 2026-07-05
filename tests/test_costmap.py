@@ -202,7 +202,7 @@ class TestCostmapCheckerWithData:
 
 class TestNav2AdapterCostmapIntegration:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_navigate_succeeds_without_checker(self):
         adapter = MockNav2Adapter()

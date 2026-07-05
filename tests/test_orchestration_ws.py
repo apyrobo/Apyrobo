@@ -67,8 +67,8 @@ def _ws_send_and_collect(
 
     async def _run() -> None:
         uri = f"ws://127.0.0.1:{port}"
-        import websockets.client
-        async with websockets.client.connect(uri) as ws:
+        from websockets.asyncio.client import connect
+        async with connect(uri) as ws:
             await ws.send(payload)
             for _ in range(collect_responses):
                 try:

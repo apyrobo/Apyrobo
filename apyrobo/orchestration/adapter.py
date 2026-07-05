@@ -26,6 +26,7 @@ that were in-flight when the server last crashed.
 from __future__ import annotations
 
 import abc
+import contextlib
 import json
 import logging
 import queue
@@ -44,26 +45,34 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OrchestrationMessage:
-    """A single task sent to, or response sent from, an orchestration adapter."""
+    """A single task sent to, or response sent from, an orchestration adapter.
+
+    An empty ``robot_uri`` means "target the server's default robot"
+    (wire-protocol.md §1). It is omitted from the serialized form so the
+    wire message stays schema-valid; the server always resolves it before
+    responding.
+    """
 
     task: str
-    robot_uri: str = "mock://turtlebot4"
+    robot_uri: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     source: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "task": self.task,
-            "robot_uri": self.robot_uri,
             "metadata": self.metadata,
             "source": self.source,
         }
+        if self.robot_uri:
+            d["robot_uri"] = self.robot_uri
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "OrchestrationMessage":
         return cls(
             task=data.get("task", ""),
-            robot_uri=data.get("robot_uri", "mock://turtlebot4"),
+            robot_uri=data.get("robot_uri", ""),
             metadata=data.get("metadata", {}),
             source=data.get("source", ""),
         )
@@ -130,13 +139,20 @@ class OrchestrationServer:
         default_robot: Any = None,
         max_iterations: int | None = None,
         checkpoint_store: Any = None,
+        default_robot_uri: str = "mock://turtlebot4",
     ) -> None:
         self.adapter = adapter
         self.agent = agent
         self.default_robot = default_robot
+        self.default_robot_uri = default_robot_uri
         self.max_iterations = max_iterations
         self._checkpoint_store = checkpoint_store
         self._iterations = 0
+        # Discovered robots per URI, so repeated tasks against the same
+        # target reuse one adapter (and its connection state).
+        self._robot_cache: dict[str, Any] = {}
+        if default_robot is not None:
+            self._robot_cache[default_robot_uri] = default_robot
 
     def resume_incomplete(self) -> list[OrchestrationMessage]:
         """Return tasks that were in-flight when the server last crashed.
@@ -217,10 +233,15 @@ class OrchestrationServer:
             logger.warning("OrchestrationServer._checkpoint_complete error: %s", exc)
 
     def _handle(self, msg: OrchestrationMessage) -> OrchestrationMessage:
-        """Plan a task from *msg* and return a response message."""
+        """Plan a task from *msg* and return a response message.
+
+        The message's ``robot_uri`` selects the target robot; only when it
+        is absent does the configured default robot apply (wire-protocol.md
+        §1). The response always carries the resolved URI.
+        """
+        robot_uri = msg.robot_uri or self.default_robot_uri
         try:
-            from apyrobo.core.robot import Robot  # lazy import
-            robot = self.default_robot or Robot.discover(msg.robot_uri)
+            robot = self._resolve_robot(robot_uri)
             graph = self.agent.plan(msg.task, robot)
             order = graph.get_execution_order()
             skills = [
@@ -229,7 +250,7 @@ class OrchestrationServer:
             ]
             return OrchestrationMessage(
                 task=msg.task,
-                robot_uri=msg.robot_uri,
+                robot_uri=robot_uri,
                 metadata={"status": "planned", "skills": skills, "count": len(skills)},
                 source="orchestration_server",
             )
@@ -237,10 +258,20 @@ class OrchestrationServer:
             logger.warning("OrchestrationServer._handle error: %s", exc)
             return OrchestrationMessage(
                 task=msg.task,
-                robot_uri=msg.robot_uri,
+                robot_uri=robot_uri,
                 metadata={"status": "error", "error": str(exc)},
                 source="orchestration_server",
             )
+
+    def _resolve_robot(self, robot_uri: str) -> Any:
+        """Return the robot for *robot_uri*, discovering and caching it."""
+        robot = self._robot_cache.get(robot_uri)
+        if robot is None:
+            from apyrobo.core.robot import Robot  # lazy import
+
+            robot = Robot.discover(robot_uri)
+            self._robot_cache[robot_uri] = robot
+        return robot
 
 
 # ---------------------------------------------------------------------------
@@ -344,8 +375,7 @@ class MockOrchestrationAdapter(OrchestrationAdapter):
 # ---------------------------------------------------------------------------
 
 try:
-    import websockets  # type: ignore
-    import websockets.server  # type: ignore
+    from websockets.asyncio.server import serve as _ws_serve  # type: ignore
     _WEBSOCKETS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _WEBSOCKETS_AVAILABLE = False
@@ -384,7 +414,8 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
         self._clients: set[Any] = set()
         self._clients_lock = threading.Lock()
         self._loop: Any = None          # asyncio event loop running in background
-        self._server: Any = None        # websockets.WebSocketServer
+        self._server: Any = None        # websockets Server
+        self._stop_event: Any = None    # asyncio.Event created inside the loop
         self._thread: threading.Thread | None = None
         self._started = threading.Event()
 
@@ -419,18 +450,22 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
             logger.info("WebSocketOrchestrationAdapter: client disconnected")
 
     async def _serve(self) -> None:
-        """Start the WebSocket server and run until cancelled."""
+        """Start the WebSocket server and run until shutdown() is called.
+
+        Leaving the ``async with`` block closes the server and waits for it,
+        so the loop only ends after a clean close — no teardown races.
+        """
         import asyncio
 
-        async with websockets.server.serve(self._handler, self._host, self._port) as srv:
+        self._stop_event = asyncio.Event()
+        async with _ws_serve(self._handler, self._host, self._port) as srv:
             self._server = srv
             self._started.set()
             logger.info(
                 "WebSocketOrchestrationAdapter: listening on ws://%s:%d",
                 self._host, self._port,
             )
-            # Run until the event loop is stopped externally.
-            await asyncio.get_event_loop().create_future()  # wait forever
+            await self._stop_event.wait()
 
     def _run_loop(self) -> None:
         """Entry point for the background thread."""
@@ -441,9 +476,13 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
         try:
             loop.run_until_complete(self._serve())
         except Exception:
-            pass
+            logger.exception("WebSocketOrchestrationAdapter: server loop failed")
         finally:
-            loop.close()
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
 
     # ------------------------------------------------------------------
     # OrchestrationAdapter interface
@@ -464,9 +503,19 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
         logger.info("WebSocketOrchestrationAdapter ready")
 
     def shutdown(self) -> None:
-        """Stop the WebSocket server and background thread."""
-        if self._loop is not None and not self._loop.is_closed():
-            self._loop.call_soon_threadsafe(self._loop.stop)
+        """Stop the WebSocket server and background thread.
+
+        Signals the server coroutine to exit; it closes the server and
+        drains connections before the loop ends. Safe to call repeatedly.
+        """
+        if (
+            self._loop is not None
+            and not self._loop.is_closed()
+            and self._stop_event is not None
+        ):
+            # The loop may close between the check and the call.
+            with contextlib.suppress(RuntimeError):
+                self._loop.call_soon_threadsafe(self._stop_event.set)
         if self._thread is not None:
             self._thread.join(timeout=5)
         # Unblock any waiting receive() call.
