@@ -1900,10 +1900,320 @@ def cmd_profiles(args: argparse.Namespace) -> None:
 # apyrobo init — scaffold a new pip-installable skill package
 # ---------------------------------------------------------------------------
 
+# Schemes reserved by first-party adapters (spec/adapter-contract.md §1).
+_FIRST_PARTY_SCHEMES = {
+    "mock", "gazebo", "mqtt", "http", "ros2", "isaac", "unitree", "mujoco",
+}
+
+
+def _init_adapter_package(args: argparse.Namespace) -> None:
+    """Scaffold a pip-installable capability adapter (apyrobo init --adapter).
+
+    The generated package passes `apyrobo conformance <scheme>://test` with
+    zero warnings out of the box; TODO markers show where the platform's
+    real client goes.
+    """
+    import pathlib
+    import re
+    import textwrap
+
+    scheme: str = args.name.lower().strip()
+    if not re.match(r"^[a-z][a-z0-9+.-]*$", scheme):
+        print(
+            f"Error: {scheme!r} is not a valid URI scheme "
+            "(lowercase letter, then lowercase/digits/+.-).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if scheme in _FIRST_PARTY_SCHEMES:
+        print(
+            f"Error: scheme {scheme!r} collides with a first-party adapter "
+            f"(spec/adapter-contract.md §1). Pick another name.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    pkg_name = "apyrobo-adapter-" + scheme.replace("+", "-").replace(".", "-")
+    module_name = "apyrobo_adapter_" + re.sub(r"[^a-z0-9]", "_", scheme)
+    class_name = (
+        "".join(part.capitalize() for part in re.split(r"[^a-z0-9]", scheme))
+        + "Adapter"
+    )
+    out_dir = pathlib.Path(getattr(args, "directory", None) or scheme)
+
+    if out_dir.exists() and not getattr(args, "force", False):
+        print(
+            f"Error: directory '{out_dir}' already exists. Use --force to overwrite.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    src_dir = out_dir / "src" / module_name
+    tests_dir = out_dir / "tests"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    tests_dir.mkdir(parents=True, exist_ok=True)
+
+    author = getattr(args, "author", "") or ""
+    description = (
+        getattr(args, "description", "")
+        or f"APYROBO capability adapter for {scheme} robots"
+    )
+
+    (out_dir / "pyproject.toml").write_text(textwrap.dedent(f"""\
+        [build-system]
+        requires = ["setuptools>=68"]
+        build-backend = "setuptools.build_meta"
+
+        [project]
+        name = "{pkg_name}"
+        version = "0.1.0"
+        description = "{description}"
+        requires-python = ">=3.10"
+        dependencies = ["apyrobo>=4.0.0"]
+        {('authors = [{name = ' + repr(author) + '}]') if author else ""}
+
+        # apyrobo resolves {scheme}://<robot> to this class automatically —
+        # no import needed on the caller's side.
+        [project.entry-points."apyrobo.adapters"]
+        {scheme} = "{module_name}:{class_name}"
+
+        [project.optional-dependencies]
+        dev = ["pytest>=8.0", "jsonschema>=4.21"]
+
+        [tool.pytest.ini_options]
+        testpaths = ["tests"]
+    """))
+
+    (src_dir / "__init__.py").write_text(textwrap.dedent(f"""\
+        \"\"\"{pkg_name} — {description}.\"\"\"
+        from .adapter import {class_name}
+
+        __all__ = ["{class_name}"]
+    """))
+
+    (src_dir / "adapter.py").write_text(textwrap.dedent(f'''\
+        """Capability adapter for the {scheme}:// URI scheme.
+
+        Behavioral contract: spec/adapter-contract.md in the apyrobo repo.
+        Verify at any time with:
+
+            apyrobo conformance {scheme}://test-unit --strict
+        """
+        from __future__ import annotations
+
+        import logging
+        import math
+        from typing import Any
+
+        from apyrobo.core.adapters import CapabilityAdapter
+        from apyrobo.core.schemas import (
+            AdapterState,
+            Capability,
+            CapabilityType,
+            RobotCapability,
+        )
+
+        logger = logging.getLogger(__name__)
+
+
+        class {class_name}(CapabilityAdapter):
+            """Translates APYROBO semantic commands into the {scheme} platform.
+
+            Replace the TODO bodies with calls into your platform's SDK,
+            driver, or protocol. Keep three rules in mind:
+
+            * ``get_capabilities`` MUST be truthful — declare only what the
+              hardware can actually do.
+            * ``stop()`` is the safety-critical path: it MUST work in every
+              adapter state and MUST NOT block or raise.
+            * Commands while disconnected SHOULD fail fast (raise), never
+              queue silently.
+            """
+
+            def __init__(self, robot_name: str, **kwargs: Any) -> None:
+                super().__init__(robot_name, **kwargs)
+                self._position: tuple[float, float] = (0.0, 0.0)
+                self._orientation = 0.0
+                self._max_speed = float(kwargs.get("max_speed", 1.0))
+                # TODO: create your platform client here (SDK handle,
+                # socket, serial port, …) and connect it.
+                self._state = AdapterState.CONNECTED
+
+            # ------------------------------------------------------------
+            # Required operations
+            # ------------------------------------------------------------
+
+            def get_capabilities(self) -> RobotCapability:
+                # TODO: query the platform and declare ONLY real abilities.
+                return RobotCapability(
+                    robot_id=self.robot_name,
+                    name=f"{class_name.replace('Adapter', '')}-{{self.robot_name}}",
+                    capabilities=[
+                        Capability(
+                            capability_type=CapabilityType.NAVIGATE,
+                            name="navigate_to",
+                            description="Move to a 2D position",
+                            parameters={{"x": "float", "y": "float",
+                                        "speed": "float (optional)"}},
+                        ),
+                    ],
+                    max_speed=self._max_speed,
+                )
+
+            def move(self, x: float, y: float, speed: float | None = None) -> None:
+                self._require_connected("move")
+                effective = min(speed or self._max_speed, self._max_speed)
+                # TODO: send the motion command to the platform.
+                logger.info("%s: move to (%.2f, %.2f) at %.2f m/s",
+                            self.robot_name, x, y, effective)
+                self._position = (x, y)
+
+            def stop(self) -> None:
+                # Safety-critical: works in every state, never blocks or raises.
+                # TODO: send the platform's emergency/idempotent stop here.
+                logger.info("%s: stop", self.robot_name)
+
+            # ------------------------------------------------------------
+            # Optional operations — delete any you don't support (the base
+            # class defaults keep the documented no-op semantics).
+            # ------------------------------------------------------------
+
+            def rotate(self, angle_rad: float, speed: float | None = None) -> None:
+                self._require_connected("rotate")
+                # TODO: send the rotation (positive = counter-clockwise).
+                self._orientation = (self._orientation + angle_rad) % (2 * math.pi)
+
+            def get_position(self) -> tuple[float, float]:
+                # TODO: read the platform's pose estimate.
+                return self._position
+
+            def get_orientation(self) -> float:
+                return self._orientation
+
+            def get_health(self) -> dict[str, Any]:
+                # TODO: add battery_pct / uptime_s / errors when available.
+                return {{
+                    "state": self._state.value,
+                    "adapter": type(self).__name__,
+                    "robot": self.robot_name,
+                }}
+
+            # ------------------------------------------------------------
+            # Helpers
+            # ------------------------------------------------------------
+
+            def _require_connected(self, operation: str) -> None:
+                """Fail fast instead of queueing commands while disconnected —
+                a queued move executing on reconnect is a safety hazard."""
+                if not self.is_connected:
+                    raise ConnectionError(
+                        f"{{operation}}: {{self.robot_name}} is not connected"
+                    )
+    '''))
+
+    (tests_dir / "__init__.py").write_text("")
+
+    (tests_dir / "test_adapter.py").write_text(textwrap.dedent(f'''\
+        """Contract tests for {pkg_name}.
+
+        The conformance test is the one that matters: it runs the full
+        adapter contract from spec/adapter-contract.md.
+        """
+        from apyrobo.conformance import run_conformance
+        from apyrobo.core.adapters import register_adapter_class
+
+        from {module_name} import {class_name}
+
+        register_adapter_class("{scheme}", {class_name})
+
+
+        def test_passes_protocol_conformance():
+            report = run_conformance("{scheme}://test-unit")
+            assert report.conformant, report.render_text()
+            # --strict bar: no SHOULD-level warnings either.
+            assert report.summary["warn"] == 0, report.render_text()
+
+
+        def test_move_updates_position():
+            adapter = {class_name}("test-unit")
+            adapter.move(1.0, 2.0)
+            assert adapter.get_position() == (1.0, 2.0)
+            adapter.stop()
+    '''))
+
+    (out_dir / "README.md").write_text(textwrap.dedent(f"""\
+        # {pkg_name}
+
+        {description}
+
+        ## Quick start
+
+        ```bash
+        pip install -e ".[dev]"
+
+        # The entry point registers the {scheme}:// scheme automatically:
+        apyrobo discover "{scheme}://my-robot"
+        apyrobo conformance "{scheme}://my-robot" --strict
+        ```
+
+        ## Implementing
+
+        Fill in the `TODO` markers in `src/{module_name}/adapter.py`, keeping
+        the [adapter contract](https://github.com/apyrobo/Apyrobo/blob/main/spec/adapter-contract.md)
+        green as you go:
+
+        ```bash
+        pytest                                        # contract + conformance
+        apyrobo conformance "{scheme}://test" --strict --output conformance-report.json
+        ```
+
+        Commit `conformance-report.json` to claim the
+        [APYROBO Conformant badge](https://github.com/apyrobo/Apyrobo/blob/main/docs/conformance.md).
+    """))
+
+    gh_dir = out_dir / ".github" / "workflows"
+    gh_dir.mkdir(parents=True, exist_ok=True)
+    (gh_dir / "ci.yml").write_text(textwrap.dedent(f"""\
+        name: CI
+
+        on: [push, pull_request]
+
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v4
+              - uses: actions/setup-python@v5
+                with:
+                  python-version: "3.12"
+              - run: pip install -e ".[dev]"
+              - run: pytest
+              - run: apyrobo conformance "{scheme}://ci" --strict
+    """))
+
+    print(f"Created: {out_dir}/")
+    print(f"  Package:  {pkg_name}")
+    print(f"  Module:   {module_name}")
+    print(f"  Adapter:  {class_name}  (URI scheme: {scheme}://…)")
+    print()
+    print("Next steps:")
+    print(f"  cd {out_dir}")
+    print('  pip install -e ".[dev]"')
+    print(f"  apyrobo conformance \"{scheme}://test\" --strict")
+    print("  pytest")
+    print()
+    print(f"Then implement the TODOs in src/{module_name}/adapter.py, keeping")
+    print("conformance green. Guide: docs/adapter_authoring.md")
+
+
 def cmd_init(args: argparse.Namespace) -> None:
-    """Scaffold a new pip-installable APYROBO skill package."""
+    """Scaffold a new pip-installable APYROBO skill package or adapter."""
     import pathlib
     import textwrap
+
+    if getattr(args, "adapter", False):
+        _init_adapter_package(args)
+        return
 
     raw_name: str = args.name.lower().strip()
     # Normalise to kebab-case for the package name, snake_case for the module
@@ -1927,7 +2237,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     (out_dir / "pyproject.toml").write_text(textwrap.dedent(f"""\
         [build-system]
         requires = ["setuptools>=68"]
-        build-backend = "setuptools.backends.legacy:build"
+        build-backend = "setuptools.build_meta"
 
         [project]
         name = "{pkg_name}"
@@ -2634,8 +2944,13 @@ def main() -> None:
                         help="Bind host (default: 0.0.0.0)")
 
     # init — project scaffold
-    p_init = sub.add_parser("init", help="Scaffold a new pip-installable skill package")
+    p_init = sub.add_parser(
+        "init", help="Scaffold a pip-installable skill package or capability adapter"
+    )
     p_init.add_argument("name", help="Robot/platform name (e.g. 'my-robot')")
+    p_init.add_argument("--adapter", action="store_true",
+                        help="Scaffold a capability adapter (URI scheme <name>://…) "
+                             "instead of a skill package")
     p_init.add_argument("--description", default="", help="One-line package description")
     p_init.add_argument("--author", default="", help="Author name")
     p_init.add_argument("--directory", default=None,

@@ -1,12 +1,9 @@
 # Adapter Authoring Guide
 
-How to add support for new robot hardware by implementing a `CapabilityAdapter`.
-
----
-
-## What Is an Adapter?
-
-An adapter bridges APYROBO's semantic API to actual robot hardware. It translates high-level commands like `move(x, y, speed)` into whatever your robot understands — ROS 2 topics, MQTT messages, HTTP calls, serial protocols, etc.
+From zero to a **conformance-passing adapter in under an hour**. An adapter
+bridges APYROBO's semantic API to one platform: it translates high-level
+commands like `move(x, y, speed)` into whatever your robot understands —
+ROS 2 topics, a vendor SDK, MQTT, HTTP, serial.
 
 ```
 APYROBO (semantic)  →  Adapter (translation)  →  Robot (hardware)
@@ -14,268 +11,220 @@ APYROBO (semantic)  →  Adapter (translation)  →  Robot (hardware)
    robot.gripper_close()  send MQTT command          gripper closes
 ```
 
+The normative contract your adapter must satisfy is
+[spec/adapter-contract.md](../spec/adapter-contract.md); the
+[conformance suite](conformance.md) checks it mechanically. This guide is
+the loop that keeps you green while you implement.
+
 ---
 
-## Step 1: Subclass CapabilityAdapter
+## Step 1 — Scaffold (2 minutes)
+
+```bash
+pip install apyrobo
+apyrobo init acme --adapter
+cd acme
+pip install -e ".[dev]"
+```
+
+You now have a pip-installable package:
+
+```
+acme/
+├── pyproject.toml                     # entry point registers acme:// for you
+├── src/apyrobo_adapter_acme/
+│   └── adapter.py                     # AcmeAdapter with TODO markers
+├── tests/test_adapter.py              # conformance + contract tests
+└── .github/workflows/ci.yml           # pytest + strict conformance in CI
+```
+
+The scheme is registered through the `apyrobo.adapters` entry-point group,
+so **any** apyrobo command resolves `acme://…` immediately — no imports, no
+configuration:
+
+```bash
+apyrobo discover "acme://my-robot"
+```
+
+Scheme rules: lowercase, and it must not collide with a first-party scheme
+(`mock`, `gazebo`, `mqtt`, `http`, `ros2`, `isaac`, `unitree`, `mujoco`) —
+the scaffold enforces both.
+
+## Step 2 — Prove the baseline (1 minute)
+
+```bash
+apyrobo conformance "acme://test" --strict
+```
+
+The scaffold passes all checks with zero warnings *before you write any
+code*. That's the invariant to protect: from here on, you change one method
+at a time and re-run conformance after each change. When something goes
+red, the diff that broke it is one method long.
+
+## Step 3 — Implement the TODOs (the actual work)
+
+Open `src/apyrobo_adapter_acme/adapter.py`. Every TODO marks a place where
+the simulated behavior should become a platform call. Priorities, in order:
+
+### 1. `stop()` — the safety-critical path
+
+```python
+def stop(self) -> None:
+    # Works in EVERY adapter state, never blocks on in-flight goals,
+    # safe to call repeatedly. Everything else may fail; stop may not.
+    self._client.emergency_stop()
+```
+
+Wire it to the platform's lowest-level halt (zero-velocity publish,
+e-stop register, watchdog trip). Do **not** guard it behind
+`_require_connected` — the conformance suite calls it while disconnected
+(check `SAF-01`) and after failed commands (`FAIL-03`).
+
+### 2. `get_capabilities()` — be truthful
+
+Declare **only** what the hardware actually does. Planners treat the
+capability list as exhaustive — this is what prevents an LLM from
+hallucinating a gripper your robot doesn't have. Declaring a capability
+the hardware cannot perform is itself non-conformant.
+
+```python
+def get_capabilities(self) -> RobotCapability:
+    return RobotCapability(
+        robot_id=self.robot_name,
+        name=f"Acme-{self.robot_name}",
+        capabilities=[
+            Capability(capability_type=CapabilityType.NAVIGATE,
+                       name="navigate_to", description="Move to (x, y)"),
+            # add PICK/PLACE/ROTATE/… only if the hardware has them
+        ],
+        max_speed=1.5,   # planners MUST NOT exceed this — measure it
+    )
+```
+
+### 3. `move()` and the fail-fast rule
+
+```python
+def move(self, x: float, y: float, speed: float | None = None) -> None:
+    self._require_connected("move")          # fail fast, never queue
+    effective = min(speed or self._max_speed, self._max_speed)
+    self._client.goto(x, y, speed=effective)
+```
+
+Keep `_require_connected`: a queued `move` executing on reconnect is a
+safety hazard, and the suite checks for it (`FAIL-01`).
+
+### 4. Optional operations
+
+The base class provides spec-correct defaults for everything else
+(`rotate` warn+no-op, grippers return `True`, `cancel` delegates to
+`stop`, state queries return zeros). Override only what your platform
+supports; if you can't support one, **delete your override** rather than
+raising — the defaults are the contract.
+
+### 5. Lifecycle
+
+Override `connect()`/`disconnect()` when you hold real resources (ROS
+nodes, sockets, SDK sessions). Call `super().connect()` last (or set
+`self._state` yourself) so `is_connected` stays truthful, and make sure a
+lost connection invokes the disconnect callbacks — `LIF-03` checks it.
+`reconnect_with_backoff()` is inherited and free.
+
+## Step 4 — Verify like CI will (2 minutes)
+
+```bash
+pytest                                            # contract + conformance
+apyrobo conformance "acme://test" --strict \
+    --output conformance-report.json              # machine-readable proof
+```
+
+The generated GitHub workflow runs exactly this on every push. When the
+report shows `"conformant": true` with zero warnings and zero skips
+against your released version, commit `conformance-report.json` and claim
+the **APYROBO Conformant badge** — see
+[docs/conformance.md](conformance.md#apyrobo-conformant-badge) for the
+program rules.
+
+> **Safety:** conformance issues real commands (`move`, `stop`,
+> `disconnect`…). Point it at a simulator, a bench robot, or your SDK's
+> mock — never a robot near people.
+
+## Step 5 — Ship
+
+```bash
+python -m build && twine upload dist/*
+```
+
+Because registration rides on the entry point, `pip install
+apyrobo-adapter-acme` is the entire install experience for your users:
+
+```python
+from apyrobo import Robot
+
+robot = Robot.discover("acme://arm-01")   # just works
+robot.move(1.0, 2.0, speed=0.5)
+```
+
+---
+
+## Registering without a package
+
+For quick experiments inside one process, skip the packaging:
 
 ```python
 from apyrobo.core.adapters import CapabilityAdapter, register_adapter
-from apyrobo.core.schemas import (
-    RobotCapability, Capability, CapabilityType,
-    SensorInfo, AdapterState,
-)
-from typing import Any
 
-@register_adapter("myrobot")
-class MyRobotAdapter(CapabilityAdapter):
-    """
-    Adapter for MyRobot hardware.
-
-    URI: myrobot://robot_name
-    Usage: Robot.discover("myrobot://arm_01")
-    """
-
-    def __init__(self, robot_name: str, **kwargs: Any) -> None:
-        super().__init__(robot_name, **kwargs)
-        self._position = (0.0, 0.0)
-        self._orientation = 0.0
-        self._connected = False
-        # Initialize your hardware connection here
-
-    # ------------------------------------------------------------------
-    # Required: Capability discovery
-    # ------------------------------------------------------------------
-
-    def get_capabilities(self) -> RobotCapability:
-        """Return what this robot can do."""
-        return RobotCapability(
-            robot_id=self.robot_name,
-            name=f"MyRobot-{self.robot_name}",
-            capabilities=[
-                Capability(
-                    capability_type=CapabilityType.NAVIGATE,
-                    name="navigate_to",
-                    description="Move to (x, y)",
-                ),
-                Capability(
-                    capability_type=CapabilityType.ROTATE,
-                    name="rotate",
-                    description="Rotate in place",
-                ),
-            ],
-            sensors=[
-                SensorInfo(sensor_id="lidar", name="2D LiDAR", hz=10.0),
-            ],
-            max_speed=1.0,
-        )
-
-    # ------------------------------------------------------------------
-    # Required: Navigation
-    # ------------------------------------------------------------------
-
-    def move(self, x: float, y: float, speed: float | None = None) -> None:
-        """Move to (x, y). Translate to your robot's protocol."""
-        # Example: send ROS 2 goal
-        # self._nav2_client.send_goal(x, y, speed)
-
-        # Example: send HTTP command
-        # requests.post(f"http://{self._host}/move", json={"x": x, "y": y})
-
-        self._position = (x, y)
-
-    def stop(self) -> None:
-        """Emergency stop — must always work."""
-        # self._publisher.publish(Twist())  # zero velocity
-        pass
-
-    def rotate(self, angle_rad: float, speed: float | None = None) -> None:
-        """Rotate in place."""
-        self._orientation += angle_rad
-
-    def cancel(self) -> None:
-        """Cancel current navigation goal."""
-        self.stop()
-
-    # ------------------------------------------------------------------
-    # Required: State queries
-    # ------------------------------------------------------------------
-
-    def get_position(self) -> tuple[float, float]:
-        """Return current (x, y) from odometry/localization."""
-        return self._position
-
-    def get_orientation(self) -> float:
-        """Return heading in radians."""
-        return self._orientation
-
-    def get_health(self) -> dict[str, Any]:
-        """Return diagnostic info."""
-        return {
-            "connected": self._connected,
-            "battery_pct": 85.0,
-            "position": self._position,
-        }
-
-    # ------------------------------------------------------------------
-    # Optional: Gripper (return False if not supported)
-    # ------------------------------------------------------------------
-
-    def gripper_open(self) -> bool:
-        return False  # Not supported on this robot
-
-    def gripper_close(self) -> bool:
-        return False
-
-    # ------------------------------------------------------------------
-    # Optional: Lifecycle
-    # ------------------------------------------------------------------
-
-    def connect(self) -> None:
-        """Establish connection to the robot."""
-        self._connected = True
-        self._state = AdapterState.CONNECTED
-
-    def disconnect(self) -> None:
-        """Clean disconnect."""
-        self._connected = False
-        self._state = AdapterState.DISCONNECTED
+@register_adapter("lab")
+class LabAdapter(CapabilityAdapter):
+    ...
 ```
+
+or imperatively for classes you don't own:
+`register_adapter_class("lab", LabAdapter)`.
 
 ---
 
-## Step 2: Register with a URI Scheme
+## Contract reference
 
-The `@register_adapter("myrobot")` decorator registers your adapter. Now users can discover it:
+Normative version: [spec/adapter-contract.md](../spec/adapter-contract.md).
+Conformance check IDs in parentheses.
 
-```python
-from apyrobo import Robot
+### Required (abstract — you must implement)
 
-robot = Robot.discover("myrobot://arm_01")
-caps = robot.capabilities()
-robot.move(x=1.0, y=2.0, speed=0.5)
-```
+| Method | Contract |
+|--------|----------|
+| `get_capabilities() → RobotCapability` | Truthful, schema-valid profile (CAP-01…04) |
+| `move(x, y, speed=None)` | Metres, robot frame; never exceed declared `max_speed` (OPS-01/02) |
+| `stop()` | Immediate halt; every state, never blocks, repeatable (OPS-03, SAF-01, FAIL-03) |
 
-If you prefer manual registration:
+### Optional (defaults are the contract — override or leave alone, never raise)
 
-```python
-from apyrobo.core.adapters import register_adapter
+| Method | Default | Checks |
+|--------|---------|--------|
+| `rotate(angle_rad, speed=None)` | warn + no-op; positive = CCW | OPT-01 |
+| `gripper_open()` / `gripper_close()` | return `True`; `False` on failure | OPT-02/03 |
+| `cancel()` | delegates to `stop()` | OPT-04 |
+| `get_position() → (x, y)` | `(0.0, 0.0)`; keep it fast — the watchdog polls it | OPT-05 |
+| `get_orientation() → float` | `0.0` radians | OPT-06 |
+| `get_health() → dict` | `{state, adapter, robot}` + `battery_pct`/`uptime_s`/`errors` when available | OPT-07, FAIL-02 |
+| `connect()` / `disconnect()` | state transitions + callbacks | LIF-01…03 |
 
-register_adapter("myrobot")(MyRobotAdapter)
-```
-
----
-
-## Step 3: Test Your Adapter
-
-```python
-import pytest
-from apyrobo import Robot
-
-def test_discover():
-    robot = Robot.discover("myrobot://test_unit")
-    assert robot.robot_id == "test_unit"
-
-def test_capabilities():
-    robot = Robot.discover("myrobot://test_unit")
-    caps = robot.capabilities()
-    assert any(c.capability_type.value == "navigate" for c in caps.capabilities)
-
-def test_move():
-    robot = Robot.discover("myrobot://test_unit")
-    robot.move(x=3.0, y=4.0, speed=0.5)
-    assert robot.get_position() == (3.0, 4.0)
-
-def test_stop():
-    robot = Robot.discover("myrobot://test_unit")
-    robot.move(x=1.0, y=1.0)
-    robot.stop()  # Should not raise
-
-def test_health():
-    robot = Robot.discover("myrobot://test_unit")
-    health = robot.get_health()
-    assert "connected" in health
-
-def test_works_with_executor():
-    """Full integration: adapter + skill executor."""
-    from apyrobo import SkillExecutor, SkillGraph, BUILTIN_SKILLS
-
-    robot = Robot.discover("myrobot://test_unit")
-    graph = SkillGraph()
-    graph.add_skill(BUILTIN_SKILLS["navigate_to"],
-                    parameters={"x": 1.0, "y": 2.0})
-    executor = SkillExecutor(robot)
-    result = executor.execute_graph(graph)
-    assert result.status.value == "completed"
-```
-
----
-
-## Step 4: Use with Safety Enforcer
-
-Your adapter works with the safety enforcer automatically:
-
-```python
-from apyrobo import Robot, SafetyEnforcer
-
-robot = Robot.discover("myrobot://arm_01")
-enforcer = SafetyEnforcer(robot, policy="strict")
-
-# Speed is clamped, collision zones are checked, watchdog runs
-enforcer.move(x=5.0, y=5.0, speed=10.0)  # clamped to 0.5 m/s
-```
-
----
-
-## Existing Adapters
+### Existing adapters to crib from
 
 | Adapter | URI | Protocol | Source |
 |---------|-----|----------|--------|
-| `MockAdapter` | `mock://` | In-memory | `core/adapters.py` |
-| `GazeboAdapter` | `gazebo://` | Sim API | `core/adapters.py` |
-| `MQTTAdapter` | `mqtt://` | MQTT topics | `core/adapters.py` |
-| `HTTPAdapter` | `http://` | REST API | `core/adapters.py` |
+| `MockAdapter` | `mock://` | In-memory | [`apyrobo/core/adapters.py`](../apyrobo/core/adapters.py) |
+| `GazeboAdapter` | `gazebo://` | Sim API | `apyrobo/core/adapters.py` |
+| `MQTTAdapter` | `mqtt://` | MQTT topics | `apyrobo/core/adapters.py` |
+| `HTTPAdapter` | `http://` | REST API | `apyrobo/core/adapters.py` |
+| `UnitreeAdapter` | `unitree://` | Vendor SDK | [`apyrobo/core/unitree_adapter.py`](../apyrobo/core/unitree_adapter.py) |
+| `IsaacAdapter` | `isaac://` | Isaac Sim | [`apyrobo/core/isaac_adapter.py`](../apyrobo/core/isaac_adapter.py) |
 
----
+### Tips
 
-## Adapter API Contract
-
-### Required Methods
-
-| Method | Signature | Notes |
-|--------|-----------|-------|
-| `get_capabilities()` | `-> RobotCapability` | What the robot can do |
-| `move(x, y, speed)` | `-> None` | Navigate to position |
-| `stop()` | `-> None` | Emergency stop (always works) |
-| `rotate(angle_rad, speed)` | `-> None` | Rotate in place |
-| `get_position()` | `-> tuple[float, float]` | Current (x, y) |
-| `get_orientation()` | `-> float` | Heading in radians |
-| `get_health()` | `-> dict[str, Any]` | Diagnostic info |
-
-### Optional Methods (have defaults)
-
-| Method | Default | Override When |
-|--------|---------|---------------|
-| `cancel()` | calls `stop()` | Nav2 cancel is different from stop |
-| `gripper_open()` | returns `True` | Robot has a gripper |
-| `gripper_close()` | returns `True` | Robot has a gripper |
-| `connect()` | no-op | Connection setup needed |
-| `disconnect()` | no-op | Clean disconnect needed |
-
-### Properties
-
-| Property | Type | Notes |
-|----------|------|-------|
-| `robot_name` | `str` | Set in `__init__` |
-| `robot_id` | `str` | Alias for `robot_name` |
-| `is_connected` | `bool` | Default: `True` |
-| `state` | `AdapterState` | `CONNECTED`, `DISCONNECTED`, `ERROR` |
-
----
-
-## Tips
-
-1. **Always implement `stop()`** — It must work even if the robot is in a bad state
-2. **`get_position()` should be fast** — It's called frequently by the watchdog
-3. **Report capabilities accurately** — The executor uses them for precondition checks
-4. **Use `connect()`/`disconnect()`** — For expensive connections (ROS nodes, TCP sockets)
-5. **Log with the APYROBO logger** — `from apyrobo.observability import get_logger`
+1. **`stop()` before everything** — implement and hand-test it first.
+2. **Report capabilities accurately** — the executor and safety layer
+   trust them for precondition checks.
+3. **Fail fast when disconnected** — raise, don't queue.
+4. **Keep `get_position()` cheap** — the safety watchdog polls it.
+5. **Run `apyrobo conformance --strict` after every method you touch** —
+   a one-method diff is easy to debug; an hour of drift is not.

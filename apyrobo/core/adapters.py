@@ -42,6 +42,11 @@ logger = logging.getLogger(__name__)
 
 _ADAPTER_REGISTRY: dict[str, type["CapabilityAdapter"]] = {}
 
+#: setuptools entry-point group scanned for third-party adapters.
+#: Name = URI scheme, value = "module:AdapterClass". `apyrobo init --adapter`
+#: scaffolds a package that registers itself here.
+_ENTRY_POINT_GROUP = "apyrobo.adapters"
+
 
 def register_adapter(scheme: str):  # noqa: ANN201
     """Class decorator that registers an adapter for a URI scheme."""
@@ -53,9 +58,46 @@ def register_adapter(scheme: str):  # noqa: ANN201
     return decorator
 
 
+def _adapter_entry_points() -> Any:
+    """All entry points in the apyrobo.adapters group (patchable in tests)."""
+    from importlib.metadata import entry_points
+
+    return entry_points(group=_ENTRY_POINT_GROUP)
+
+
+def _load_entry_point_adapter(scheme: str) -> "type[CapabilityAdapter] | None":
+    """Lazily load an installed third-party adapter whose entry-point name
+    matches *scheme*, registering it on success."""
+    try:
+        eps = _adapter_entry_points()
+    except Exception as exc:  # pragma: no cover - metadata backend issues
+        logger.debug("Adapter entry-point scan failed: %s", exc)
+        return None
+    for ep in eps:
+        if ep.name != scheme:
+            continue
+        try:
+            cls = ep.load()
+        except Exception as exc:
+            logger.warning(
+                "Failed to load adapter entry point %r (%s): %s",
+                scheme, getattr(ep, "value", "?"), exc,
+            )
+            return None
+        _ADAPTER_REGISTRY[scheme] = cls
+        logger.info("Loaded adapter for scheme %r from entry point", scheme)
+        return cls
+    return None
+
+
 def get_adapter(scheme: str, robot_name: str, **kwargs: Any) -> "CapabilityAdapter":
-    """Instantiate the correct adapter for the given URI scheme."""
-    cls = _ADAPTER_REGISTRY.get(scheme)
+    """Instantiate the correct adapter for the given URI scheme.
+
+    Unknown schemes fall back to the ``apyrobo.adapters`` entry-point group,
+    so pip-installed adapter packages resolve without any import on the
+    caller's side.
+    """
+    cls = _ADAPTER_REGISTRY.get(scheme) or _load_entry_point_adapter(scheme)
     if cls is None:
         available = ", ".join(sorted(_ADAPTER_REGISTRY)) or "(none)"
         raise ValueError(
