@@ -1,5 +1,9 @@
 # Demo: Warehouse Multi-Robot Pick-and-Pack
 
+<img src="demo.gif" alt="Demo: Warehouse Multi-Robot Pick-and-Pack — terminal recording" width="720">
+
+_Re-render: `./record.sh` (requires [vhs](https://github.com/charmbracelet/vhs))_
+
 Three specialized robots collaborate to fill orders via APYROBO's `TaskBus`.
 The bus routes each step to the robot with the right capability automatically.
 

@@ -11,6 +11,7 @@ Run:
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -19,6 +20,15 @@ sys.path.insert(0, __file__.rsplit("/demos/", 1)[0])  # repo root when cloned
 
 from apyrobo import Agent, MockAdapter, Robot, SkillExecutor
 from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
+
+# Recording pace: seconds between visible steps so demo videos play at a
+# watchable speed (set by demos/*/record.sh; 0 = full speed).
+_PACE = float(os.environ.get("APYROBO_DEMO_PACE", "0") or 0)
+
+
+def _pace() -> None:
+    if _PACE > 0:
+        time.sleep(_PACE)
 
 # ---------------------------------------------------------------------------
 # Safety policy definitions (plain English — non-engineers can audit this)
@@ -87,6 +97,7 @@ def main() -> None:
         policy = parser.parse(rule)
         store.add(policy)
         print(f"  {_c('✓', GREEN)} [{policy.constraint_type:20s}] {rule}")
+        _pace()
 
     active_policies = store.get_active_policies()
     print(f"\n  {len(active_policies)} policies active (stored in SQLite, auditable by anyone)\n")
@@ -126,6 +137,7 @@ def main() -> None:
         correct = (violations and task.expected == "blocked") or (not violations and task.expected == "ok")
         marker = _c("✓", GREEN) if correct else _c("✗", RED)
         print(f"  {marker} {task.description:<40} {status}  {outcome}")
+        _pace()
 
     print("-" * 65)
     print(f"\n  Tasks allowed: {passed}  |  Tasks blocked: {blocked}  |  "

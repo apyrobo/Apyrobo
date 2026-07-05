@@ -14,6 +14,7 @@ Run:
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -22,6 +23,19 @@ sys.path.insert(0, __file__.rsplit("/demos/", 1)[0])  # repo root when cloned
 
 from apyrobo import Agent, MockAdapter, Robot
 from apyrobo.coordination.bus import MultiAgentCoordinator, TaskBus
+
+# Recording pace: seconds between visible steps so demo videos play at a
+# watchable speed (set by demos/*/record.sh; 0 = full speed). Paced time is
+# tracked so the printed timing stats reflect real work, not the sleeps.
+_PACE = float(os.environ.get("APYROBO_DEMO_PACE", "0") or 0)
+_PACED_S = 0.0
+
+
+def _pace() -> None:
+    global _PACED_S
+    if _PACE > 0:
+        time.sleep(_PACE)
+        _PACED_S += _PACE
 
 # ---------------------------------------------------------------------------
 # Order catalogue
@@ -89,6 +103,7 @@ def main() -> None:
 
     for order in ORDERS:
         order_t = time.monotonic()
+        order_paced0 = _PACED_S
         print(f"  ┌─ {order['id']}  ({len(order['items'])} items → {order['dest']})")
 
         # Step 1: picker navigates to each item shelf and picks
@@ -104,6 +119,7 @@ def main() -> None:
             icon = "✓" if result.success else "✗"
             print(f"  │  {icon} [picker_bot] picked {item!r}  ({dt*1000:.0f} ms)")
             items_processed += 1
+            _pace()
 
         # Step 2: packer consolidates items into a box
         t0 = time.monotonic()
@@ -116,6 +132,7 @@ def main() -> None:
         step_times.append(dt)
         icon = "✓" if result.success else "✗"
         print(f"  │  {icon} [packer_bot] packed box for {order['id']}  ({dt*1000:.0f} ms)")
+        _pace()
 
         # Step 3: hauler delivers to dock
         t0 = time.monotonic()
@@ -127,12 +144,13 @@ def main() -> None:
         dt = time.monotonic() - t0
         step_times.append(dt)
         icon = "✓" if result.success else "✗"
-        order_elapsed = time.monotonic() - order_t
+        order_elapsed = time.monotonic() - order_t - (_PACED_S - order_paced0)
         print(f"  │  {icon} [hauler_bot] delivered to {order['dest']}  ({dt*1000:.0f} ms)")
         print(f"  └─ {order['id']} filled in {order_elapsed*1000:.0f} ms\n")
         orders_filled += 1
+        _pace()
 
-    fleet_elapsed = time.monotonic() - t_start
+    fleet_elapsed = time.monotonic() - t_start - _PACED_S
 
     for coord in coordinators:
         coord.stop()

@@ -360,6 +360,7 @@ docker-compose up apyrobo-api
 | Document | Description |
 |----------|-------------|
 | [5-Minute Quickstart](docs/quickstart_5min.md) | Install + mock robot + first task |
+| [Demos](demos/README.md) | Three no-hardware demos with recorded runs (drones, warehouse, NL safety) |
 | [Full Docker Setup](docs/QUICKSTART.md) | ROS 2 + Gazebo simulation |
 | [Architecture](docs/architecture.md) | Design principles and data flow |
 | [Skill Authoring Guide](docs/skill_authoring.md) | Write, test, and publish custom skills |
