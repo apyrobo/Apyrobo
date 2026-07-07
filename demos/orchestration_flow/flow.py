@@ -31,13 +31,16 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
-
 sys.path.insert(0, __file__.rsplit("/demos/", 1)[0])  # repo root when cloned
 
 from apyrobo import Agent, Robot, SafetyEnforcer
 from apyrobo.safety.enforcer import SafetyPolicy
 from apyrobo.skills.executor import SkillExecutor
+
+# Pillow is imported lazily (see _ensure_pillow) so the pipeline logic —
+# run_pipeline() / build_path(), which the tests exercise — works without
+# the rendering dependency installed.
+Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
 
 HERE = Path(__file__).resolve().parent
 
@@ -92,6 +95,10 @@ HUMAN_C = (224, 175, 104)
 NOGO_C = (247, 118, 142)
 
 
+# Fonts are populated by _ensure_pillow() on the first render call.
+F_S = F_M = F_L = F_HDR = None
+
+
 def _font(size, bold=False):
     try:
         return ImageFont.truetype("/System/Library/Fonts/Menlo.ttc",
@@ -100,10 +107,24 @@ def _font(size, bold=False):
         return ImageFont.load_default()
 
 
-F_S = _font(11 * SCALE)
-F_M = _font(13 * SCALE)
-F_L = _font(15 * SCALE, bold=True)
-F_HDR = _font(16 * SCALE, bold=True)
+def _ensure_pillow() -> None:
+    """Import Pillow and build the fonts on demand (renderer-only dependency)."""
+    global Image, ImageDraw, ImageFont, F_S, F_M, F_L, F_HDR
+    if Image is not None:
+        return
+    try:
+        from PIL import Image as _Image
+        from PIL import ImageDraw as _ImageDraw
+        from PIL import ImageFont as _ImageFont
+    except ImportError as exc:  # pragma: no cover - exercised only when unset
+        raise SystemExit(
+            "error: Pillow is required to render this demo — pip install Pillow"
+        ) from exc
+    Image, ImageDraw, ImageFont = _Image, _ImageDraw, _ImageFont
+    F_S = _font(11 * SCALE)
+    F_M = _font(13 * SCALE)
+    F_L = _font(15 * SCALE, bold=True)
+    F_HDR = _font(16 * SCALE, bold=True)
 
 
 @dataclass
@@ -233,6 +254,7 @@ def build_path() -> list[tuple[str, tuple[float, float]]]:
 
 def draw(stages, active_idx, robot_pos, heading, trail, done_skills,
          plan_names, exec_label):
+    _ensure_pillow()
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
@@ -354,6 +376,7 @@ def main() -> None:
     if shutil.which("ffmpeg") is None:
         print("error: ffmpeg not found (brew install ffmpeg)", file=sys.stderr)
         sys.exit(1)
+    _ensure_pillow()
 
     stages, plan_names = run_pipeline()
     path = build_path()
