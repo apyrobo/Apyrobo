@@ -18,13 +18,13 @@
 **APYROBO gives AI agents the runtime to act in the physical world.** It sits on top of [ROS 2](https://docs.ros.org/en/humble/) and provides capability discovery, skill orchestration, swarm coordination, and safety enforcement. One layer, any hardware, any LLM.
 
 ```
-"deliver the package to dock 3"
-        │
-        ▼
-   ┌─────────┐    ┌───────────┐    ┌──────────┐    ┌─────────┐
-   │ AI Agent │ →  │ Skill     │ →  │ Safety   │ →  │ ROS 2 / │
-   │ (any LLM)│    │ Graph     │    │ Enforcer │    │ Hardware │
-   └─────────┘    └───────────┘    └──────────┘    └─────────┘
+   "deliver the package to dock 3"
+         │
+         ▼
+   ┌───────────┐   ┌───────────┐   ┌───────────┐   ┌───────────┐
+   │ AI Agent  │ → │   Skill   │ → │  Safety   │ → │  ROS 2 /  │
+   │ (any LLM) │   │   Graph   │   │ Enforcer  │   │ Hardware  │
+   └───────────┘   └───────────┘   └───────────┘   └───────────┘
 ```
 
 <p align="center">
