@@ -276,7 +276,10 @@ def _draw_pipeline(d, stages, active_idx, done_skills, plan_names):
     x = 18 * SCALE
     y = HEADER_H + 16 * SCALE
     avail = H - y - 14 * SCALE
-    slot = avail / len(stages)
+    # Cap the row height so the tallest stage (EXECUTE: 1 line + a 4-item
+    # checklist ≈ 95px) fits above the bottom edge instead of stretching to
+    # fill and clipping the last item.
+    slot = min(avail / len(stages), 82 * SCALE)
 
     for i, st in enumerate(stages):
         active = i == active_idx

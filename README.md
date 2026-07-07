@@ -18,13 +18,13 @@
 **APYROBO gives AI agents the runtime to act in the physical world.** It sits on top of [ROS 2](https://docs.ros.org/en/humble/) and provides capability discovery, skill orchestration, swarm coordination, and safety enforcement. One layer, any hardware, any LLM.
 
 ```
-"deliver the package to dock 3"
-        │
-        ▼
-   ┌─────────┐    ┌───────────┐    ┌──────────┐    ┌─────────┐
-   │ AI Agent │ →  │ Skill     │ →  │ Safety   │ →  │ ROS 2 / │
-   │ (any LLM)│    │ Graph     │    │ Enforcer │    │ Hardware │
-   └─────────┘    └───────────┘    └──────────┘    └─────────┘
+   "deliver the package to dock 3"
+         │
+         ▼
+   ┌───────────┐   ┌───────────┐   ┌───────────┐   ┌───────────┐
+   │ AI Agent  │ → │   Skill   │ → │  Safety   │ → │  ROS 2 /  │
+   │ (any LLM) │   │   Graph   │   │ Enforcer  │   │ Hardware  │
+   └───────────┘   └───────────┘   └───────────┘   └───────────┘
 ```
 
 <p align="center">
@@ -37,23 +37,6 @@
   <img src="demos/fleet_view/demo.gif" alt="APYROBO live fleet view — a mixed fleet of drones and ground robots planned and dispatched over the wire protocol" width="760">
   <br>
   <em>…and at fleet scale — 3 drones + 3 ground robots driven from natural-language tasks over APYROBO's <a href="spec/wire-protocol.md">wire protocol</a>, rendered live in the browser. → <a href="demos/fleet_view/">run it</a></em>
-</p>
-
-### 30-Second Demo
-
-```python
-from apyrobo import Robot, Agent
-
-robot = Robot.discover("mock://turtlebot4")        # No ROS 2 needed
-agent = Agent(provider="rule")                      # No API key needed
-result = agent.execute("go to 3, 4 and pick up the object", robot)
-print(result.status)  # → completed
-```
-
-<p align="center">
-  <img src="docs/demo.gif" alt="APYROBO terminal demo — pip install, discover a robot, run a task" width="640">
-  <br>
-  <em>Install to first task in one terminal — no ROS 2, no API key, no hardware.</em>
 </p>
 
 ---
