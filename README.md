@@ -28,7 +28,9 @@
 ```
 
 <p align="center">
-  <img src="docs/demo.gif" alt="APYROBO demo — pip install, discover robot, deliver task" width="640">
+  <img src="demos/fleet_view/demo.gif" alt="APYROBO live fleet view — a mixed fleet of drones and ground robots planned and dispatched over the wire protocol" width="760">
+  <br>
+  <em>A live fleet — 3 drones + 3 ground robots — driven from natural-language tasks over APYROBO's wire protocol.<br>"deliver a package to the dock" becomes <code>Navigate&nbsp;→&nbsp;Pick&nbsp;→&nbsp;Navigate&nbsp;→&nbsp;Place</code>, and the robot moves. → <a href="demos/fleet_view/">run it live in your browser</a></em>
 </p>
 
 ### 30-Second Demo
@@ -41,6 +43,12 @@ agent = Agent(provider="rule")                      # No API key needed
 result = agent.execute("go to 3, 4 and pick up the object", robot)
 print(result.status)  # → completed
 ```
+
+<p align="center">
+  <img src="docs/demo.gif" alt="APYROBO terminal demo — pip install, discover a robot, run a task" width="640">
+  <br>
+  <em>Install to first task in one terminal — no ROS 2, no API key, no hardware.</em>
+</p>
 
 ---
 
@@ -69,6 +77,22 @@ print(result.status)  # → completed
 - **Compute Profiles** — `--profile jetson-orin` / `--profile workstation-gpu` / `--profile cpu-only` configure models for any hardware
 - **Orchestration Server** — `apyrobo serve` exposes a JSON stdio interface; plug in Slack, Discord, web UI, or ROS service
 - **Skill Package Ecosystem** — pip-installable skill packages for UR arms, Spot, Franka Panda, PX4 drones, and AGVs
+
+---
+
+## See It In Action
+
+Four demos that run on a laptop with **no hardware, no ROS 2, no API keys** —
+each `clone → run → watch`. See [`demos/`](demos/) for all of them.
+
+| Demo | What you see | Run |
+|------|--------------|-----|
+| **[Live fleet view](demos/fleet_view/)** | A mixed fleet moving in a browser while tasks are planned and dispatched over the wire protocol — rendered by the [reference TypeScript client](packages/apyrobo-client-ts) | `python demos/fleet_view/server.py` |
+| [Warehouse pick-and-pack](demos/warehouse_robots/) | 3 robots fill orders; the `TaskBus` routes each step to the robot with the right capability | `python demos/warehouse_robots/demo.py` |
+| [10-drone survey](demos/drone_survey/) | 10 drones sweep a grid in parallel, streaming anomalies as sectors complete | `python demos/drone_survey/demo.py` |
+| [NL safety policies](demos/humanoid_nlp/) | Plain-English rules ("never exceed 0.3 m/s near humans") block unsafe tasks at runtime | `python demos/humanoid_nlp/demo.py` |
+
+Swap any `mock://` URI for a real robot URI and the same code drives real hardware.
 
 ---
 
