@@ -6,10 +6,13 @@ dispatches their tasks. Everything you see travels over the standard
 [wire protocol](../../spec/wire-protocol.md), rendered by the
 [reference TypeScript client](../../packages/apyrobo-client-ts).
 
+![Live fleet view](demo.gif)
+
 Drones (triangles) and ground robots (squares) move across a top-down world
 with named zones, motion trails, and dashed lines to their current targets;
 a side panel streams the planner's responses and lets you dispatch your own
-tasks. Run it (below) to see it live.
+tasks. The GIF above is rendered headlessly from the demo's real sim and
+planner (`./record.sh`); run it live (below) for the interactive version.
 
 ## What it demonstrates
 
