@@ -28,9 +28,15 @@
 ```
 
 <p align="center">
+  <img src="demos/orchestration_flow/demo.gif" alt="APYROBO orchestration flow — one task passing through capability discovery, planning, the skill graph, the safety enforcer, and execution in a sim world" width="820">
+  <br>
+  <em><strong>The diagram above, running.</strong> One task — "deliver the package to the dock" — down the whole stack: capabilities discovered, a plan chosen, a requested <code>2.5&nbsp;m/s</code> clamped to <code>0.5</code>, a no-go zone rejected, then executed skill-by-skill as the robot routes to the dock. Every panel is filled by the live objects, not a mock-up. → <a href="demos/orchestration_flow/">how it works</a></em>
+</p>
+
+<p align="center">
   <img src="demos/fleet_view/demo.gif" alt="APYROBO live fleet view — a mixed fleet of drones and ground robots planned and dispatched over the wire protocol" width="760">
   <br>
-  <em>A live fleet — 3 drones + 3 ground robots — driven from natural-language tasks over APYROBO's wire protocol.<br>"deliver a package to the dock" becomes <code>Navigate&nbsp;→&nbsp;Pick&nbsp;→&nbsp;Navigate&nbsp;→&nbsp;Place</code>, and the robot moves. → <a href="demos/fleet_view/">run it live in your browser</a></em>
+  <em>…and at fleet scale — 3 drones + 3 ground robots driven from natural-language tasks over APYROBO's <a href="spec/wire-protocol.md">wire protocol</a>, rendered live in the browser. → <a href="demos/fleet_view/">run it</a></em>
 </p>
 
 ### 30-Second Demo
@@ -87,6 +93,7 @@ each `clone → run → watch`. See [`demos/`](demos/) for all of them.
 
 | Demo | What you see | Run |
 |------|--------------|-----|
+| **[Orchestration flow](demos/orchestration_flow/)** | One task down the whole stack — discover → plan → skill graph → safety → execute — every panel filled by the real objects, robot moving in a sim world | `python demos/orchestration_flow/flow.py` |
 | **[Live fleet view](demos/fleet_view/)** | A mixed fleet moving in a browser while tasks are planned and dispatched over the wire protocol — rendered by the [reference TypeScript client](packages/apyrobo-client-ts) | `python demos/fleet_view/server.py` |
 | [Warehouse pick-and-pack](demos/warehouse_robots/) | 3 robots fill orders; the `TaskBus` routes each step to the robot with the right capability | `python demos/warehouse_robots/demo.py` |
 | [10-drone survey](demos/drone_survey/) | 10 drones sweep a grid in parallel, streaming anomalies as sectors complete | `python demos/drone_survey/demo.py` |
