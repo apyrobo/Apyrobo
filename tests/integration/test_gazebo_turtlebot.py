@@ -22,27 +22,24 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
 import time
 
 import pytest
 
-
-def _rclpy_available() -> bool:
-    try:
-        import rclpy  # noqa: F401
-
-        return True
-    except Exception:
-        return False
-
-
-# Every test here is opt-in (integration) AND requires a live ROS 2 stack;
-# outside the Docker 'gazebo' profile it skips cleanly rather than erroring.
+# These tests require the live Gazebo sim (a spawned burger on /cmd_vel +
+# /odom). They are gated behind APYROBO_GAZEBO, which is set ONLY in the
+# docker-compose 'gazebo-test' service — crucially NOT in the plain
+# 'integration' job, whose `pytest -m integration tests/integration/` would
+# otherwise collect this file (rclpy is present there too) and drive the
+# *fake* TurtleBot4, displacing it and breaking test_ros2_adapter's
+# "starts at origin" assumption.
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not _rclpy_available(),
-        reason="rclpy not importable — run inside the Docker 'gazebo' profile",
+        not os.environ.get("APYROBO_GAZEBO"),
+        reason="Gazebo sim not present — set APYROBO_GAZEBO=1 (docker "
+        "compose 'gazebo' profile) to run",
     ),
 ]
 

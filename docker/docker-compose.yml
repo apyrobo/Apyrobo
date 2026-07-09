@@ -286,6 +286,9 @@ services:
       - ros2-test-net
     environment:
       ROS_DOMAIN_ID: "42"
+      # Opt-in for the Gazebo tests. Only set here — never in the plain
+      # 'integration' job — so those tests never run against the fake robot.
+      APYROBO_GAZEBO: "1"
     depends_on:
       gazebo-sim:
         condition: service_healthy
