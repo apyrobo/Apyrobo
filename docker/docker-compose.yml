@@ -232,6 +232,75 @@ services:
       - -v
       - --tb=short
 
+  # Gazebo integration — profile: gazebo
+  #
+  # gazebo-sim:  headless Gazebo Classic running a physics-simulated
+  #              TurtleBot3 burger (real diff-drive: /cmd_vel → /odom).
+  # gazebo-test: runs the real ros2:// adapter against it and asserts the
+  #              robot actually moves.
+  #
+  # Proves APYROBO drives a physics-simulated robot, not the kinematic
+  # fake_turtlebot4 node. Same shared-domain / bridge-network setup as the
+  # integration profile (use network_mode: host on Docker Desktop for Mac).
+  #
+  #   docker compose -f docker/docker-compose.yml --profile gazebo up \
+  #       --build --abort-on-container-exit --exit-code-from gazebo-test
+  # ---------------------------------------------------------------------------
+  gazebo-sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gazebo
+    image: apyrobo-gazebo:latest
+    container_name: apyrobo-gazebo-sim
+    profiles:
+      - gazebo
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+      TURTLEBOT3_MODEL: "burger"
+    command:
+      - bash
+      - tests/integration/gazebo_boot.sh
+    healthcheck:
+      # Robot is up once /odom flows from the Gazebo diff-drive plugin.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "source /opt/ros/humble/setup.bash && timeout 5 ros2 topic echo /odom --once > /dev/null 2>&1"
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 60s
+
+  gazebo-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gazebo
+    image: apyrobo-gazebo:latest
+    container_name: apyrobo-gazebo-test
+    profiles:
+      - gazebo
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+    depends_on:
+      gazebo-sim:
+        condition: service_healthy
+    command:
+      - pytest
+      - -p
+      - "no:launch_testing"
+      - -m
+      - integration
+      - -k
+      - gazebo
+      - tests/integration/test_gazebo_turtlebot.py
+      - -v
+      - --tb=short
+
 volumes:
   audit_data:
     driver: local

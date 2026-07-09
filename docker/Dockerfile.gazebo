@@ -1,0 +1,108 @@
+# syntax=docker/dockerfile:1.6
+# =============================================================================
+# APYROBO — Gazebo integration image (ROS 2 Humble + Gazebo Classic +
+# TurtleBot3 + apyrobo)
+#
+# Proves the *real* ros2:// adapter against a *physics-simulated* TurtleBot3,
+# not the kinematic fake_turtlebot4 node. Used by the 'gazebo' Docker Compose
+# profile.
+#
+# Build:
+#   docker build -f docker/Dockerfile.gazebo -t apyrobo-gazebo:latest .
+# =============================================================================
+
+FROM ros:humble-ros-base
+
+# ROS 2 message packages the adapter needs + Gazebo Classic and the TurtleBot3
+# simulation. turtlebot3-gazebo pulls the burger/waffle models whose SDF
+# carries the gazebo_ros diff-drive plugin (publishes /odom, subscribes
+# /cmd_vel) — exactly the interface ROS2Adapter speaks. See the integration
+# Dockerfile for why rclpy / tf-transformations are apt-pinned explicitly.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-rclpy \
+    ros-humble-nav2-msgs \
+    ros-humble-tf2 \
+    ros-humble-tf-transformations \
+    ros-humble-gazebo-ros-pkgs \
+    ros-humble-turtlebot3-gazebo \
+    ros-humble-turtlebot3-description \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml .
+COPY apyrobo/ ./apyrobo/
+
+# Real rclpy first on PYTHONPATH (see Dockerfile.integration rationale).
+ENV PYTHONPATH=/opt/ros/humble/lib/python3.10/site-packages
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
+    pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
+
+# Strip the launch_testing pytest11 entry points that ros-humble-* installs;
+# they fail plugin validation on modern pytest at collection time. Identical
+# to Dockerfile.integration (kept inline to avoid coupling the two images).
+RUN python3 - <<'PYEOF'
+import os, sys
+
+def is_target(line: str) -> bool:
+    return "launch_testing" in line and ":" not in line
+
+roots = [
+    "/opt/ros/humble/lib/python3.10/site-packages",
+    "/usr/lib/python3/dist-packages",
+    "/usr/local/lib/python3.10/dist-packages",
+]
+paths = []
+for root in roots:
+    for dirpath, _dirnames, filenames in os.walk(root):
+        if "entry_points.txt" in filenames:
+            paths.append(os.path.join(dirpath, "entry_points.txt"))
+
+changed = []
+for path in paths:
+    try:
+        with open(path) as fh:
+            lines = fh.readlines()
+    except OSError:
+        continue
+    kept, removed = [], []
+    for line in lines:
+        (removed if is_target(line) else kept).append(line)
+    if removed:
+        with open(path, "w") as fh:
+            fh.writelines(kept)
+        changed.append(path)
+
+if not changed:
+    print("ERROR: no launch_testing pytest11 entry found to strip", file=sys.stderr)
+    sys.exit(1)
+print("OK — stripped launch_testing pytest11 entries from:", changed)
+PYEOF
+
+COPY tests/ ./tests/
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ROS_DOMAIN_ID=42 \
+    TURTLEBOT3_MODEL=burger \
+    GAZEBO_MODEL_PATH=/opt/ros/humble/share/turtlebot3_gazebo/models
+
+ENTRYPOINT ["/ros_entrypoint.sh"]
+
+# Build-time gate: the ros2 adapter must actually register (same check the
+# integration image uses — fails the build with the real import error rather
+# than every test later with the stub adapter's RuntimeError).
+RUN timeout 60 /ros_entrypoint.sh python3 -c "\
+from apyrobo.core import ros2_bridge; \
+import sys; \
+err = getattr(ros2_bridge, '_ROS2_IMPORT_ERROR', None); \
+ok = ros2_bridge._HAS_ROS2; \
+print('_HAS_ROS2 =', ok, '| import error:', err); \
+sys.exit(0 if ok else 1)"
+
+CMD ["pytest", "-p", "no:launch_testing", "-m", "integration", \
+     "-k", "gazebo", "-v", "--tb=short"]
