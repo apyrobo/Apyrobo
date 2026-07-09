@@ -50,3 +50,38 @@ jobs:
         if: always()
         run: |
           docker compose -f docker/docker-compose.yml --profile integration down --volumes
+
+  # Real-physics proof: the same ros2:// adapter, driven against a
+  # TurtleBot3 in headless Gazebo Classic (not the kinematic fake robot).
+  # Gazebo-in-CI is heavy; a generous timeout guards against hung boots.
+  gazebo-integration:
+    name: Gazebo TurtleBot3 Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Gazebo image
+        run: docker compose -f docker/docker-compose.yml --profile gazebo build
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Run Gazebo integration test
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo \
+            up \
+            --abort-on-container-exit \
+            --exit-code-from gazebo-test
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo logs
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo down --volumes
