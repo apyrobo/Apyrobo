@@ -1,60 +1,20 @@
 # apyrobo-skills-turtlebot4
 
-TurtleBot 4 skill pack for [APYROBO](https://github.com/apyrobo/Apyrobo).  
-Provides navigation, inspection, and social behaviours as `@skill`-decorated functions.
+> ⚠️ **Reference scaffold — not a hardware driver.**
+> These skills print the motion they *would* perform and return
+> `True`. They are a template to wire to the vendor SDK, not working
+> TurtleBot 4 support.
 
-## Install
+TurtleBot 4 skill pack for APYROBO.
 
-```bash
-pip install apyrobo-skills-turtlebot4
-```
+## Status
 
-## Quick start
+| | |
+|---|---|
+| Hardware I/O | ❌ none — prints intended actions, returns `True` |
+| To make it real | wire each skill to the real `ros2://` adapter — `Robot.discover("ros2://turtlebot4")`, which already drives a TurtleBot3 in Gazebo (`tests/integration/test_gazebo_turtlebot.py`). This package is a skill-template only |
+| Works today | `apyrobo-skills-ros-nav` (real Nav2) · the `ros2://` adapter (drives a TurtleBot3 in Gazebo) |
 
-```python
-from apyrobo import Robot, Agent
-from apyrobo.skills.library import SkillLibrary
+Skills (stubs): `follow_person`, `inspect_room`, `check_surroundings`, `patrol_area`, `dock`, `undock`
 
-import apyrobo_skills_turtlebot4  # side-effect: registers all @skill functions
-
-robot = Robot.discover("mock://turtlebot4")
-agent = Agent(provider="rule", library=SkillLibrary.from_decorated())
-result = agent.execute("patrol the area", robot=robot)
-print(result.status)
-```
-
-## Skills
-
-| Skill | Description | Key params |
-|---|---|---|
-| `patrol_area` | Navigate through waypoints N times | `waypoints`, `loops` |
-| `dock` | Navigate to and dock at a charging station | `dock_station_id` |
-| `undock` | Leave the charging dock | — |
-| `inspect_room` | Systematic 360° camera scan of a room | `room_id`, `camera_height` |
-| `check_surroundings` | 360° LIDAR + RGB-D sweep at current position | `radius` |
-| `follow_person` | Track and follow a detected person | `person_id`, `duration_s` |
-
-## Using with the plugin system
-
-When installed, this package registers itself automatically via the `apyrobo.skills`
-entry-point.  Call `SkillLibrary.from_plugins()` to pick up all installed skill packs:
-
-```python
-from apyrobo.skills.library import SkillLibrary
-
-lib = SkillLibrary.from_plugins()   # discovers all apyrobo.skills entry-points
-```
-
-Or register explicitly:
-
-```python
-from apyrobo_skills_turtlebot4 import register
-register()
-```
-
-## Testing skills
-
-```bash
-apyrobo test-skill patrol_area --repeat 3
-apyrobo test-skill inspect_room --params '{"room_id": "lab_A", "camera_height": 1.0}'
-```
+The per-function docstrings describe the *intended* hardware behavior; the current implementations are stubs. Replace each skill body in `apyrobo_skills_turtlebot4/` with real SDK calls to drive hardware.

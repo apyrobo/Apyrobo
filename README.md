@@ -65,7 +65,7 @@
 - **Hardware Auto-Discovery** — `apyrobo connect ros2://ur10` detects robot type and loads the right skill package automatically
 - **Compute Profiles** — `--profile jetson-orin` / `--profile workstation-gpu` / `--profile cpu-only` configure models for any hardware
 - **Orchestration Server** — `apyrobo serve` exposes a JSON stdio interface; plug in Slack, Discord, web UI, or ROS service
-- **Skill Package Ecosystem** — pip-installable skill packages for UR arms, Spot, Franka Panda, PX4 drones, and AGVs
+- **Skill Package Ecosystem** — real ROS 2 Nav2 skills + the `ros2://` adapter (drives a TurtleBot3 in Gazebo), plus reference scaffolds for UR arms, Spot, Franka, PX4, and AGVs to wire to their vendor SDKs ([packages/](packages/))
 
 ---
 
@@ -234,24 +234,31 @@ See the [full quickstart guide](docs/quickstart_5min.md) for safety enforcement,
 
 ## Skill Packages
 
-APYROBO ships with built-in skills and a growing ecosystem of pip-installable hardware-specific packages:
+The [`packages/`](packages/) directory has two kinds of packages — **real** and
+**reference scaffolds** — and it matters which is which ([packages/README.md](packages/README.md)).
 
-| Package | Hardware | Skills |
-|---------|----------|--------|
-| `apyrobo-skills-ur` | Universal Robots UR3/UR5/UR10/UR16 | `move_joints`, `move_linear`, `pick`, `place`, `move_home`, `set_tcp`, `get_pose` |
-| `apyrobo-skills-spot` | Boston Dynamics Spot | `walk_to`, `sit`, `stand`, `stair_climb`, `dock`, `capture_image`, `arm_pick` |
-| `apyrobo-skills-franka` | Franka Panda | `move_to_pose`, `grasp`, `release`, `move_home`, `cartesian_sweep`, `impedance_control` |
-| `apyrobo-skills-drone-px4` | PX4-based drones | `takeoff`, `land`, `fly_to`, `orbit`, `return_home`, `capture_image` |
-| `apyrobo-skills-agv` | MiR / Omron LD / Clearpath Husky | `navigate_to`, `follow_route`, `dock_to_station`, `load_cargo`, `unload_cargo` |
-| `apyrobo-skills-turtlebot4` | TurtleBot 4 | `patrol_area`, `dock`, `undock`, `follow_person`, `inspect_room` |
+**Real today** — these drive a robot or speak a real protocol:
 
-```bash
-pip install apyrobo-skills-ur
-pip install apyrobo-skills-spot
-pip install apyrobo-skills-drone-px4
-```
+| Package | What it does |
+|---------|--------------|
+| `ros2://` adapter (core) | Publishes `/cmd_vel`, subscribes `/odom`; **verified in CI driving a TurtleBot3 in Gazebo** ([test](tests/integration/test_gazebo_turtlebot.py)) |
+| `apyrobo-skills-ros-nav` | Real ROS 2 **Nav2** skills (`navigate_to_pose`, …) via live action calls |
 
-Skills register automatically via entry-points — no configuration required. See the [Skill Authoring Guide](docs/skill_authoring.md) to publish your own.
+**Reference scaffolds** — these **print the motion they *would* perform and
+return success; they do not move hardware.** They fix the skill shape (names,
+parameters, tests) so wiring one to a vendor SDK is a fill-in-the-body job.
+Each warns at registration time.
+
+| Package | Robot | Wire it to |
+|---------|-------|-----------|
+| `apyrobo-skills-ur` | Universal Robots | `ur_rtde` / UR ROS 2 driver |
+| `apyrobo-skills-spot` | Boston Dynamics Spot | `bosdyn` SDK |
+| `apyrobo-skills-franka` | Franka Panda | `franky` / `libfranka` |
+| `apyrobo-skills-drone-px4` | PX4 drones | MAVSDK / `pymavlink` |
+| `apyrobo-skills-agv` | Generic AGVs | fleet API (VDA5050) |
+| `apyrobo-skills-turtlebot4` | TurtleBot 4 | use the `ros2://` adapter instead |
+
+Skills register automatically via entry-points. See the [Skill Authoring Guide](docs/skill_authoring.md) to wire a scaffold to real hardware or publish your own.
 
 ---
 
