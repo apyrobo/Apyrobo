@@ -23,8 +23,10 @@ That is the path to use for real mobile robots today.
 reference stack**. Precisely what is verified where:
 
 - **CI, every commit:** the `ros2://` adapter drives a physics-simulated
-  **TurtleBot3** burger in Gazebo over `/cmd_vel` + `/odom` (no Nav2 in
-  this minimal loop — the Nav2-in-sim end-to-end is in progress).
+  **TurtleBot3** burger in Gazebo — a minimal `/cmd_vel` + `/odom` loop
+  (`gazebo` profile), **and** the full NL → plan → Nav2 `NavigateToPose`
+  end-to-end with SLAM (`gazebo-nav` profile, see
+  [tests/integration/README_gazebo.md](../tests/integration/README_gazebo.md)).
 - **Real code, error-checked without hardware:** `ros-nav`'s Nav2 skills
   call the live `NavigateToPose` action when ROS 2 is sourced.
 - **Hardware target:** **TurtleBot4**, via the same adapter — the
