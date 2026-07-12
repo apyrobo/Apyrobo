@@ -1,6 +1,6 @@
 # Capability Adapter Contract
 
-**Spec version 1.0-draft** · Reference implementation:
+**Spec version 1.0** · Reference implementation:
 [`apyrobo/core/adapters.py`](../apyrobo/core/adapters.py)
 
 A *capability adapter* translates APYROBO's semantic commands into one

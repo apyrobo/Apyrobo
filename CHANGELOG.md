@@ -11,6 +11,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- **APYROBO Protocol spec frozen at 1.0** — the `spec/` documents (wire
+  protocol, capability model, adapter contract, skill manifest) drop the
+  `-draft` suffix; all further spec changes require an accepted RFC
+  (`spec/README.md` § Proposing changes). Conformance reports now emit
+  `"spec_version": "1.0"`, and existing `1.0-draft` badges should be
+  refreshed by re-running `apyrobo conformance`.
 - **`litellm` moved to the new `llm` extra** — bare `pip install apyrobo` now
   installs only the kernel (pydantic + pyyaml, ~8 packages, seconds instead of
   minutes). LLM/VLM planning requires `pip install 'apyrobo[llm]'`;

@@ -16,7 +16,8 @@ governs how it can ever change.
 
 The [`spec/`](spec/) directory defines the APYROBO Protocol — the wire
 protocol, capability model, adapter contract, and skill manifest format. The
-spec is versioned independently and changes only through RFC. Anything the
+spec is **frozen at 1.0** (July 2026), versioned independently of the Python
+package, and changes only through an accepted RFC. Anything the
 spec covers carries a stronger guarantee than the Python API: message shapes
 and behavioral contracts survive even refactors that move Python symbols.
 When in doubt, depend on the protocol, not the import path.

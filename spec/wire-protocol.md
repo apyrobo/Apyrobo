@@ -1,6 +1,6 @@
 # Orchestration Wire Protocol
 
-**Spec version 1.0-draft** · Reference implementation:
+**Spec version 1.0** · Reference implementation:
 [`apyrobo/orchestration/adapter.py`](../apyrobo/orchestration/adapter.py)
 
 The wire protocol is how external clients — shell scripts, web dashboards,

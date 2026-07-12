@@ -16,6 +16,12 @@ The normative contract your adapter must satisfy is
 [conformance suite](conformance.md) checks it mechanically. This guide is
 the loop that keeps you green while you implement.
 
+For a worked example, study the **flagship reference stack**
+([packages/README.md](../packages/README.md)): the `ros2://` adapter
+([`apyrobo/core/ros2_bridge.py`](../apyrobo/core/ros2_bridge.py)) is a real,
+CI-verified adapter — connection lifecycle, health monitoring, Nav2 actions,
+graceful degradation — and the shape your finished adapter should have.
+
 ---
 
 ## Step 1 — Scaffold (2 minutes)

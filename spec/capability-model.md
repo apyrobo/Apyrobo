@@ -1,6 +1,6 @@
 # Capability Model
 
-**Spec version 1.0-draft** · Reference implementation:
+**Spec version 1.0** · Reference implementation:
 [`apyrobo/core/schemas.py`](../apyrobo/core/schemas.py)
 
 The capability model is the semantic contract between AI agents and hardware.
