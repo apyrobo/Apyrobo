@@ -28,7 +28,13 @@ jobs:
           echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
           sudo apt-get update
           sudo apt-get install -y vhs ffmpeg
+          # vhs needs ttyd, which the charm package does not declare.
+          sudo apt-get install -y ttyd || {
+            curl -fsSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+            sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd
+          }
           vhs --version
+          ttyd --version
 
       - name: Record the demo
         run: demos/nav2_gazebo/record.sh
