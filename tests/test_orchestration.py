@@ -217,6 +217,72 @@ class TestOrchestrationServer:
 
 
 # ---------------------------------------------------------------------------
+# Robot lifecycle on server shutdown
+# ---------------------------------------------------------------------------
+
+class TestServerRobotLifecycle:
+    def _make_agent(self):
+        from apyrobo.skills.agent import Agent
+        return Agent(provider="rule")
+
+    def test_discovered_robot_disconnected_after_run(self):
+        adapter = MockOrchestrationAdapter(
+            tasks=[OrchestrationMessage(task="move forward", robot_uri="mock://spot")]
+        )
+        server = OrchestrationServer(adapter, self._make_agent())
+        server.run()
+        # The server discovered mock://spot itself, so it must release it.
+        assert "mock://spot" not in server._robot_cache
+
+    def test_discovered_robot_connection_is_closed(self):
+        adapter = MockOrchestrationAdapter(tasks=[])
+        server = OrchestrationServer(adapter, self._make_agent())
+        robot = server._resolve_robot("mock://spot")
+        robot.connect()
+        assert robot.is_connected
+        server.run()
+        assert not robot.is_connected
+
+    def test_default_robot_left_connected(self):
+        from apyrobo.core.robot import Robot
+        default = Robot.discover("mock://turtlebot4")
+        default.connect()
+        adapter = MockOrchestrationAdapter(tasks=["move forward"])
+        server = OrchestrationServer(adapter, self._make_agent(), default_robot=default)
+        server.run()
+        # Caller owns the default robot: still connected, still cached.
+        assert default.is_connected
+        assert server._robot_cache.get("mock://turtlebot4") is default
+
+    def test_failing_disconnect_does_not_block_others(self):
+        adapter = MockOrchestrationAdapter(tasks=[])
+        server = OrchestrationServer(adapter, self._make_agent())
+        bad = server._resolve_robot("mock://bad")
+        good = server._resolve_robot("mock://good")
+        good.connect()
+
+        def boom():
+            raise RuntimeError("disconnect failed")
+        bad.disconnect = boom
+
+        server.run()  # must not raise
+        assert not good.is_connected
+        assert not server._robot_cache
+
+    def test_adapter_shutdown_still_called_when_release_fails(self):
+        adapter = MockOrchestrationAdapter(tasks=[])
+        server = OrchestrationServer(adapter, self._make_agent())
+        robot = server._resolve_robot("mock://spot")
+
+        def boom():
+            raise RuntimeError("disconnect failed")
+        robot.disconnect = boom
+
+        server.run()
+        assert adapter.shutdown_called
+
+
+# ---------------------------------------------------------------------------
 # ABC contract
 # ---------------------------------------------------------------------------
 

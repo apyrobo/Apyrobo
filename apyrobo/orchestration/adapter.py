@@ -131,6 +131,11 @@ class OrchestrationServer:
     SQLite. On restart, call ``resume_incomplete()`` to recover tasks that
     were in-flight when the server last crashed.
 
+    Robot ownership: robots the server discovers from task ``robot_uri``
+    fields are owned by the server — they are disconnected when ``run()``
+    exits. A ``default_robot`` passed to the constructor is owned by the
+    caller and is never disconnected by the server.
+
     Usage::
 
         from apyrobo.core.robot import Robot
@@ -219,8 +224,29 @@ class OrchestrationServer:
                 self._checkpoint_complete(task_id)
                 self.adapter.send(response)
         finally:
-            self.adapter.shutdown()
+            try:
+                self.adapter.shutdown()
+            finally:
+                self._release_robots()
             logger.info("OrchestrationServer stopped")
+
+    def _release_robots(self) -> None:
+        """Disconnect and evict robots the server discovered itself.
+
+        The caller-supplied ``default_robot`` is left connected and cached —
+        the server does not own it. Best-effort: a failing disconnect is
+        logged and does not block the others.
+        """
+        for uri, robot in list(self._robot_cache.items()):
+            if robot is self.default_robot:
+                continue
+            del self._robot_cache[uri]
+            try:
+                robot.disconnect()
+            except Exception as exc:
+                logger.warning(
+                    "OrchestrationServer: disconnect of %s failed: %s", uri, exc
+                )
 
     def _checkpoint_begin(self, task_id: str, msg: OrchestrationMessage) -> None:
         """Persist in-flight task so it can be recovered after a crash."""
