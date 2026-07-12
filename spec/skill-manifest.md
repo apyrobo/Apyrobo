@@ -1,6 +1,6 @@
 # Skill Manifest
 
-**Spec version 1.0-draft** · Reference implementation:
+**Spec version 1.0** · Reference implementation:
 [`apyrobo/skills/discovery.py`](../apyrobo/skills/discovery.py)
 
 A skill manifest describes one skill so that agents can discover it at

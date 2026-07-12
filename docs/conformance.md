@@ -94,7 +94,7 @@ the checks tolerate the WebSocket transport's broadcast semantics.
 ```json
 {
   "apyrobo_conformance_report": "1",
-  "spec_version": "1.0-draft",
+  "spec_version": "1.0",
   "apyrobo_version": "4.0.0",
   "target": "ws://localhost:8765",
   "kind": "wire-protocol",
@@ -127,11 +127,11 @@ once they meet all three conditions:
    CI is the honest way to do this.
 
 ```markdown
-[![APYROBO Conformant](https://img.shields.io/badge/APYROBO-conformant%201.0--draft-brightgreen)](./conformance-report.json)
+[![APYROBO Conformant](https://img.shields.io/badge/APYROBO-conformant%201.0-brightgreen)](./conformance-report.json)
 ```
 
-The spec is `1.0-draft` until the Phase 3 RFC freeze; badges claiming a
-draft version should be refreshed when 1.0 freezes. Misrepresenting
+The spec froze at `1.0` in July 2026. Badges claiming the earlier
+`1.0-draft` should be refreshed by re-running conformance against 1.0. Misrepresenting
 conformance (declaring capabilities the hardware cannot perform is itself
 non-conformant — [adapter-contract.md §2](../spec/adapter-contract.md)) is
 grounds for removal from any first-party listing.

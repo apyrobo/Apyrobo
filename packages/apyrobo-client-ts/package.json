@@ -1,7 +1,7 @@
 {
   "name": "apyrobo-client",
   "version": "0.1.0",
-  "description": "TypeScript client for the APYROBO orchestration wire protocol (spec 1.0-draft)",
+  "description": "TypeScript client for the APYROBO orchestration wire protocol (spec 1.0)",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",

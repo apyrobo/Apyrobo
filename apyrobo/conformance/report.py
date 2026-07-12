@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 #: The spec revision this suite tests against (spec/README.md).
-SPEC_VERSION = "1.0-draft"
+SPEC_VERSION = "1.0"
 
 #: Version of the JSON report layout itself.
 REPORT_FORMAT_VERSION = "1"

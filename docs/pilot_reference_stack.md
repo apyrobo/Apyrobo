@@ -1,8 +1,8 @@
-# Pilot Reference Stack — v0.2
+# Pilot Reference Stack
 
-> Locked decisions for the APYROBO v0.2 pilot.
-> When anyone suggests "what about Spot?" or "what about ROS Iron?",
-> the answer is: **v0.2**.
+> Locked decisions for the APYROBO pilot stack (fixed at the v0.2
+> milestone and still current). When anyone suggests "what about Spot?"
+> or "what about ROS Iron?", the answer is: **not in the pilot stack**.
 
 | Decision          | Choice                                                       | Rationale                                                    |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -13,9 +13,9 @@
 | **LLM provider**  | Rule-based default; LLM configurable via `APYROBO_CONFIG`   | Zero external dependencies for CI; opt-in LLM for demos      |
 | **Safety policy** | `strict` preset active by default; explicit opt-out required | Safety-first: no accidental unguarded execution               |
 
-## Non-goals for v0.2
+## Non-goals for the pilot stack
 
-These are explicitly out of scope. They may appear in v0.3+.
+These are explicitly out of scope for the pilot. They may appear in a later milestone.
 
 - Alternative robots (Spot, Stretch, custom URDF)
 - ROS distributions other than Humble (Iron, Jazzy, Rolling)

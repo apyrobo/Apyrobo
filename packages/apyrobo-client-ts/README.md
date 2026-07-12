@@ -1,7 +1,7 @@
 # apyrobo-client
 
 TypeScript client for the [APYROBO orchestration wire protocol](../../spec/wire-protocol.md)
-(spec 1.0-draft). Submit natural-language tasks to any conformant
+(spec 1.0). Submit natural-language tasks to any conformant
 orchestration server — such as `apyrobo serve` — and receive planning
 results. Zero runtime dependencies; works in Node ≥ 20 and in browsers.
 

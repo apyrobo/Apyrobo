@@ -174,16 +174,6 @@ This is what you include in grant applications and the README.
 
 ---
 
-## What's Next After the Demo
-
-1. **Tag the release**: `git tag v0.1.0-mvp && git push --tags`
-2. **Upload the recording** to YouTube or the README
-3. **Publish benchmark results** in the README
-4. **Apply for grants** with the demo video + metrics
-5. **Open the repo** and announce on Discord / Reddit / HN
-
----
-
 ## ROS 2 / Real Robot
 
 To connect to a physical robot or a full ROS 2 environment you need the Docker image — it bundles ROS 2 Humble, Nav2, and all Python dependencies.

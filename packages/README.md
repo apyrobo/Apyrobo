@@ -16,6 +16,17 @@ CI driving a **physics-simulated TurtleBot3 in Gazebo**
 ([`tests/integration/test_gazebo_turtlebot.py`](../tests/integration/test_gazebo_turtlebot.py)).
 That is the path to use for real mobile robots today.
 
+### The flagship reference stack
+
+`ros2://` adapter + `apyrobo-skills-ros-nav` + the Gazebo integration CI job
++ [docs/TURTLEBOT4.md](../docs/TURTLEBOT4.md) together form the **flagship
+reference stack** — the one end-to-end path (natural-language task → plan →
+real Nav2 action → simulated robot moves) that is exercised in CI on every
+commit. It is the canonical example for anyone writing an adapter
+([docs/adapter_authoring.md](../docs/adapter_authoring.md)) or wiring a
+scaffold to a vendor SDK: when a scaffold below graduates to "real", the bar
+is "does what the flagship does, for its hardware."
+
 ## Reference scaffolds (templates — they do **not** move hardware)
 
 These print the motion they *would* perform and return success. They are

@@ -1,6 +1,6 @@
 # APYROBO Protocol Specification
 
-**Spec version: 1.0-draft** · Status: draft, open for RFC · License: Apache-2.0
+**Spec version: 1.0** · Status: frozen — changes require an accepted RFC · License: Apache-2.0
 
 This directory is the language-agnostic specification of the APYROBO protocol —
 the contract that lets any client, adapter, or alternative implementation
@@ -70,7 +70,8 @@ MUST tolerate its absence. A handshake message is reserved for spec 2.0.
 
 ## Proposing changes
 
-Changes to anything in `spec/` go through an RFC: open a GitHub issue titled
+Spec 1.0 is frozen: changes to anything in `spec/` — including patch-level
+prose clarifications — go through an RFC. Open a GitHub issue titled
 `RFC: <summary>` describing the motivation, the exact schema/prose diff, and
-the compatibility impact. See the roadmap's v8.0.0 Phase 3 for the process
-being formalized.
+the compatibility impact. Accepted RFCs are recorded in the issue history and
+referenced from the spec changelog line they produce.

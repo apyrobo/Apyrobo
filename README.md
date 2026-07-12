@@ -244,6 +244,11 @@ The [`packages/`](packages/) directory has two kinds of packages — **real** an
 | `ros2://` adapter (core) | Publishes `/cmd_vel`, subscribes `/odom`; **verified in CI driving a TurtleBot3 in Gazebo** ([test](tests/integration/test_gazebo_turtlebot.py)) |
 | `apyrobo-skills-ros-nav` | Real ROS 2 **Nav2** skills (`navigate_to_pose`, …) via live action calls |
 
+Together — `ros2://` adapter + `ros-nav` skills + the Gazebo CI job + the
+[TurtleBot4 guide](docs/TURTLEBOT4.md) — these form the **flagship reference
+stack**: the one end-to-end path that is exercised in CI on every commit.
+Building an adapter or skill package? Copy this stack, not a scaffold.
+
 **Reference scaffolds** — these **print the motion they *would* perform and
 return success; they do not move hardware.** They fix the skill shape (names,
 parameters, tests) so wiring one to a vendor SDK is a fill-in-the-body job.
@@ -386,7 +391,7 @@ docker-compose up apyrobo-api
 | [Architecture](docs/architecture.md) | Design principles and data flow |
 | [Skill Authoring Guide](docs/skill_authoring.md) | Write, test, and publish custom skills |
 | [Adapter Authoring Guide](docs/adapter_authoring.md) | Add support for new hardware |
-| [Protocol Spec](spec/README.md) | The language-agnostic APYROBO protocol, 1.0-draft |
+| [Protocol Spec](spec/README.md) | The language-agnostic APYROBO protocol, v1.0 (frozen) |
 | [Conformance Suite](docs/conformance.md) | Test any adapter or server against the spec |
 | [TypeScript Client](packages/apyrobo-client-ts/README.md) | Wire-protocol SDK for web dashboards and bots |
 | [API Reference](docs/api_reference.md) | Auto-generated from docstrings |
@@ -402,10 +407,13 @@ The path from pre-alpha to category-defining runs through four compounding unloc
 | Milestone | Unlock | Focus | Status |
 |-----------|--------|-------|--------|
 | **v0.1.0–v3.0.0** | Foundation | Core framework, skill packages, compute profiles, orchestration server | ✅ Done |
-| **v4.0.0** | Trust | Production hardening — deterministic failover, plan rollback, crash recovery, chaos tests, HIL CI | :clipboard: Planned |
-| **v5.0.0** | Velocity | Five-minute success — `docker compose up` demo, `apyrobo init`, REPL, tutorial runner, web dashboard | :clipboard: Planned |
-| **v6.0.0** | Compatibility | Ecosystem integrations — Isaac Sim, Unitree, OpenCV, Ollama, WebSocket, Slack, live telemetry | :clipboard: Planned |
-| **v7.0.0** | Discoverability | Category ownership — killer demos, skill registry, benchmark suite, LLM-optimized docs, multi-agent | :clipboard: Planned |
+| **v4.0.0–v7.0.0** | Trust → Discoverability | Production hardening, five-minute success, ecosystem integrations, category-defining demos & docs — shipped together as the `4.0.0` package release | ✅ Done |
+| **v8.0.0** | Permanence | The standard protocol — spec **1.0 (frozen)**, conformance suite & badge, TypeScript reference client, RFC governance | 🚧 In progress |
+
+> **Milestone numbers are planning labels, not package versions.** The
+> published `apyrobo` package advances by [SemVer](https://semver.org) on its
+> own (PyPI is currently the 4.x line) — see
+> [API_STABILITY.md](API_STABILITY.md) for the guarantees.
 
 We have items marked **good first issue** and **help wanted** across every milestone.
 See [ROADMAP.md](ROADMAP.md) for the full technical roadmap with contribution opportunities.

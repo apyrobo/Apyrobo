@@ -2,7 +2,7 @@
  * Wire-protocol message types.
  *
  * Mirrors spec/wire-protocol.md and spec/schemas/orchestration-message.schema.json
- * (spec version 1.0-draft). One message shape, both directions.
+ * (spec version 1.0). One message shape, both directions.
  */
 
 /** A task planned by the server: one step of the returned skill plan. */

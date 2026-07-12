@@ -4,6 +4,13 @@ Public roadmap for the APYROBO project. Items are grouped by milestone and rough
 
 **Legend:** :white_check_mark: Done | :construction: In Progress | :clipboard: Planned | :bulb: Exploring
 
+> **Milestone numbers (v0.1.0 … v8.0.0) are planning labels, not package
+> versions.** The published `apyrobo` package advances by
+> [SemVer](https://semver.org) independently — PyPI is currently the **4.x**
+> line, whose `4.0.0` release delivered the v4–v7 milestones together
+> ([CHANGELOG.md](CHANGELOG.md)). [API_STABILITY.md](API_STABILITY.md) defines
+> the mapping and the compatibility guarantees.
+
 **Contribution labels:**
 - ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) — Great for newcomers; well-scoped, mentored
 - ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) — Community contributions welcome; may require domain expertise
@@ -322,7 +329,7 @@ A standard needs a trustworthy reference implementation: small, fast to install,
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
 | :white_check_mark: | **`apyrobo-core` split** | Slim kernel achieved within the single package (`docs/core_split_plan.md`): litellm → `[llm]` extra, unused networkx dropped, `full` meta-extra added. Measured: bare install 2.5 s / 8 packages, import 353 ms, 2 hard deps (pydantic, pyyaml). Bare-install CI job guards the contract. | |
-| :construction: | **APYROBO Protocol spec v1** | New `spec/` directory: language-agnostic, versioned specification of (1) the capability model, (2) the skill manifest schema, (3) the orchestration wire protocol (the JSON messages already flowing over `apyrobo serve` stdio/WebSocket). JSON Schema files + prose. This is the fork-safe artifact — the thing that outlives any one codebase. **1.0-draft published in `spec/` with drift-guard tests; freezes to 1.0 via RFC in Phase 3.** | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :white_check_mark: | **APYROBO Protocol spec v1** | New `spec/` directory: language-agnostic, versioned specification of (1) the capability model, (2) the skill manifest schema, (3) the orchestration wire protocol (the JSON messages already flowing over `apyrobo serve` stdio/WebSocket). JSON Schema files + prose. This is the fork-safe artifact — the thing that outlives any one codebase. **Spec 1.0 frozen (July 2026) with drift-guard tests; all changes now require an accepted RFC ([spec/README.md](spec/README.md)).** | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :white_check_mark: | **Versioning reset** | Decouple package versions from roadmap milestone numbers. Re-baseline `API_STABILITY.md` against the v4.x surface (it still said "frozen for v1.x"), publish a deprecation policy with minimum notice windows, and designate the post-split release as the first LTS line with dated support windows. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 | :white_check_mark: | **Dependency & supply-chain audit** | Pin and minimize dependencies of core, generate an SBOM in release CI, and document the security posture (`SECURITY.md` with reporting process). Standards get audited; be ready before anyone asks. | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
 
@@ -347,7 +354,7 @@ Neutral governance is what lets competitors adopt the same standard. Ecosystem g
 | :clipboard: | **RFC process** | Changes to `spec/` go through a public RFC template with a comment window; accepted designs recorded as ADRs. Signals that the protocol is a commons, not one maintainer's whim — the precondition for serious adopters. | |
 | :clipboard: | **Seed the registry for real** | Publish real packages first (`ros-nav` — live Nav2 skills; the TS client) so `apyrobo registry search` returns working results. The vendor packs (`ur`, `spot`, `franka`, `px4`, `agv`, `turtlebot4`) are **reference scaffolds** ([packages/README.md](packages/README.md)) — each must be wired to its vendor SDK (and pass hardware-in-the-loop or a sim) before it ships as anything but a template. Then curate the first 10 community skills with mentored PRs. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
 | :clipboard: | **Cross-language interop showcase** | One flagship demo: the TypeScript client orchestrates a Gazebo robot through `apyrobo serve`, end to end, recorded. The "it's a protocol, not a library" proof point. | |
-| :clipboard: | **Spec v1.0 announcement** | Freeze protocol spec v1.0, publish the conformance suite results for all first-party adapters, and take it to the community: ROS Discourse, awesome-robotics lists, a launch post walking through the spec. Ends the six months with the standard *public*. | |
+| :clipboard: | **Spec v1.0 announcement** | Spec v1.0 is frozen; remaining: publish the conformance suite results for all first-party adapters and take it to the community: ROS Discourse, awesome-robotics lists, a launch post walking through the spec. Ends the six months with the standard *public*. | |
 
 ---
 
