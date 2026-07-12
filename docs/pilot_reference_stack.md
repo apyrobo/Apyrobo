@@ -6,7 +6,7 @@
 
 | Decision          | Choice                                                       | Rationale                                                    |
 | ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| **Robot**         | TurtleBot4                                                   | `ros-humble-turtlebot4-simulator` already in Dockerfile      |
+| **Robot**         | TurtleBot4 (hardware target); CI's sim proof currently drives a TurtleBot3 burger via the same `ros2://` adapter | `ros-humble-turtlebot4-simulator` already in Dockerfile; TB3 is the lighter headless-CI model |
 | **ROS version**   | Humble                                                       | `FROM ros:humble-desktop` in base image                      |
 | **Navigation**    | Nav2 + SLAM Toolbox (live map building, no pre-built map)    | Simplest path to autonomous navigation; no map prep needed   |
 | **Environment**   | Docker via `docker/docker-compose.yml`                       | Existing Dockerfile is production-ready                      |

@@ -20,9 +20,19 @@ That is the path to use for real mobile robots today.
 
 `ros2://` adapter + `apyrobo-skills-ros-nav` + the Gazebo integration CI job
 + [docs/TURTLEBOT4.md](../docs/TURTLEBOT4.md) together form the **flagship
-reference stack** — the one end-to-end path (natural-language task → plan →
-real Nav2 action → simulated robot moves) that is exercised in CI on every
-commit. It is the canonical example for anyone writing an adapter
+reference stack**. Precisely what is verified where:
+
+- **CI, every commit:** the `ros2://` adapter drives a physics-simulated
+  **TurtleBot3** burger in Gazebo — a minimal `/cmd_vel` + `/odom` loop
+  (`gazebo` profile), **and** the full NL → plan → Nav2 `NavigateToPose`
+  end-to-end with SLAM (`gazebo-nav` profile, see
+  [tests/integration/README_gazebo.md](../tests/integration/README_gazebo.md)).
+- **Real code, error-checked without hardware:** `ros-nav`'s Nav2 skills
+  call the live `NavigateToPose` action when ROS 2 is sourced.
+- **Hardware target:** **TurtleBot4**, via the same adapter — the
+  [guide](../docs/TURTLEBOT4.md) covers real and simulated TB4.
+
+It is the canonical example for anyone writing an adapter
 ([docs/adapter_authoring.md](../docs/adapter_authoring.md)) or wiring a
 scaffold to a vendor SDK: when a scaffold below graduates to "real", the bar
 is "does what the flagship does, for its hardware."

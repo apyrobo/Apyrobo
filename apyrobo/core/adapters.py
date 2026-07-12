@@ -553,18 +553,30 @@ class MockAdapter(CapabilityAdapter):
 @register_adapter("gazebo")
 class GazeboAdapter(CapabilityAdapter):
     """
-    Adapter for Gazebo-simulated robots.
+    Physics-flavored mock adapter (Gazebo-shaped, **no Gazebo required or used**).
 
-    Without a live Gazebo instance, behaves like an enhanced mock with
-    simulated delays and physics constraints. When Gazebo is available,
-    subclass and override _send_gazebo_cmd().
+    Behaves like an enhanced mock with simulated delays and physics
+    constraints — it never connects to a running Gazebo. To drive a real
+    Gazebo simulation, use the ``ros2://`` adapter against ``gazebo_ros``
+    (see ``tests/integration/README_gazebo.md``); to bridge this class to a
+    simulator yourself, subclass and override ``_send_gazebo_cmd()``.
 
     Usage:
-        robot = Robot.discover("gazebo://turtlebot4")
+        robot = Robot.discover("gazebo://turtlebot4")   # mock with physics feel
     """
+
+    _stand_in_warned = False
 
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         super().__init__(robot_name, **kwargs)
+        if not type(self)._stand_in_warned:
+            type(self)._stand_in_warned = True
+            logger.warning(
+                "GazeboAdapter(%r) is a physics-flavored mock — it does not "
+                "connect to Gazebo. For live simulation use ros2:// against "
+                "a running Gazebo (see tests/integration/README_gazebo.md).",
+                robot_name,
+            )
         self._position = (0.0, 0.0)
         self._orientation = 0.0
         self._moving = False

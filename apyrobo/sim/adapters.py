@@ -1,4 +1,16 @@
-"""Simulation adapters and utilities for sim-first workflows."""
+"""Simulation adapters and utilities for sim-first workflows.
+
+Honesty note — these adapters are **in-memory stand-ins**, not live
+simulator bridges: they model poses, joints, and forces in Python state and
+never open a connection to Gazebo, MuJoCo, or Isaac Sim. They exist so
+sim-shaped workflows (spawn/reset/joint-state APIs, domain randomization)
+can be developed and tested without a simulator installed. Each warns once
+at first instantiation.
+
+For a **live physics simulation** drive the real ``ros2://`` adapter
+against a running Gazebo (``gazebo_ros`` exposes ``/cmd_vel`` + ``/odom``);
+that path is exercised in CI — see ``tests/integration/README_gazebo.md``.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +25,18 @@ from apyrobo.core.adapters import CapabilityAdapter, register_adapter
 from apyrobo.core.schemas import AdapterState, Capability, CapabilityType, RobotCapability, SensorInfo, SensorType
 
 logger = logging.getLogger(__name__)
+
+
+def _warn_stand_in(cls: type, robot_name: str, simulator: str) -> None:
+    """Warn once per adapter class that it is an in-memory stand-in."""
+    if not getattr(cls, "_stand_in_warned", False):
+        cls._stand_in_warned = True
+        logger.warning(
+            "%s(%r) is an in-memory stand-in — it does not connect to %s. "
+            "For live physics drive the ros2:// adapter against a running "
+            "Gazebo (see tests/integration/README_gazebo.md).",
+            cls.__name__, robot_name, simulator,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +63,12 @@ class JointState:
 @register_adapter("gazebo_native")
 class GazeboNativeAdapter(CapabilityAdapter):
     """
-    SIM-01: Gazebo-native adapter without ROS 2 dependency.
+    SIM-01: Gazebo-shaped adapter without ROS 2 dependency.
+
+    **In-memory stand-in** — models entities, joints, and forces in Python
+    state; it does not connect to a running Gazebo. The
+    ``gazebo_available`` kwarg simulates availability for testing error
+    paths (`GazeboNotRunningError`), it does not detect a real simulator.
 
     Supports:
     - spawn_entity / despawn_entity for model management
@@ -51,6 +80,7 @@ class GazeboNativeAdapter(CapabilityAdapter):
 
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         super().__init__(robot_name, **kwargs)
+        _warn_stand_in(type(self), robot_name, "Gazebo")
         self._position = (0.0, 0.0)
         self._orientation = 0.0
         self._moving = False
@@ -353,10 +383,14 @@ class GazeboNativeAdapter(CapabilityAdapter):
 
 @register_adapter("mujoco")
 class MuJoCoAdapter(CapabilityAdapter):
-    """SIM-03: lightweight MuJoCo adapter facade."""
+    """SIM-03: MuJoCo-shaped adapter facade.
+
+    **In-memory stand-in** — does not import or connect to MuJoCo.
+    """
 
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         super().__init__(robot_name, **kwargs)
+        _warn_stand_in(type(self), robot_name, "MuJoCo")
         self._position = (0.0, 0.0)
         self._orientation = 0.0
         self._model = kwargs.get("model", "point_mass")
@@ -383,10 +417,14 @@ class MuJoCoAdapter(CapabilityAdapter):
 
 @register_adapter("isaac")
 class IsaacSimAdapter(CapabilityAdapter):
-    """SIM-06: Isaac Sim adapter shell via Kit SDK integration points."""
+    """SIM-06: Isaac Sim adapter shell via Kit SDK integration points.
+
+    **In-memory stand-in** — does not connect to Isaac Sim.
+    """
 
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         super().__init__(robot_name, **kwargs)
+        _warn_stand_in(type(self), robot_name, "Isaac Sim")
         self._position = (0.0, 0.0)
         self._state = AdapterState.CONNECTED
 

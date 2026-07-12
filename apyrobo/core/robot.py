@@ -41,9 +41,11 @@ class Robot:
         Discover a robot from a URI.
 
         Supported URI schemes (extensible via adapters):
-            gazebo://turtlebot4   — simulated TurtleBot4 in Gazebo
-            ros2://               — any robot on the local ROS 2 network
+            ros2://               — any robot on the local ROS 2 network,
+                                    including live Gazebo simulations
             mock://test           — in-memory mock for testing
+            gazebo://turtlebot4   — physics-flavored mock (no Gazebo needed
+                                    or used; see GazeboAdapter)
 
         Returns a Robot instance ready for .capabilities() and commands.
         """

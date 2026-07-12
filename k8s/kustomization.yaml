@@ -8,11 +8,9 @@ resources:
   - configmap.yaml
   - secret.yaml
   - deployment-api.yaml
-  - deployment-worker.yaml
   - service.yaml
   - service-lb.yaml
   - pvc.yaml
-  - hpa.yaml
 
 commonLabels:
   app.kubernetes.io/name: apyrobo

@@ -85,3 +85,40 @@ jobs:
         if: always()
         run: |
           docker compose -f docker/docker-compose.yml --profile gazebo down --volumes
+
+  # Flagship-stack end-to-end: natural-language task → rule-agent plan →
+  # Nav2 NavigateToPose → the physics-simulated TurtleBot3 navigates.
+  # SLAM + Nav2 bringup on top of Gazebo is the heaviest job here — the
+  # compose healthcheck waits for the navigate_to_pose action server and
+  # the job timeout guards against hung bringups.
+  gazebo-nav-e2e:
+    name: Nav2-in-Gazebo NL End-to-End
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Gazebo image
+        run: docker compose -f docker/docker-compose.yml --profile gazebo-nav build
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Run Nav2 end-to-end test
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav \
+            up \
+            --abort-on-container-exit \
+            --exit-code-from gazebo-nav-test
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav logs
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav down --volumes

@@ -24,15 +24,16 @@ cp docker/.env.example docker/.env
 # Edit docker/.env — set APYROBO_API_KEY to a strong random value
 ```
 
-### 2. Start the API gateway and workers
+### 2. Start the API gateway
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 ```
 
 This starts:
-- `apyrobo-api` — REST gateway on port **8080**
-- `apyrobo-worker` × 2 — stateless skill executors
+- `apyrobo-api` — REST gateway on port **8080**; skills execute in this
+  process (a separate distributed worker tier is a roadmap item, not a
+  current feature)
 
 Verify:
 
@@ -79,13 +80,7 @@ To stop and clean up volumes:
 docker compose -f docker/docker-compose.yml --profile observability down -v
 ```
 
-### 5. Scale workers
-
-```bash
-docker compose -f docker/docker-compose.yml up -d --scale apyrobo-worker=4
-```
-
-### 6. View logs
+### 5. View logs
 
 ```bash
 docker compose -f docker/docker-compose.yml logs -f apyrobo-api
@@ -135,7 +130,6 @@ kubectl apply -k k8s/
 
 ```bash
 kubectl -n apyrobo rollout status deployment/apyrobo-api
-kubectl -n apyrobo rollout status deployment/apyrobo-worker
 kubectl -n apyrobo get pods
 ```
 
@@ -159,7 +153,6 @@ curl http://<EXTERNAL-IP>/health
 | `APYROBO_LOG_LEVEL` | `INFO` | Verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `APYROBO_REDIS_URL` | *(empty)* | Redis connection URL for shared state. Empty = in-process SQLite |
 | `APYROBO_AUDIT_DB` | `/app/data/audit/audit.db` | Path to the SQLite audit database |
-| `APYROBO_WORKER_MODE` | `false` | Set `true` on worker pods to enable worker-only behaviour |
 
 ---
 
@@ -180,26 +173,18 @@ Kubernetes probes are pre-configured in `k8s/deployment-api.yaml`:
 
 ### Horizontal scaling
 
-Workers are stateless and scale freely:
-
-```bash
-# Docker Compose
-docker compose -f docker/docker-compose.yml up -d --scale apyrobo-worker=8
-
-# Kubernetes — manual
-kubectl -n apyrobo scale deployment/apyrobo-worker --replicas=8
-
-# Kubernetes — auto (HPA configured in k8s/hpa.yaml)
-# Workers scale between 2–10 replicas at 70% CPU / 80% memory
-```
-
-### API replicas
-
-The API deployment defaults to **2 replicas** for high availability. Increase for higher throughput:
+Scale the API gateway; skills execute inside it. The deployment defaults to
+**2 replicas** for high availability — increase for higher throughput (use
+Redis so replicas share task/robot state, see below):
 
 ```bash
 kubectl -n apyrobo scale deployment/apyrobo-api --replicas=4
 ```
+
+> A dedicated stateless worker tier (`apyrobo worker`) was described in
+> earlier versions of this guide but was never implemented; the service and
+> manifests have been removed. A distributed executor tier is a roadmap
+> item.
 
 ### Resource tuning
 
@@ -208,9 +193,8 @@ Default resource requests (per pod):
 | Component | CPU request | CPU limit | Memory request | Memory limit |
 |-----------|------------|-----------|----------------|-------------|
 | API | 100m | 500m | 256 Mi | 512 Mi |
-| Worker | 200m | 1000m | 256 Mi | 1 Gi |
 
-Adjust in `k8s/deployment-api.yaml` and `k8s/deployment-worker.yaml` to match your workload.
+Adjust in `k8s/deployment-api.yaml` to match your workload.
 
 ### Redis
 
