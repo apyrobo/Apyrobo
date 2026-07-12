@@ -9,8 +9,29 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **NL → Nav2 → Gazebo end-to-end proof** — new `gazebo-nav` Docker Compose
+  profile and CI job: `Agent(provider="rule")` plans a natural-language task,
+  the executor drives `ROS2Adapter`, and the adapter's preferred Nav2
+  `NavigateToPose` path (SLAM mode, `slam_toolbox`, live map) navigates a
+  physics-simulated TurtleBot3 in `turtlebot3_world`
+  (`tests/integration/test_gazebo_nav2_e2e.py`, `README_gazebo.md`).
+
 ### Changed
 
+- **Sim adapters labeled as in-memory stand-ins** — `gazebo://`,
+  `gazebo_native://`, `mujoco://`, and `isaac://` never connect to a
+  simulator; they now say so in their docstrings and README rows and warn
+  once at first instantiation. Live simulation is `ros2://` against a
+  running Gazebo. Docs that implied otherwise (README adapter tables,
+  `Robot.discover` docstring, `ros2_bridge` usage) are corrected.
+- **Hardware-in-the-Loop CI is manual-only** (`workflow_dispatch`) until a
+  self-hosted `hil-runner` exists — its push/PR triggers startup-failed on
+  every commit and stamped a red X on the repo.
+- Flagship/pilot docs now state precisely what is verified where: CI's sim
+  proof drives a TurtleBot3 burger; TurtleBot4 is the hardware target via
+  the same `ros2://` adapter.
 - **APYROBO Protocol spec frozen at 1.0** — the `spec/` documents (wire
   protocol, capability model, adapter contract, skill manifest) drop the
   `-draft` suffix; all further spec changes require an accepted RFC
@@ -29,6 +50,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Removed
 
+- **Phantom `apyrobo-worker` tier** — the Compose service, k8s
+  `deployment-worker.yaml`/`hpa.yaml`, and deployment-guide scaling
+  instructions described an `apyrobo worker` subcommand that was never
+  implemented (the in-process `TaskQueue` has no shared broker). Skills
+  execute in the API gateway; a real distributed executor tier is tracked
+  on the roadmap.
 - Unused `networkx` dependency (declared as the skill graph engine, never
   imported — the graph engine is hand-rolled).
 

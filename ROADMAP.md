@@ -358,6 +358,18 @@ Neutral governance is what lets competitors adopt the same standard. Ecosystem g
 
 ---
 
+## Beyond v8.0.0 — Exploring
+
+Not scheduled; captured so known debt and demand signals aren't lost.
+
+| Status | Item | Description |
+|--------|------|-------------|
+| :bulb: | **Gazebo Classic → gz-sim port** | The Gazebo integration ([tests/integration/README_gazebo.md](tests/integration/README_gazebo.md)) targets Gazebo Classic, which is EOL (maintained through 2025). Port the sim proof and Docker images to modern Gazebo (`gz-sim`) / `ros_gz`. |
+| :bulb: | **Distributed executor tier** | A stateless `apyrobo worker` scale-out tier was described in early deployment docs but never implemented (the in-process `TaskQueue` has no shared broker); the phantom service and manifests were removed. Revisit with a real broker (Redis streams) if fleet-scale demand materialises. |
+| :bulb: | **Live simulator bridges for `gazebo_native://` / `mujoco://` / `isaac://`** | Today these schemes are in-memory stand-ins ([apyrobo/sim/adapters.py](apyrobo/sim/adapters.py)). Wire them to the real simulators, or retire them in favour of `ros2://` + per-sim bringup. |
+
+---
+
 ## Non-Goals
 
 Things APYROBO intentionally does **not** aim to do:

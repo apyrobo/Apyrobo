@@ -5,8 +5,6 @@
 #   cp docker/.env.example docker/.env
 #   docker compose -f docker/docker-compose.yml up -d
 #
-# With workers (opt-in via the `workers` profile):
-#   docker compose -f docker/docker-compose.yml --profile workers up -d
 #
 # With Redis:
 #   docker compose -f docker/docker-compose.yml --profile redis up -d
@@ -20,11 +18,8 @@
 #   → Grafana: http://localhost:3000  (admin / apyrobo)
 #   → Prometheus: http://localhost:9090
 #
-# Scale workers:
-#   docker compose -f docker/docker-compose.yml --profile workers \
-#       up -d --scale apyrobo-worker=4
 #
-# Integration tests (fake-robot + pytest, no workers):
+# Integration tests (fake-robot + pytest):
 #   docker compose -f docker/docker-compose.yml --profile integration up \
 #       --abort-on-container-exit --exit-code-from integration-test
 # =============================================================================
@@ -63,34 +58,6 @@ services:
       redis:
         condition: service_healthy
         required: false
-
-  # ---------------------------------------------------------------------------
-  # Skill executor workers (stateless — scale freely)
-  # ---------------------------------------------------------------------------
-  # NOTE: the worker service is opt-in via `--profile workers`. The CLI
-  # `worker` subcommand isn't implemented yet — keeping the service out of
-  # default startup prevents it from crashing integration runs.
-  apyrobo-worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: runtime
-    image: apyrobo:latest
-    restart: unless-stopped
-    profiles:
-      - workers
-    deploy:
-      replicas: 2
-    environment:
-      APYROBO_API_KEY: ${APYROBO_API_KEY:-changeme}
-      APYROBO_LOG_LEVEL: ${APYROBO_LOG_LEVEL:-INFO}
-      APYROBO_REDIS_URL: ${APYROBO_REDIS_URL:-}
-      APYROBO_WORKER_MODE: "true"
-    volumes:
-      - skill_data:/app/data/skills
-    networks:
-      - apyrobo-net
-    command: ["python", "-m", "apyrobo.cli", "worker"]
 
   # ---------------------------------------------------------------------------
   # Redis — optional state persistence (profile: redis)
@@ -301,6 +268,75 @@ services:
       - -k
       - gazebo
       - tests/integration/test_gazebo_turtlebot.py
+      - -v
+      - --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Nav2 end-to-end — profile: gazebo-nav
+  #
+  # gazebo-nav-sim:  the gazebo-sim setup plus robot_state_publisher and the
+  #                  full Nav2 stack in SLAM mode (slam_toolbox, live map).
+  # gazebo-nav-test: the flagship-stack proof — a natural-language task is
+  #                  planned by the rule agent and executed through Nav2
+  #                  NavigateToPose; asserts the physics robot reaches the
+  #                  goal region.
+  #
+  #   docker compose -f docker/docker-compose.yml --profile gazebo-nav up \
+  #       --build --abort-on-container-exit --exit-code-from gazebo-nav-test
+  # ---------------------------------------------------------------------------
+  gazebo-nav-sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gazebo
+    image: apyrobo-gazebo:latest
+    container_name: apyrobo-gazebo-nav-sim
+    profiles:
+      - gazebo-nav
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+      TURTLEBOT3_MODEL: "burger"
+    command:
+      - bash
+      - tests/integration/gazebo_nav_boot.sh
+    healthcheck:
+      # Ready once the NavigateToPose action server is live (bt_navigator
+      # active) — the last thing to come up after SLAM + Nav2 bringup.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "source /opt/ros/humble/setup.bash && ros2 action list 2>/dev/null | grep -q navigate_to_pose"
+      interval: 10s
+      timeout: 15s
+      retries: 18
+      start_period: 120s
+
+  gazebo-nav-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gazebo
+    image: apyrobo-gazebo:latest
+    container_name: apyrobo-gazebo-nav-test
+    profiles:
+      - gazebo-nav
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+      # Opt-in for the Nav2 e2e tests only (mirrors APYROBO_GAZEBO).
+      APYROBO_GAZEBO_NAV: "1"
+    depends_on:
+      gazebo-nav-sim:
+        condition: service_healthy
+    command:
+      - pytest
+      - -p
+      - "no:launch_testing"
+      - -m
+      - integration
+      - tests/integration/test_gazebo_nav2_e2e.py
       - -v
       - --tb=short
 

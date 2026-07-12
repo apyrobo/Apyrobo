@@ -95,7 +95,7 @@ specific minor version if you depend on them.
 
 | Module | Notes |
 |--------|-------|
-| `apyrobo.sim` | Gazebo / MuJoCo / Isaac adapters — simulator APIs evolve |
+| `apyrobo.sim` | Gazebo / MuJoCo / Isaac **in-memory stand-ins** (no live simulator connection; live sim = `ros2://`) — APIs evolve |
 | `apyrobo.core.unitree_adapter`, `apyrobo.core.isaac_adapter` | Vendor SDK surfaces still settling |
 | `apyrobo.voice` | STT/TTS model APIs change with model updates |
 | `apyrobo.sensors`, `apyrobo.vision` | Sensor/vision adapter interfaces still being refined |

@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-gazebo-ros-pkgs \
     ros-humble-turtlebot3-gazebo \
     ros-humble-turtlebot3-description \
+    ros-humble-nav2-bringup \
+    ros-humble-slam-toolbox \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 

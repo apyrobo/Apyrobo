@@ -1,7 +1,11 @@
 # Hardware-in-the-loop CI
 #
-# Runs the skill test suite against a real physical robot on every push to main
-# and on PRs that touch skill packages or core adapters.
+# Runs the skill test suite against a real physical robot.
+#
+# MANUAL-ONLY until a runner exists: no "hil-runner" self-hosted runner is
+# registered yet, so push/PR triggers would startup-fail and stamp a red X on
+# every commit. When a runner is registered, restore the push/pull_request
+# triggers below (kept as comments).
 #
 # Prerequisites:
 #   1. A self-hosted GitHub Actions runner with:
@@ -19,20 +23,20 @@
 name: Hardware-in-the-Loop CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apyrobo/skills/**"
-      - "apyrobo/core/**"
-      - "apyrobo/safety/**"
-      - "packages/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "apyrobo/skills/**"
-      - "apyrobo/core/**"
-      - "apyrobo/safety/**"
-      - "packages/**"
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "apyrobo/skills/**"
+  #     - "apyrobo/core/**"
+  #     - "apyrobo/safety/**"
+  #     - "packages/**"
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - "apyrobo/skills/**"
+  #     - "apyrobo/core/**"
+  #     - "apyrobo/safety/**"
+  #     - "packages/**"
   workflow_dispatch:
     inputs:
       robot_uri:

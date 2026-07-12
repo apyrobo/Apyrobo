@@ -10,8 +10,9 @@ This adapter translates APYROBO's semantic commands into:
 Requires rclpy + nav2_msgs (available inside the Docker container).
 
 Usage:
-    robot = Robot.discover("ros2://turtlebot4")
-    robot = Robot.discover("gazebo://turtlebot4")   # alias for sim
+    robot = Robot.discover("ros2://turtlebot4")     # real robot OR live Gazebo sim
+    # Note: gazebo:// is NOT this adapter — it is a physics-flavored mock
+    # (see core/adapters.py). A live Gazebo sim is driven via ros2://.
 
 Node lifecycle: all ros2:// adapters in a process share one rclpy node
 ("apyrobo_bridge") spun by a daemon thread, so it dies with the process.
