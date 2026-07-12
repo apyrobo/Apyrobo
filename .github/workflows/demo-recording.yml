@@ -6,11 +6,6 @@ name: Demo Recording
 
 on:
   workflow_dispatch:
-  # TEMPORARY while this workflow is not yet on the default branch (GitHub
-  # can only dispatch default-branch workflows): run on pushes to its own
-  # feature branch. Removed once the recording is verified and committed.
-  push:
-    branches: ["v8-nav2-demo-recording"]
 
 jobs:
   nav2-gazebo-demo:
