@@ -86,6 +86,7 @@ print("OK — stripped launch_testing pytest11 entries from:", changed)
 PYEOF
 
 COPY tests/ ./tests/
+COPY demos/ ./demos/
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
