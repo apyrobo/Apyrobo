@@ -16,6 +16,7 @@ See demos/nav2_gazebo/README.md.
 """
 from __future__ import annotations
 
+import contextlib
 import math
 import sys
 import threading
@@ -91,6 +92,11 @@ def main() -> int:
         code = 1
 
     robot.stop()
+    # Prompt DDS teardown (see ros2_bridge module docs) — without it the C++
+    # layer prints "terminate called without an active exception" on exit.
+    from apyrobo.core.ros2_bridge import _ROS2NodeManager
+    with contextlib.suppress(Exception):
+        _ROS2NodeManager.shutdown()
     return code
 
 
