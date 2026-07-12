@@ -340,6 +340,31 @@ services:
       - -v
       - --tb=short
 
+  # Narrated demo run against the live gazebo-nav sim (used by
+  # demos/nav2_gazebo/record.sh and the Demo Recording workflow):
+  #   docker compose --profile gazebo-nav run --rm gazebo-nav-demo
+  # (`run` auto-activates this service's own profile.) Deliberately NOT in
+  # the gazebo-nav profile: `--profile gazebo-nav up` is the CI e2e job, and
+  # a demo container started alongside the test would fight it for the robot
+  # and abort the run when it exits first.
+  gazebo-nav-demo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gazebo
+    image: apyrobo-gazebo:latest
+    profiles:
+      - gazebo-nav-demo
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+    depends_on:
+      gazebo-nav-sim:
+        condition: service_healthy
+    command:
+      - python3
+      - demos/nav2_gazebo/demo.py
+
 volumes:
   audit_data:
     driver: local

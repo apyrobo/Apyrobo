@@ -1,0 +1,51 @@
+# Renders the Nav2-in-Gazebo demo recording on a clean Linux runner and
+# uploads demo.gif / demo.mp4 as artifacts. Manual-only: recordings are
+# reviewed and committed by hand (demos/nav2_gazebo/README.md embeds the
+# committed GIF), not regenerated on every push.
+name: Demo Recording
+
+on:
+  workflow_dispatch:
+
+jobs:
+  nav2-gazebo-demo:
+    name: Record Nav2-in-Gazebo demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install vhs (+ ttyd, ffmpeg)
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt-get update
+          sudo apt-get install -y vhs ffmpeg
+          # vhs needs ttyd, which the charm package does not declare.
+          sudo apt-get install -y ttyd || {
+            curl -fsSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+            sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd
+          }
+          vhs --version
+          ttyd --version
+
+      - name: Record the demo
+        run: demos/nav2_gazebo/record.sh
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Upload recording
+        uses: actions/upload-artifact@v4
+        with:
+          name: nav2-gazebo-demo
+          path: |
+            demos/nav2_gazebo/demo.gif
+            demos/nav2_gazebo/demo.mp4
+          if-no-files-found: error
+
+      - name: Dump sim logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav logs
