@@ -13,6 +13,14 @@ Usage:
     robot = Robot.discover("ros2://turtlebot4")
     robot = Robot.discover("gazebo://turtlebot4")   # alias for sim
 
+Node lifecycle: all ros2:// adapters in a process share one rclpy node
+("apyrobo_bridge") spun by a daemon thread, so it dies with the process.
+Long-running hosts that want the DDS participant removed from the graph
+promptly (rather than after lease timeout) should call
+``_ROS2NodeManager.shutdown()`` when done with all robots. This is not
+wired to ``atexit`` on purpose: teardown ordering against a still-spinning
+executor at interpreter exit is unreliable.
+
 Architecture:
     APYROBO Agent
         │
