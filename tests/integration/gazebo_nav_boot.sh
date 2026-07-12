@@ -34,10 +34,14 @@ GZ_PID=$!
 # TF tree for the lidar: the raw SDF spawn gives odom→base_footprint (from
 # the diff-drive plugin) but not the fixed frames slam_toolbox needs to place
 # /scan. robot_state_publisher supplies base_footprint→base_link→base_scan.
+#
+# Humble's turtlebot3_description URDF is namespace-templated — fed raw, RSP
+# publishes frames literally named "${namespace}base_link" and Nav2/SLAM see
+# no base_link at all. Strip the placeholder (the launch files normally do).
 echo "[gazebo_nav_boot] starting robot_state_publisher…"
 ros2 run robot_state_publisher robot_state_publisher --ros-args \
     -p use_sim_time:=true \
-    -p robot_description:="$(cat "$URDF")" &
+    -p robot_description:="$(sed 's/\${namespace}//g' "$URDF")" &
 
 echo "[gazebo_nav_boot] waiting for /spawn_entity service…"
 for _ in $(seq 1 40); do

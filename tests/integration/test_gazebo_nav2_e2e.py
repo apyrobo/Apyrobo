@@ -91,7 +91,10 @@ def test_nl_task_plans_navigate_skill(robot):
     order = graph.get_execution_order()
     nav_steps = [s for s in order if "navigate" in s.name.lower() or "navigate" in s.skill_id.lower()]
     assert nav_steps, f"no navigate skill planned for {TASK!r}: {[s.name for s in order]}"
-    params = nav_steps[-1].parameters
+    # Runtime parameters live on the graph (provider coords merged over the
+    # catalog defaults), not on Skill.parameters — same lookup the executor
+    # uses (SkillGraph.get_parameters).
+    params = graph.get_parameters(nav_steps[-1].skill_id)
     assert params.get("x") == GOAL[0] and params.get("y") == GOAL[1], (
         f"coordinates not extracted into the plan: {params}"
     )
