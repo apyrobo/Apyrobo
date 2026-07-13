@@ -13,7 +13,7 @@ import logging
 from enum import Enum
 from typing import Any
 
-from apyrobo.core.schemas import BaseModel, Field, CapabilityType
+from apyrobo.core.schemas import BaseModel, CapabilityType, Field
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class Skill(BaseModel):
         timeout: float = 60.0,
         retries: int = 0,
         **params: Any,
-    ) -> "Skill":
+    ) -> Skill:
         """One-liner skill factory for quick authoring.
 
         Parameter types are inferred from the keyword argument values: pass a
@@ -249,4 +249,16 @@ speak = _register_builtin(Skill(
     required_capability=CapabilityType.SPEAK,
     parameters={"text": ""},
     timeout_seconds=30.0,
+))
+
+run_policy = _register_builtin(Skill(
+    skill_id="run_policy",
+    name="Run Policy",
+    description=(
+        "Execute a learned policy (VLA / LeRobot / any Policy-shaped object) "
+        "as a bounded, safety-enforced control loop — see apyrobo.skills.policy"
+    ),
+    required_capability=CapabilityType.NAVIGATE,
+    parameters={"policy": None, "max_duration_sec": 120.0},
+    timeout_seconds=180.0,
 ))

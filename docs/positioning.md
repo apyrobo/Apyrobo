@@ -65,7 +65,7 @@ below is a runtime.
    controller. This is a *distinct user population with no open option*,
    and it makes APYROBO's "protocol above any middleware" claim literally
    true (first non-ROS base).
-2. **Policy-backed skills** — VLA deployment *requires* the thing APYROBO
+2. **Policy-backed skills** *(landed — [docs/policy_skills.md](policy_skills.md); a worked real-checkpoint example remains)* — VLA deployment *requires* the thing APYROBO
    already is (safety envelope + runtime monitor + recovery around an
    uncertifiable policy). Rides the largest current wave in robotics;
    acquires the lab/course population that produces tomorrow's
