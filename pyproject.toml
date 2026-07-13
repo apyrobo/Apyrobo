@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
 name = "apyrobo"
-version = "4.0.0"
+version = "4.1.0"
 description = "Open-source AI orchestration layer for robotics, built on ROS 2"
 readme = "README.md"
 license = { text = "Apache-2.0" }

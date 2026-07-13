@@ -9,6 +9,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [4.1.0] - 2026-07-12
+
+The Standard Protocol release, part one: spec 1.0 frozen, the flagship
+NL → Nav2 → Gazebo pipeline proven and recorded, and a plug-and-play
+honesty pass so no claim outruns the code.
+
 ### Added
 
 - **NL → Nav2 → Gazebo end-to-end proof** — new `gazebo-nav` Docker Compose
