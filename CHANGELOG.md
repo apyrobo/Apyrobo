@@ -9,7 +9,18 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`vda5050://` — VDA 5050 master-control adapter** (`apyrobo/core/vda5050_adapter.py`,
+  `pip install 'apyrobo[vda5050]'`): drive any VDA 5050-compliant AMR over
+  MQTT — publishes `order`/`instantActions`, consumes
+  `state`/`connection`/`factsheet`; blocking `move()` with order tracking,
+  never-raising `stop()` via HARD `cancelOrder`, factsheet-derived
+  capabilities. APYROBO's first non-ROS base. Verified against an
+  in-process simulated AGV and the full adapter conformance suite;
+  physical-fleet validation is tracked as the roadmap Arc 1 gate.
+- `docs/positioning.md` — market research: personas, landscape, bases
+  beyond ROS 2, and the two user-acquisition wedges now on the roadmap.
 
 ## [4.1.0] - 2026-07-12
 

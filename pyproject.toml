@@ -65,8 +65,11 @@ llm = [
 conformance = [
     "jsonschema>=4.21",    # schema-validation checks in `apyrobo conformance`
 ]
+vda5050 = [
+    "paho-mqtt>=2.0",      # MQTT transport for the vda5050:// master-control adapter
+]
 full = [
-    "apyrobo[llm,api,registry,dashboard,websocket,slack,conformance]",
+    "apyrobo[llm,api,registry,dashboard,websocket,slack,conformance,vda5050]",
 ]
 ros = [
     # ROS 2 deps are installed system-wide via apt in Docker
