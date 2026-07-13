@@ -421,8 +421,9 @@ The path from pre-alpha to category-defining runs through four compounding unloc
 > own (PyPI is currently the 4.x line) — see
 > [API_STABILITY.md](API_STABILITY.md) for the guarantees.
 
-We have items marked **good first issue** and **help wanted** across every milestone.
-See [ROADMAP.md](ROADMAP.md) for the full technical roadmap with contribution opportunities.
+See [ROADMAP.md](ROADMAP.md) for what shipped, what's in flight (v8 Phase 3),
+and the four post-v8 arcs — hardware proof, the second implementation, modern
+simulation, fleet-scale operations — each with mentored contribution entry points.
 
 ---
 
