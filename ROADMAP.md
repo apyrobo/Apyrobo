@@ -73,6 +73,18 @@ Neutral governance is what lets competitors adopt the same standard. Ecosystem g
 
 ---
 
+### Pulled forward — the two user-acquisition wedges
+
+Market research ([docs/positioning.md](docs/positioning.md)) identified two
+adapter-shaped gaps where a distinct user population has no good option
+today. Both are arc work started early, because each one is a *wedge* — a
+reason for a specific kind of team to adopt APYROBO — not just a feature.
+
+| Status | Item | Description | Label |
+|--------|------|-------------|-------|
+| :construction: | **VDA5050 master-control adapter** (`vda5050://`) | The industrial-AMR world is converging on [VDA5050](https://ottomotors.com/blog/interoperability-standard-vda5050/) (MQTT; MiR, OTTO/Rockwell, Seegrid targeting 2026 compliance). A compliant fleet needs a master controller — normally an expensive proprietary one. APYROBO as the open, NL-planning master control: publish `order`/`instantActions`, consume `state`/`factsheet`, no ROS required on the robot. The warehouse-startup wedge; also the first non-ROS base, proving the protocol sits above more than one middleware. | |
+| :construction: | **Policy-backed skills** (VLA / LeRobot) | The VLA deployment literature is explicit that neural policies need runtime safety monitors — which is exactly APYROBO's execution model. A `Policy` protocol + runner that makes a learned policy (π0, OpenVLA, anything LeRobot-shaped) just another skill-graph node, with the safety enforcer wrapping every action. The research-lab and course wedge. Core stays torch-free; LeRobot is the user's dependency. | |
+
 ## Next — the arcs after v8
 
 The big picture, deliberately not dated: each arc has a **gate** — the
