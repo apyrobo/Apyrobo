@@ -77,3 +77,21 @@ def _speak(robot: Any, params: dict[str, Any]) -> bool:
         return True
     logger.info("speak handler: no voice adapter, text=%r", text)
     return True
+
+
+@skill_handler("run_policy")
+def _run_policy(robot: Any, params: dict[str, Any]) -> bool:
+    """Run a learned policy as a bounded control loop (apyrobo.skills.policy)."""
+    from apyrobo.skills.policy import PolicyRunner
+
+    policy = params.get("policy")
+    if policy is None:
+        logger.warning("run_policy handler: no 'policy' in parameters")
+        return False
+    runner_keys = (
+        "hz", "max_duration_sec", "max_steps", "max_step_m",
+        "speed", "success", "observe", "real_time",
+    )
+    kwargs = {k: params[k] for k in runner_keys if k in params}
+    result = PolicyRunner(policy, robot, **kwargs).run()
+    return result.success

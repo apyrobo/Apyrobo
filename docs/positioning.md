@@ -53,7 +53,7 @@ below is a runtime.
 | Base | World | Status in APYROBO |
 |------|-------|-------------------|
 | **ROS 2** | Research, education, most modern robots | Native (`ros2://`, flagship, CI-verified) |
-| **VDA5050 (MQTT)** | Industrial AMR fleets — MiR, OTTO/Rockwell, Seegrid converging on it for 2026; no ROS required on the robot | **Wedge #1 — in progress** (`vda5050://`) |
+| **VDA5050 (MQTT)** | Industrial AMR fleets — MiR, OTTO/Rockwell, Seegrid converging on it for 2026; no ROS required on the robot | **Wedge #1 — landed** (`vda5050://`, verified vs. simulated AGV; hardware = Arc 1 gate) |
 | **MAVLink / MAVSDK** | PX4 drones (inspection, agtech) | Scaffold (`apyrobo-skills-drone-px4`) awaiting real wiring |
 | **Vendor SDKs** | Spot (`bosdyn`), UR (`ur_rtde`), Franka | Scaffolds awaiting real wiring — each graduation is a market segment |
 | **Zenoh** | ROS 2's own next transport (`rmw_zenoh`, Jazzy+); cloud↔edge | Watch; candidate wire-protocol binding for spec 1.1 |
@@ -65,7 +65,7 @@ below is a runtime.
    controller. This is a *distinct user population with no open option*,
    and it makes APYROBO's "protocol above any middleware" claim literally
    true (first non-ROS base).
-2. **Policy-backed skills** — VLA deployment *requires* the thing APYROBO
+2. **Policy-backed skills** *(landed — [docs/policy_skills.md](policy_skills.md); a worked real-checkpoint example remains)* — VLA deployment *requires* the thing APYROBO
    already is (safety envelope + runtime monitor + recovery around an
    uncertifiable policy). Rides the largest current wave in robotics;
    acquires the lab/course population that produces tomorrow's

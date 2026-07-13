@@ -63,6 +63,11 @@ from apyrobo.sim import (
     SimToRealTransferPipeline,
 )
 
+# Registers vda5050:// (imports cleanly without paho-mqtt; construction
+# raises a helpful ImportError only when paho is missing AND no transport
+# was injected).
+from apyrobo.core import vda5050_adapter as _vda5050_adapter  # noqa: F401
+
 # Ensure ROS 2 adapter is registered (import triggers @register_adapter).
 # When rclpy is missing, ros2_bridge emits a warnings.warn and _HAS_ROS2=False,
 # so the real ROS2Adapter is not registered. We register a stub instead so that

@@ -65,6 +65,7 @@
 - **Hardware Auto-Discovery** — `apyrobo connect ros2://ur10` detects robot type and loads the right skill package automatically
 - **Compute Profiles** — `--profile jetson-orin` / `--profile workstation-gpu` / `--profile cpu-only` configure models for any hardware
 - **Orchestration Server** — `apyrobo serve` exposes a JSON stdio interface; plug in Slack, Discord, web UI, or ROS service
+- **Policy-Backed Skills** — run a VLA/LeRobot policy as a skill-graph node with a hard per-tick bound and the safety enforcer wrapping every action ([docs](docs/policy_skills.md))
 - **Skill Package Ecosystem** — real ROS 2 Nav2 skills + the `ros2://` adapter (drives a TurtleBot3 in Gazebo), plus reference scaffolds for UR arms, Spot, Franka, PX4, and AGVs to wire to their vendor SDKs ([packages/](packages/))
 
 ---
@@ -340,6 +341,7 @@ APYROBO works with any robot through capability adapters:
 | `HTTPAdapter` | `http://` | REST-based robot APIs |
 | `Nav2Adapter` | `ros2://` | ROS 2 Nav2 navigation stack — real robots **and live Gazebo sims** |
 | `MoveItAdapter` | `ros2://` | ROS 2 MoveIt 2 manipulation |
+| `Vda5050Adapter` | `vda5050://` | **Industrial AMR fleets over MQTT** (VDA 5050 master control) — no ROS on the robot |
 
 Write your own: see the [Adapter Authoring Guide](docs/adapter_authoring.md).
 
@@ -354,11 +356,14 @@ Write your own: see the [Adapter Authoring Guide](docs/adapter_authoring.md).
 | `gazebo_native://` | Gazebo-shaped in-memory stand-in (spawn/joints/forces APIs) | Nothing |
 | `mujoco://` | MuJoCo-shaped in-memory stand-in | Nothing |
 | `ros2://` | Real ROS 2 robot **or live Gazebo sim** via rclpy | ROS 2 + Docker image |
+| `vda5050://` | Master control for **VDA 5050-compliant AMRs** (the MQTT standard MiR, OTTO, Seegrid are converging on) | MQTT broker + `pip install 'apyrobo[vda5050]'` |
 
-> Only `ros2://` talks to something real. The sim-flavored schemes are
-> in-memory stand-ins for developing without a simulator installed — each
-> warns at first use. Live physics simulation = `ros2://` against a running
-> Gazebo ([proof in CI](tests/integration/README_gazebo.md)).
+> `ros2://` and `vda5050://` talk to real systems (`vda5050://` is verified
+> against a simulated AGV and the conformance suite; physical-fleet
+> validation is the Arc 1 gate). The sim-flavored schemes are in-memory
+> stand-ins for developing without a simulator installed — each warns at
+> first use. Live physics simulation = `ros2://` against a running Gazebo
+> ([proof in CI](tests/integration/README_gazebo.md)).
 
 For your first real robot, use the Docker image which includes ROS 2:
 
@@ -397,6 +402,7 @@ docker-compose up apyrobo-api
 | [Architecture](docs/architecture.md) | Design principles and data flow |
 | [Skill Authoring Guide](docs/skill_authoring.md) | Write, test, and publish custom skills |
 | [Adapter Authoring Guide](docs/adapter_authoring.md) | Add support for new hardware |
+| [Policy-Backed Skills](docs/policy_skills.md) | Run VLA / LeRobot policies inside the safety envelope |
 | [Protocol Spec](spec/README.md) | The language-agnostic APYROBO protocol, v1.0 (frozen) |
 | [Conformance Suite](docs/conformance.md) | Test any adapter or server against the spec |
 | [TypeScript Client](packages/apyrobo-client-ts/README.md) | Wire-protocol SDK for web dashboards and bots |
