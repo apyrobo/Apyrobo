@@ -49,7 +49,7 @@ Each one warns at registration time and says so in its README.
 | [`apyrobo-skills-spot`](apyrobo-skills-spot/) | Boston Dynamics Spot | `bosdyn` SDK |
 | [`apyrobo-skills-franka`](apyrobo-skills-franka/) | Franka Panda | `franky` / `libfranka` |
 | [`apyrobo-skills-drone-px4`](apyrobo-skills-drone-px4/) | PX4 drones | MAVSDK / `pymavlink` |
-| [`apyrobo-skills-agv`](apyrobo-skills-agv/) | Generic AGVs | fleet API (VDA5050) |
+| [`apyrobo-skills-agv`](apyrobo-skills-agv/) | Generic AGVs | **superseded** — the real `vda5050://` master-control adapter now lives in core ([`apyrobo/core/vda5050_adapter.py`](../apyrobo/core/vda5050_adapter.py)) |
 | [`apyrobo-skills-turtlebot4`](apyrobo-skills-turtlebot4/) | TurtleBot 4 | use the real `ros2://` adapter instead |
 
 Why ship scaffolds at all? They fix the skill *shape* (names, parameters,
