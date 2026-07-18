@@ -47,9 +47,15 @@ jobs:
           print(f'Built-in skills: {list(BUILTIN_SKILLS.keys())}')
           "
 
+      # run_tests.py is stdlib-only (no pytest) so it can run inside the
+      # production image, which deliberately ships no test files — mount it
+      # (and the skills/ dir it optionally reads) from the checkout instead.
       - name: Smoke test — run_tests.py
         run: |
-          docker run --rm apyrobo:nightly python3 run_tests.py
+          docker run --rm \
+            -v "$PWD/run_tests.py:/app/run_tests.py:ro" \
+            -v "$PWD/skills:/app/skills:ro" \
+            apyrobo:nightly python3 /app/run_tests.py
 
       - name: Smoke test — mock robot
         run: |
