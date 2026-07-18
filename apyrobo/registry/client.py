@@ -2,18 +2,39 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
-import json
+from importlib import resources
 from typing import Optional
 
 from .models import SkillPackage
 
 
+def load_seed_index() -> list[SkillPackage]:
+    """Return the bundled seed index: the packages that are real today.
+
+    Shipped in-wheel (``seed_index.json``) so discovery works before any
+    hosted registry exists and offline afterwards.
+    """
+    text = (
+        resources.files("apyrobo.registry")
+        .joinpath("seed_index.json")
+        .read_text(encoding="utf-8")
+    )
+    data = json.loads(text)
+    return [SkillPackage(**item) for item in data.get("packages", [])]
+
+
 class SkillRegistryClient:
     """Client for querying and publishing to an APYROBO skill registry.
+
+    When the registry is unreachable, read operations fall back to the
+    bundled seed index and say so on stderr — search works out of the box,
+    with no hosted service required.
 
     Example::
 
@@ -31,9 +52,25 @@ class SkillRegistryClient:
     # Read operations
     # ------------------------------------------------------------------
 
+    def _seed_fallback(self) -> list[SkillPackage]:
+        print(
+            f"note: registry {self.base_url} unreachable — using the bundled seed index",
+            file=sys.stderr,
+        )
+        return load_seed_index()
+
     def list_all(self) -> list[SkillPackage]:
-        """Return all skill packages in the registry."""
-        data = self._get("/skills")
+        """Return all skill packages in the registry.
+
+        Falls back to the bundled seed index when the registry is
+        unreachable.
+        """
+        try:
+            data = self._get("/skills")
+        except urllib.error.HTTPError:
+            raise  # registry reachable but erroring — don't mask it with the seed
+        except (urllib.error.URLError, OSError):
+            return self._seed_fallback()
         return [SkillPackage(**item) for item in data.get("skills", [])]
 
     def get(self, name: str, version: str = "latest") -> Optional[SkillPackage]:
@@ -44,7 +81,8 @@ class SkillRegistryClient:
             version: Version string or ``"latest"``.
 
         Returns:
-            :class:`SkillPackage` if found, ``None`` otherwise.
+            :class:`SkillPackage` if found, ``None`` otherwise. Falls back
+            to the bundled seed index when the registry is unreachable.
         """
         try:
             data = self._get(f"/skills/{urllib.parse.quote(name)}")
@@ -57,6 +95,13 @@ class SkillRegistryClient:
                     pkg_data = {**data, "version": version}
                     return SkillPackage(**pkg_data)
             return None
+        except urllib.error.HTTPError:
+            return None
+        except (urllib.error.URLError, OSError):
+            for pkg in self._seed_fallback():
+                if pkg.name == name and version in ("latest", pkg.version):
+                    return pkg
+            return None
         except Exception:
             return None
 
@@ -67,12 +112,26 @@ class SkillRegistryClient:
             query: Free-text search query.
 
         Returns:
-            List of matching :class:`SkillPackage` objects.
+            List of matching :class:`SkillPackage` objects. Falls back to
+            a substring match over the bundled seed index when the registry
+            is unreachable.
         """
         try:
             params = urllib.parse.urlencode({"q": query})
             data = self._get(f"/search?{params}")
             return [SkillPackage(**item) for item in data.get("results", [])]
+        except urllib.error.HTTPError:
+            return []
+        except (urllib.error.URLError, OSError):
+            q = query.lower()
+            return [
+                pkg
+                for pkg in self._seed_fallback()
+                if not q
+                or q in pkg.name.lower()
+                or q in pkg.description.lower()
+                or any(q in tag.lower() for tag in pkg.tags)
+            ]
         except Exception:
             return []
 
@@ -135,6 +194,11 @@ class SkillRegistryClient:
         if pkg is None:
             raise ValueError(
                 f"Package {name!r} (version={version!r}) not found in registry at {self.base_url}"
+            )
+        if pkg.kind != "python":
+            raise ValueError(
+                f"Package {name!r} is a {pkg.kind} package, not pip-installable.\n"
+                f"  Get it from: {pkg.download_url}"
             )
 
         cmd = [sys.executable, "-m", "pip", "install", pkg.download_url]

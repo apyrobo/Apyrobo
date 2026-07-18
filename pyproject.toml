@@ -93,6 +93,8 @@ include = ["apyrobo*"]
 # Copies of spec/schemas/ shipped for `apyrobo conformance`; the drift test
 # in tests/test_spec_schemas.py keeps them byte-identical to the spec.
 "apyrobo.conformance" = ["schemas/*.json"]
+# Bundled registry seed index — `apyrobo registry search` works offline.
+"apyrobo.registry" = ["seed_index.json"]
 
 [tool.ruff]
 target-version = "py310"

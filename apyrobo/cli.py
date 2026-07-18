@@ -1242,7 +1242,7 @@ def cmd_registry_start(args: argparse.Namespace) -> None:
 
     try:
         from apyrobo.registry.server import create_app
-        app = create_app()
+        app = create_app(seed=getattr(args, "seed", False))
     except ImportError as exc:
         print(f"Error: could not load registry server: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -2783,6 +2783,10 @@ def main() -> None:
     p_reg_start.add_argument(
         "--db", default="./registry.db", metavar="PATH",
         help="Path to SQLite database (default: ./registry.db)",
+    )
+    p_reg_start.add_argument(
+        "--seed", action="store_true",
+        help="Preload the bundled seed index so the registry starts non-empty",
     )
 
     _reg_url_kwargs = dict(

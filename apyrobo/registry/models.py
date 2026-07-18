@@ -14,15 +14,32 @@ class SkillPackage(BaseModel):
     author: str = Field(..., description="Author name or organisation")
     license: str = Field(..., description="SPDX license identifier (e.g. 'Apache-2.0')")
     tags: list[str] = Field(default_factory=list, description="Searchable tags")
+    kind: str = Field(
+        "python",
+        description="Package kind: 'python' (pip-installable) or 'npm' (Node package)",
+    )
     download_url: str = Field(..., description="URL to download the wheel or tarball")
-    checksum: str = Field(..., description="SHA-256 hex digest of the download artifact")
+    checksum: str = Field(
+        ...,
+        description="SHA-256 hex digest of the download artifact; empty for VCS "
+        "installs, which have no fixed artifact to digest",
+    )
     apyrobo_version_min: str = Field(
         ..., description="Minimum APYROBO version required (e.g. '1.0.0')"
     )
 
+    @field_validator("kind")
+    @classmethod
+    def kind_is_known(cls, v: str) -> str:
+        if v not in ("python", "npm"):
+            raise ValueError(f"kind must be 'python' or 'npm', got {v!r}")
+        return v
+
     @field_validator("checksum")
     @classmethod
     def checksum_is_hex(cls, v: str) -> str:
+        if v == "":
+            return v
         if len(v) != 64 or not all(c in "0123456789abcdefABCDEF" for c in v):
             raise ValueError("checksum must be a 64-character SHA-256 hex digest")
         return v.lower()

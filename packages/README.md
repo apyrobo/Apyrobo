@@ -10,6 +10,13 @@ real hardware.**
 | [`apyrobo-client-ts`](apyrobo-client-ts/) | TypeScript client for the wire protocol — talks to `apyrobo serve` for real (CI runs it against the Python server). |
 | [`apyrobo-skills-ros-nav`](apyrobo-skills-ros-nav/) | Real ROS 2 Nav2 skills — `navigate_to_pose` etc. call the live `NavigateToPose` action via `rclpy`; raises a clear error when ROS 2 isn't sourced. |
 
+These two — and only these — are in the **registry seed index**
+([`apyrobo/registry/seed_index.json`](../apyrobo/registry/seed_index.json)):
+`apyrobo registry search nav` finds them out of the box, with no hosted
+registry required (the client falls back to the bundled index, and
+`apyrobo registry start --seed` boots a non-empty registry). A scaffold
+graduates into the seed index when it meets the flagship bar below.
+
 The **`ros2://` adapter** in the core package ([`apyrobo/core/ros2_bridge.py`](../apyrobo/core/ros2_bridge.py))
 is also real: it publishes `/cmd_vel`, subscribes `/odom`, and is verified in
 CI driving a **physics-simulated TurtleBot3 in Gazebo**
