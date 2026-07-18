@@ -1,0 +1,34 @@
+# RFC gate: PRs that modify the frozen spec must reference an accepted RFC.
+# Process: docs/rfc_process.md
+name: Spec Guard
+
+on:
+  pull_request:
+    types: [opened, edited, labeled, unlabeled, reopened, synchronize]
+    paths:
+      - "spec/**"
+
+permissions:
+  contents: read
+
+jobs:
+  rfc-gate:
+    name: spec/ changes reference an accepted RFC
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for accepted-RFC reference
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          if echo "$PR_LABELS" | tr ' ' '\n' | grep -qx "rfc-accepted"; then
+            echo "OK: PR carries the rfc-accepted label."
+            exit 0
+          fi
+          # Accept e.g. "RFC: #123", "RFC #123", "rfc-accepted #123", "closes RFC issue #123"
+          if printf '%s' "$PR_BODY" | grep -qiE 'RFC[^0-9]{0,20}#[0-9]+'; then
+            echo "OK: PR description references an RFC issue."
+            exit 0
+          fi
+          echo "::error::This PR modifies spec/, which is frozen at 1.0. Every spec change needs an accepted RFC: add the 'rfc-accepted' label or reference the RFC issue in the PR description (e.g. 'RFC: #123'). Process: docs/rfc_process.md"
+          exit 1

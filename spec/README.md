@@ -71,7 +71,11 @@ MUST tolerate its absence. A handshake message is reserved for spec 2.0.
 ## Proposing changes
 
 Spec 1.0 is frozen: changes to anything in `spec/` — including patch-level
-prose clarifications — go through an RFC. Open a GitHub issue titled
-`RFC: <summary>` describing the motivation, the exact schema/prose diff, and
-the compatibility impact. Accepted RFCs are recorded in the issue history and
-referenced from the spec changelog line they produce.
+prose clarifications — go through a public RFC with a ≥14-day comment window.
+Open an issue with the **RFC: spec change proposal** template, which asks for
+the motivation, the exact schema/prose diff, and the compatibility impact.
+The full lifecycle — comment window, final comment period, decision rules —
+is in [docs/rfc_process.md](../docs/rfc_process.md). Accepted RFCs are
+recorded as ADRs in [docs/adr/](../docs/adr/) and referenced from the spec
+changelog line they produce; CI rejects any PR touching `spec/` that doesn't
+reference an accepted RFC.
