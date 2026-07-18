@@ -118,6 +118,11 @@ jobs:
         env:
           APYROBO_SERVE: apyrobo serve
 
+      # The interop demo end to end on a mock robot: TS client → wire
+      # protocol → Python server plans and executes (demos/ts_interop).
+      - name: Cross-language interop demo (plan + execute)
+        run: node "$GITHUB_WORKSPACE/demos/ts_interop/demo.mjs"
+
   # ------------------------------------------------------------------
   # CI-05: Docker container test job (exercises docker-compose.yml)
   # ------------------------------------------------------------------

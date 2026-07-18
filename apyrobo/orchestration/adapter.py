@@ -162,12 +162,14 @@ class OrchestrationServer:
         max_iterations: int | None = None,
         checkpoint_store: Any = None,
         default_robot_uri: str = "mock://turtlebot4",
+        execute_tasks: bool = False,
     ) -> None:
         self.adapter = adapter
         self.agent = agent
         self.default_robot = default_robot
         self.default_robot_uri = default_robot_uri
         self.max_iterations = max_iterations
+        self.execute_tasks = execute_tasks
         self._checkpoint_store = checkpoint_store
         self._iterations = 0
         # Discovered robots per URI, so repeated tasks against the same
@@ -291,10 +293,15 @@ class OrchestrationServer:
                 {"skill_id": s.skill_id, "name": s.name}
                 for s in order
             ]
+            metadata: dict[str, Any] = {
+                "status": "planned", "skills": skills, "count": len(skills),
+            }
+            if self.execute_tasks and skills:
+                metadata["execution"] = self._execute(robot, graph)
             return OrchestrationMessage(
                 task=msg.task,
                 robot_uri=robot_uri,
-                metadata={"status": "planned", "skills": skills, "count": len(skills)},
+                metadata=metadata,
                 source="orchestration_server",
             )
         except Exception as exc:
@@ -305,6 +312,32 @@ class OrchestrationServer:
                 metadata={"status": "error", "error": str(exc)},
                 source="orchestration_server",
             )
+
+    def _execute(self, robot: Any, graph: Any) -> dict[str, Any]:
+        """Run the planned graph and summarize the outcome.
+
+        Execute mode stays within wire-protocol 1.0: the response status is
+        still "planned" (the plan succeeded) and the execution outcome rides
+        in the extra ``metadata.execution`` key, which spec §1 requires
+        clients to tolerate. An execution failure is therefore reported
+        here, never as ``status: "error"`` (that means discovery/planning
+        raised, §3).
+        """
+        from apyrobo.skills.executor import SkillExecutor
+
+        try:
+            result = SkillExecutor(robot).execute_graph(graph)
+            status = getattr(result.status, "value", None) or str(result.status)
+            execution: dict[str, Any] = {
+                "status": status,
+                "steps_completed": result.steps_completed,
+            }
+            if getattr(result, "error", None):
+                execution["error"] = result.error
+            return execution
+        except Exception as exc:
+            logger.warning("OrchestrationServer._execute error: %s", exc)
+            return {"status": "failed", "error": str(exc)}
 
     def _resolve_robot(self, robot_uri: str) -> Any:
         """Return the robot for *robot_uri*, discovering and caching it."""

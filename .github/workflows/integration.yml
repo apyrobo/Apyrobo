@@ -122,3 +122,66 @@ jobs:
         if: always()
         run: |
           docker compose -f docker/docker-compose.yml --profile gazebo-nav down --volumes
+
+  # Cross-language interop showcase (demos/ts_interop): `apyrobo serve
+  # --execute` runs inside the Gazebo container speaking WebSocket, and the
+  # reference TypeScript client drives the physics robot from the runner —
+  # nothing crosses the boundary but spec-1.0 JSON.
+  gazebo-nav-interop:
+    name: TypeScript Client × Nav2-in-Gazebo Interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build TypeScript client
+        working-directory: packages/apyrobo-client-ts
+        run: |
+          npm install
+          npm run build
+
+      - name: Build Gazebo image
+        run: docker compose -f docker/docker-compose.yml --profile gazebo-nav-interop build
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Start sim + wire-protocol server
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav-interop up -d
+        env:
+          DOCKER_BUILDKIT: 1
+
+      # The server opens its port only after ros2://burger discovery
+      # succeeds, so a listening socket means the whole stack is ready.
+      - name: Wait for the wire-protocol server
+        run: |
+          for _ in $(seq 1 60); do
+            nc -z localhost 8765 && exit 0
+            sleep 5
+          done
+          echo "::error::apyrobo serve never opened port 8765"
+          exit 1
+
+      - name: Drive the robot from TypeScript
+        run: |
+          node demos/ts_interop/demo.mjs \
+            --ws ws://localhost:8765 \
+            --robot ros2://burger \
+            --task "navigate to (-1.2, -0.5)" \
+            --timeout 300000
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav-interop logs
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f docker/docker-compose.yml --profile gazebo-nav-interop down --volumes

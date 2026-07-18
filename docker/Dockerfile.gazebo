@@ -42,7 +42,7 @@ ENV PYTHONPATH=/opt/ros/humble/lib/python3.10/site-packages
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
     pip install --no-cache-dir -e . && \
-    pip install --no-cache-dir pytest pytest-asyncio pytest-timeout
+    pip install --no-cache-dir pytest pytest-asyncio pytest-timeout websockets
 
 # Strip the launch_testing pytest11 entry points that ros-humble-* installs;
 # they fail plugin validation on modern pytest at collection time. Identical
