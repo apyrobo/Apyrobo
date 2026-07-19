@@ -7,6 +7,7 @@ no hardware; `nav2_gazebo` needs Linux + Docker (it drives a real physics sim).
 |------|---------------|-----|
 | [nav2_gazebo/](nav2_gazebo/) | **The flagship stack, live** — NL task → rule agent → Nav2 `NavigateToPose` → a physics TurtleBot3 navigates in Gazebo | Linux/CI → see its README |
 | [ts_interop/](ts_interop/) | **It's a protocol, not a library** — the TypeScript client plans *and executes* a task through the Python server over spec-1.0 JSON; the same script drives the Gazebo robot | `node ts_interop/demo.mjs` → see its README |
+| [mujoco_pickplace/](mujoco_pickplace/) | **NL → real MuJoCo physics, rendered** — the agent's skill graph picks up a box (suction weld, real lift), carries it, and lands it on the delivery pad; frames rendered from the live sim | `python mujoco_pickplace/demo.py` (needs `[mujoco]`) |
 | [orchestration_flow/](orchestration_flow/) | **The pipeline, made visible** — one task down the whole stack (discover → plan → skill graph → safety → execute), every panel filled by the real objects | `python orchestration_flow/flow.py` → see its README |
 | [fleet_view/](fleet_view/) | **Live browser render** — a fleet moving in real time, tasks planned and dispatched over the wire protocol | `python fleet_view/server.py` → see its README |
 | [drone_survey/](drone_survey/) | 10 drones survey 10 km² in parallel | `python drone_survey/demo.py` |

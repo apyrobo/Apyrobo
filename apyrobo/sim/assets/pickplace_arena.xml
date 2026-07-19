@@ -12,10 +12,26 @@
 <mujoco model="apyrobo_pickplace_arena">
   <option timestep="0.002" gravity="0 0 -9.81"/>
 
+  <visual>
+    <global offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512"
+             rgb1="0.83 0.85 0.87" rgb2="0.72 0.75 0.79"/>
+    <material name="grid" texture="grid" texrepeat="16 16" reflectance="0.1"/>
+  </asset>
+
   <worldbody>
+    <camera name="overview" pos="1.9 -1.9 1.5"
+            xyaxes="0.648 0.762 0 -0.359 0.305 0.882"/>
     <light directional="true" pos="0 0 3" dir="0 0 -1"/>
-    <geom name="floor" type="plane" size="10 10 0.1"
-          friction="1 0.005 0.0001" rgba="0.85 0.85 0.85 1"/>
+    <geom name="floor" type="plane" size="10 10 0.1" material="grid"
+          friction="1 0.005 0.0001"/>
+    <!-- Delivery zone marker — visual only, no collision. -->
+    <geom name="delivery_pad" type="box" pos="-1.0 -0.8 0.004"
+          size="0.24 0.24 0.004" contype="0" conaffinity="0"
+          rgba="0.30 0.75 0.35 1"/>
 
     <body name="base" pos="0 0 0.10">
       <joint name="base_x" type="slide" axis="1 0 0" damping="10"/>
