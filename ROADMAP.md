@@ -65,11 +65,11 @@ Neutral governance is what lets competitors adopt the same standard. Ecosystem g
 
 | Status | Item | Description | Label |
 |--------|------|-------------|-------|
-| :clipboard: | **RFC process** | Changes to `spec/` go through a public RFC template with a comment window; accepted designs recorded as ADRs. Signals that the protocol is a commons, not one maintainer's whim — the precondition for serious adopters. | |
-| :clipboard: | **Seed the registry for real** | Publish real packages first (`ros-nav` — live Nav2 skills; the TS client) so `apyrobo registry search` returns working results. The vendor packs (`ur`, `spot`, `franka`, `px4`, `agv`, `turtlebot4`) are **reference scaffolds** ([packages/README.md](packages/README.md)) — each must be wired to its vendor SDK (and pass hardware-in-the-loop or a sim) before it ships as anything but a template. Then curate the first 10 community skills with mentored PRs. | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
-| :clipboard: | **Cross-language interop showcase** | One flagship demo: the TypeScript client orchestrates a Gazebo robot through `apyrobo serve`, end to end, recorded. The "it's a protocol, not a library" proof point. | |
-| :clipboard: | **Spec v1.0 announcement** | Spec v1.0 is frozen; remaining: publish the conformance suite results for all first-party adapters and take it to the community: ROS Discourse, awesome-robotics lists, a launch post walking through the spec. Ends the six months with the standard *public*. | |
-| :construction: | **Remaining demo video** | Arm pick-and-place in MuJoCo — blocked on a real MuJoCo bridge (`mujoco://` is an in-memory stand-in today; see Arc 3). | ![good first issue](https://img.shields.io/badge/-good%20first%20issue-7057ff) |
+| :white_check_mark: | **RFC process** | Changes to `spec/` go through a public RFC template with a comment window; accepted designs recorded as ADRs. Signals that the protocol is a commons, not one maintainer's whim — the precondition for serious adopters. **Landed: RFC issue template, lifecycle doc ([docs/rfc_process.md](docs/rfc_process.md)), ADR directory ([docs/adr/](docs/adr/)) with the bootstrap ADR, and a `spec-guard` CI check that rejects spec/ PRs lacking an accepted RFC.** | |
+| :construction: | **Seed the registry for real** | Publish real packages first (`ros-nav` — live Nav2 skills; the TS client) so `apyrobo registry search` returns working results. The vendor packs (`ur`, `spot`, `franka`, `px4`, `agv`, `turtlebot4`) are **reference scaffolds** ([packages/README.md](packages/README.md)) — each must be wired to its vendor SDK (and pass hardware-in-the-loop or a sim) before it ships as anything but a template. Then curate the first 10 community skills with mentored PRs. **Landed: `apyrobo registry search` now returns working results out of the box — a bundled seed index of the two real packages (with a fixed, verified-installable `ros-nav` build) serves as offline fallback, and `registry start --seed` boots a non-empty registry. Remaining: the hosted service and the mentored community skills.** | ![help wanted](https://img.shields.io/badge/-help%20wanted-008672) |
+| :white_check_mark: | **Cross-language interop showcase** | One flagship demo: the TypeScript client orchestrates a Gazebo robot through `apyrobo serve`, end to end, recorded. The "it's a protocol, not a library" proof point. **Landed: `apyrobo serve --execute` (plans *and* runs the task, outcome in `metadata.execution` — within frozen spec 1.0), the recorded [demos/ts_interop](demos/ts_interop) demo green in CI on every commit, and the `gazebo-nav-interop` CI job green — the TypeScript client drives the physics TurtleBot3 through Nav2 over WebSocket, nothing but spec-1.0 JSON crossing the boundary.** | |
+| :construction: | **Spec v1.0 announcement** | Spec v1.0 is frozen; remaining: publish the conformance suite results for all first-party adapters and take it to the community: ROS Discourse, awesome-robotics lists, a launch post walking through the spec. Ends the six months with the standard *public*. **Landed: conformance results published ([docs/conformance_results.md](docs/conformance_results.md)) and kept current by a new `conformance` CI job (6 local targets) plus the suite now running against the live Gazebo robot in the `gazebo` CI job; launch post drafted ([docs/announcing_spec_1_0.md](docs/announcing_spec_1_0.md)). Remaining: review the draft and post it — publishing is a human decision.** | |
+| :white_check_mark: | **Remaining demo video** | Pick-and-place in MuJoCo. **Landed, on top of `mujoco://` becoming a real physics bridge** ([apyrobo/sim/mujoco_bridge.py](apyrobo/sim/mujoco_bridge.py), pulled forward from Arc 3 — live MuJoCo stepping, blocking Nav2-style moves, suction-style grasp via a runtime weld, 21/21 conformance with 0 warnings): the recorded demo ([demos/mujoco_pickplace](demos/mujoco_pickplace)) renders the NL → plan → execute pipeline physically delivering the package, and the identical pipeline runs headless in CI on every commit (`tests/test_mujoco_bridge.py`). | |
 
 ---
 
@@ -117,11 +117,13 @@ outside participants.
 ### Arc 3 — Modern simulation, no stand-ins
 
 Retire the simulation debt: port the Gazebo integration off EOL Gazebo
-Classic to `gz-sim`/`ros_gz`; give `mujoco://` a real MuJoCo bridge or
-retire the scheme; same decision for `gazebo_native://` and `isaac://`
-(today all are labeled in-memory stand-ins —
-[apyrobo/sim/adapters.py](apyrobo/sim/adapters.py)). Re-render the demo
-suite on the modern stack.
+Classic to `gz-sim`/`ros_gz`; decide `gazebo_native://` and `isaac://`
+(both still labeled in-memory stand-ins —
+[apyrobo/sim/adapters.py](apyrobo/sim/adapters.py)). `mujoco://` already
+graduated: it is a real physics bridge
+([apyrobo/sim/mujoco_bridge.py](apyrobo/sim/mujoco_bridge.py)), conformant
+with 0 warnings against live MuJoCo. Re-render the demo suite on the
+modern stack.
 
 **Gate: every URI scheme the docs advertise either drives a real
 simulator/robot or no longer exists.**

@@ -1,0 +1,81 @@
+name: "RFC: spec change proposal"
+description: Propose a change to the frozen protocol spec (spec/). All spec changes — including prose clarifications — go through this process.
+title: "RFC: <summary>"
+labels: ["rfc", "spec"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a spec change. The process is described in
+        [docs/rfc_process.md](https://github.com/apyrobo/apyrobo/blob/main/docs/rfc_process.md):
+        a public comment window of **at least 14 days**, then a 7-day final
+        comment period with a proposed disposition. Accepted RFCs are recorded
+        as ADRs in [docs/adr/](https://github.com/apyrobo/apyrobo/tree/main/docs/adr).
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve? Who hits it today, and what do they do instead?
+      placeholder: |
+        A concrete scenario an implementer or user faces with spec 1.0 as written.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: The exact schema and/or prose diff. Quote the current spec text and show the replacement. Vague direction-setting will be sent back for a concrete diff.
+      placeholder: |
+        In `spec/wire-protocol.md` § X, change:
+
+        > current text
+
+        to:
+
+        > proposed text
+
+        In `spec/schemas/foo.schema.json`, add the optional field `bar`:
+
+        ```json
+        { "bar": { "type": "string" } }
+        ```
+    validations:
+      required: true
+
+  - type: dropdown
+    id: revision-level
+    attributes:
+      label: Spec revision level
+      description: Per spec/README.md § Versioning — patch (prose clarification, no behavior change), minor (additive, backwards compatible), or major (changes or removes behavior).
+      options:
+        - Patch — prose clarification only
+        - Minor — additive, backwards compatible
+        - Major — breaking, requires a negotiation story
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: What happens to existing conformant implementations if this is accepted? Which conformance checks change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other designs that could solve the same problem, and why this one is preferred. "Do nothing" is an alternative — say what it costs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference-impl
+    attributes:
+      label: Reference implementation plan
+      description: Optional — how the Python reference implementation, TS client, and conformance suite would change. A draft PR link is welcome but not required to open the RFC.
+    validations:
+      required: false

@@ -170,52 +170,48 @@ class TestGazeboNativeAdapter:
 # ---------------------------------------------------------------------------
 
 class TestMuJoCoAdapter:
-    def test_init_default(self):
-        adapter = MuJoCoAdapter("mujoco_bot")
+    """mujoco:// is a real physics bridge now — deep tests live in
+    tests/test_mujoco_bridge.py; this keeps the sim-module surface covered."""
+
+    @pytest.fixture
+    def adapter(self):
+        pytest.importorskip("mujoco")
+        a = MuJoCoAdapter("mujoco_bot")
+        yield a
+        a.shutdown()
+
+    def test_init_default(self, adapter):
         assert adapter.robot_name == "mujoco_bot"
-        assert adapter._position == (0.0, 0.0)
-        assert adapter._model == "point_mass"
+        assert adapter.get_position() == (0.0, 0.0)
         assert adapter._state == AdapterState.CONNECTED
 
-    def test_init_with_model_kwarg(self):
-        adapter = MuJoCoAdapter("bot", model="humanoid")
-        assert adapter._model == "humanoid"
-
-    def test_get_capabilities_returns_navigate(self):
-        adapter = MuJoCoAdapter("bot")
+    def test_get_capabilities_returns_navigate(self, adapter):
         caps = adapter.get_capabilities()
         cap_types = {c.capability_type for c in caps.capabilities}
         assert CapabilityType.NAVIGATE in cap_types
 
-    def test_get_capabilities_metadata(self):
-        adapter = MuJoCoAdapter("bot")
+    def test_get_capabilities_metadata(self, adapter):
         caps = adapter.get_capabilities()
         assert caps.metadata["backend"] == "mujoco"
-        assert caps.metadata["model"] == "point_mass"
+        assert caps.metadata["real_physics"] is True
 
-    def test_get_capabilities_max_speed(self):
-        adapter = MuJoCoAdapter("bot")
+    def test_get_capabilities_max_speed(self, adapter):
         caps = adapter.get_capabilities()
         assert caps.max_speed == 2.0
 
-    def test_move_updates_position(self):
-        adapter = MuJoCoAdapter("bot")
+    def test_move_updates_position(self, adapter):
         adapter.move(x=1.5, y=2.5)
-        assert adapter._position == (1.5, 2.5)
+        x, y = adapter.get_position()
+        # Physics, not teleportation — arrival within tolerance.
+        assert abs(x - 1.5) < 0.1 and abs(y - 2.5) < 0.1
 
-    def test_move_with_speed(self):
-        adapter = MuJoCoAdapter("bot")
+    def test_move_with_speed(self, adapter):
         adapter.move(x=1.0, y=1.0, speed=1.5)
-        assert adapter._position == (1.0, 1.0)
+        x, y = adapter.get_position()
+        assert abs(x - 1.0) < 0.1 and abs(y - 1.0) < 0.1
 
-    def test_stop_does_not_raise(self):
-        adapter = MuJoCoAdapter("bot")
+    def test_stop_does_not_raise(self, adapter):
         adapter.stop()
-
-    def test_get_position(self):
-        adapter = MuJoCoAdapter("bot")
-        adapter.move(x=3.0, y=4.0)
-        assert adapter.get_position() == (3.0, 4.0)
 
 
 # ---------------------------------------------------------------------------

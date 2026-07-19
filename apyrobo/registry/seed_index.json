@@ -1,0 +1,29 @@
+{
+  "comment": "Bundled seed index: the packages that are real today (see packages/README.md). Served by SkillRegistryClient when no registry is reachable, and preloaded by `apyrobo registry start --seed`. VCS installs carry no artifact checksum, so checksum is empty for these entries.",
+  "packages": [
+    {
+      "name": "apyrobo-skills-ros-nav",
+      "version": "0.1.0",
+      "description": "Real ROS 2 Nav2 skills — navigate_to_pose and friends call the live NavigateToPose action via rclpy. Part of the flagship reference stack, exercised against a physics TurtleBot3 in Gazebo by CI.",
+      "author": "APYROBO Contributors",
+      "license": "Apache-2.0",
+      "tags": ["ros2", "nav2", "navigation", "turtlebot", "flagship"],
+      "kind": "python",
+      "download_url": "git+https://github.com/apyrobo/Apyrobo.git@main#subdirectory=packages/apyrobo-skills-ros-nav",
+      "checksum": "",
+      "apyrobo_version_min": "4.0.0"
+    },
+    {
+      "name": "apyrobo-client-ts",
+      "version": "0.1.0",
+      "description": "Zero-dependency TypeScript client for the wire protocol (spec/wire-protocol.md) — plans and executes tasks through `apyrobo serve` over stdio or WebSocket. CI runs it against the Python reference server on every commit.",
+      "author": "APYROBO Contributors",
+      "license": "Apache-2.0",
+      "tags": ["typescript", "client", "wire-protocol", "websocket", "interop"],
+      "kind": "npm",
+      "download_url": "https://github.com/apyrobo/Apyrobo/tree/main/packages/apyrobo-client-ts",
+      "checksum": "",
+      "apyrobo_version_min": "4.0.0"
+    }
+  ]
+}

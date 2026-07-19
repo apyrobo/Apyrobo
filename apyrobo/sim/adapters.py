@@ -1,15 +1,17 @@
 """Simulation adapters and utilities for sim-first workflows.
 
-Honesty note — these adapters are **in-memory stand-ins**, not live
-simulator bridges: they model poses, joints, and forces in Python state and
-never open a connection to Gazebo, MuJoCo, or Isaac Sim. They exist so
-sim-shaped workflows (spawn/reset/joint-state APIs, domain randomization)
-can be developed and tested without a simulator installed. Each warns once
-at first instantiation.
+Honesty note — the Gazebo-native and Isaac adapters here are **in-memory
+stand-ins**, not live simulator bridges: they model poses, joints, and
+forces in Python state and never open a connection to a simulator. They
+exist so sim-shaped workflows (spawn/reset/joint-state APIs, domain
+randomization) can be developed and tested without a simulator installed.
+Each warns once at first instantiation.
 
-For a **live physics simulation** drive the real ``ros2://`` adapter
-against a running Gazebo (``gazebo_ros`` exposes ``/cmd_vel`` + ``/odom``);
-that path is exercised in CI — see ``tests/integration/README_gazebo.md``.
+``mujoco://`` is the exception: it is a **real physics bridge**
+(``apyrobo.sim.mujoco_bridge``) that loads and steps an actual MuJoCo
+model. For live Gazebo physics drive the real ``ros2://`` adapter against
+a running Gazebo (``gazebo_ros`` exposes ``/cmd_vel`` + ``/odom``); that
+path is exercised in CI — see ``tests/integration/README_gazebo.md``.
 """
 
 from __future__ import annotations
@@ -381,38 +383,15 @@ class GazeboNativeAdapter(CapabilityAdapter):
         }
 
 
-@register_adapter("mujoco")
-class MuJoCoAdapter(CapabilityAdapter):
-    """SIM-03: MuJoCo-shaped adapter facade.
+# The mujoco:// scheme is a REAL bridge now (live physics, not a stand-in);
+# importing it here keeps scheme registration on the same path as before.
+# The class needs the `mujoco` package only at construction time.
+from apyrobo.sim.mujoco_bridge import (  # noqa: E402
+    MuJoCoBridgeAdapter,
+    MuJoCoNotInstalledError,
+)
 
-    **In-memory stand-in** — does not import or connect to MuJoCo.
-    """
-
-    def __init__(self, robot_name: str, **kwargs: Any) -> None:
-        super().__init__(robot_name, **kwargs)
-        _warn_stand_in(type(self), robot_name, "MuJoCo")
-        self._position = (0.0, 0.0)
-        self._orientation = 0.0
-        self._model = kwargs.get("model", "point_mass")
-        self._state = AdapterState.CONNECTED
-
-    def get_capabilities(self) -> RobotCapability:
-        return RobotCapability(
-            robot_id=self.robot_name,
-            name=f"MuJoCo-{self.robot_name}",
-            capabilities=[Capability(capability_type=CapabilityType.NAVIGATE, name="navigate_to")],
-            metadata={"backend": "mujoco", "model": self._model},
-            max_speed=2.0,
-        )
-
-    def move(self, x: float, y: float, speed: float | None = None) -> None:
-        self._position = (x, y)
-
-    def stop(self) -> None:
-        pass
-
-    def get_position(self) -> tuple[float, float]:
-        return self._position
+MuJoCoAdapter = MuJoCoBridgeAdapter
 
 
 @register_adapter("isaac")

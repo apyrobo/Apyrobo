@@ -1242,7 +1242,7 @@ def cmd_registry_start(args: argparse.Namespace) -> None:
 
     try:
         from apyrobo.registry.server import create_app
-        app = create_app()
+        app = create_app(seed=getattr(args, "seed", False))
     except ImportError as exc:
         print(f"Error: could not load registry server: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1526,6 +1526,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     profile_name: str | None = getattr(args, "profile", None)
     provider_name: str = getattr(args, "provider", "rule")
     transport: str = getattr(args, "transport", "stdio")
+    execute_tasks: bool = getattr(args, "execute", False)
     ws_port: int = getattr(args, "ws_port", 8765)
     slack_port: int = getattr(args, "slack_port", 3000)
     slack_command: str = getattr(args, "slack_command", "/apyrobo")
@@ -1545,6 +1546,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     robot = Robot.discover(robot_uri)
+    mode_note = " execute=on" if execute_tasks else ""
 
     if transport == "websocket":
         try:
@@ -1554,7 +1556,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
             sys.exit(1)
         print(
             f"apyrobo serve — robot={robot_uri} provider={provider} "
-            f"transport=websocket port={ws_port}",
+            f"transport=websocket port={ws_port}{mode_note}",
             file=sys.stderr, flush=True,
         )
     elif transport == "slack":
@@ -1576,12 +1578,13 @@ def cmd_serve(args: argparse.Namespace) -> None:
     else:
         adapter = StdioOrchestrationAdapter()
         print(
-            f"apyrobo serve — robot={robot_uri} provider={provider} transport=stdio",
+            f"apyrobo serve — robot={robot_uri} provider={provider} transport=stdio{mode_note}",
             file=sys.stderr, flush=True,
         )
 
     server = OrchestrationServer(
-        adapter, agent, default_robot=robot, default_robot_uri=robot_uri
+        adapter, agent, default_robot=robot, default_robot_uri=robot_uri,
+        execute_tasks=execute_tasks,
     )
     server.run()
 
@@ -2781,6 +2784,10 @@ def main() -> None:
         "--db", default="./registry.db", metavar="PATH",
         help="Path to SQLite database (default: ./registry.db)",
     )
+    p_reg_start.add_argument(
+        "--seed", action="store_true",
+        help="Preload the bundled seed index so the registry starts non-empty",
+    )
 
     _reg_url_kwargs = dict(
         metavar="URL", default="https://registry.apyrobo.dev",
@@ -2883,6 +2890,11 @@ def main() -> None:
     p_serve.add_argument(
         "--transport", default="stdio", choices=["stdio", "websocket", "slack"],
         help="Transport layer: 'stdio' (default), 'websocket', or 'slack'",
+    )
+    p_serve.add_argument(
+        "--execute", action="store_true",
+        help="Execute each planned task on the robot before responding "
+             "(outcome reported in metadata.execution; default: plan only)",
     )
     p_serve.add_argument(
         "--ws-port", dest="ws_port", type=int, default=8765, metavar="PORT",

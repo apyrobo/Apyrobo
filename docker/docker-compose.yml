@@ -259,17 +259,20 @@ services:
     depends_on:
       gazebo-sim:
         condition: service_healthy
+    # After the integration tests, the conformance suite runs against the
+    # same live physics robot — docs/conformance_results.md cites this run.
+    # rclpy can segfault at interpreter teardown AFTER the report is
+    # written, so the verdict comes from the JSON report, not the exit code.
     command:
-      - pytest
-      - -p
-      - "no:launch_testing"
-      - -m
-      - integration
-      - -k
-      - gazebo
-      - tests/integration/test_gazebo_turtlebot.py
-      - -v
-      - --tb=short
+      - bash
+      - -c
+      - >-
+        pytest -p "no:launch_testing" -m integration -k gazebo
+        tests/integration/test_gazebo_turtlebot.py -v --tb=short
+        && { apyrobo conformance ros2://burger --output /tmp/conf.json || true; }
+        && python3 -c "import json,sys; r=json.load(open('/tmp/conf.json'));
+        print('ros2:// conformant:', r['conformant']);
+        sys.exit(0 if r['conformant'] else 1)"
 
   # ---------------------------------------------------------------------------
   # Nav2 end-to-end — profile: gazebo-nav
@@ -292,6 +295,7 @@ services:
     container_name: apyrobo-gazebo-nav-sim
     profiles:
       - gazebo-nav
+      - gazebo-nav-interop
     networks:
       - ros2-test-net
     environment:
@@ -301,13 +305,15 @@ services:
       - bash
       - tests/integration/gazebo_nav_boot.sh
     healthcheck:
-      # Ready once the NavigateToPose action server is live (bt_navigator
-      # active) — the last thing to come up after SLAM + Nav2 bringup.
+      # Ready once the NavigateToPose action server is live AND slam_toolbox
+      # has published a map. The action server alone races SLAM startup: a
+      # goal accepted before the map frame exists leaves Nav2 unable to
+      # drive the robot (seen as "Δ=0.00 m" e2e failures on fast runners).
       test:
         - CMD
         - bash
         - -c
-        - "source /opt/ros/humble/setup.bash && ros2 action list 2>/dev/null | grep -q navigate_to_pose"
+        - "source /opt/ros/humble/setup.bash && ros2 action list 2>/dev/null | grep -q navigate_to_pose && timeout 10 ros2 topic echo /map --once >/dev/null 2>&1"
       interval: 10s
       timeout: 15s
       retries: 18
@@ -339,6 +345,40 @@ services:
       - tests/integration/test_gazebo_nav2_e2e.py
       - -v
       - --tb=short
+
+  # Cross-language interop showcase (demos/ts_interop): the wire-protocol
+  # server in execute mode against the live Nav2 sim, WebSocket exposed to
+  # the host so the TypeScript client can drive the robot from outside the
+  # ROS world:
+  #   docker compose -f docker/docker-compose.yml --profile gazebo-nav-interop up -d
+  #   node demos/ts_interop/demo.mjs --ws ws://localhost:8765 \
+  #       --robot ros2://burger --task "navigate to (-1.2, -0.5)"
+  # Own profile so the gazebo-nav CI e2e job doesn't fight it for the robot.
+  gazebo-nav-serve:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gazebo
+    image: apyrobo-gazebo:latest
+    container_name: apyrobo-gazebo-nav-serve
+    profiles:
+      - gazebo-nav-interop
+    networks:
+      - ros2-test-net
+    environment:
+      ROS_DOMAIN_ID: "42"
+    ports:
+      - "8765:8765"
+    depends_on:
+      gazebo-nav-sim:
+        condition: service_healthy
+    command:
+      - apyrobo
+      - serve
+      - --transport
+      - websocket
+      - --execute
+      - --robot
+      - ros2://burger
 
   # Narrated demo run against the live gazebo-nav sim (used by
   # demos/nav2_gazebo/record.sh and the Demo Recording workflow):

@@ -38,6 +38,15 @@ We also welcome:
 - **New capability adapters** for additional robot platforms
 - **Skill definitions** — reusable skill JSON files for common tasks
 
+### Spec Changes (RFC Process)
+
+The protocol spec ([spec/](spec/)) is frozen at 1.0 — changes to it go
+through a public RFC, not a regular PR. Open an issue with the **RFC: spec
+change proposal** template; the lifecycle (14-day comment window, final
+comment period, ADR record) is described in
+[docs/rfc_process.md](docs/rfc_process.md). Everything *outside* `spec/`
+follows the normal PR flow below.
+
 ## Development Setup
 
 ```bash

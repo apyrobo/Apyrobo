@@ -30,6 +30,7 @@ import contextlib
 import json
 import logging
 import queue
+import re
 import sys
 import threading
 import time
@@ -162,12 +163,14 @@ class OrchestrationServer:
         max_iterations: int | None = None,
         checkpoint_store: Any = None,
         default_robot_uri: str = "mock://turtlebot4",
+        execute_tasks: bool = False,
     ) -> None:
         self.adapter = adapter
         self.agent = agent
         self.default_robot = default_robot
         self.default_robot_uri = default_robot_uri
         self.max_iterations = max_iterations
+        self.execute_tasks = execute_tasks
         self._checkpoint_store = checkpoint_store
         self._iterations = 0
         # Discovered robots per URI, so repeated tasks against the same
@@ -275,14 +278,20 @@ class OrchestrationServer:
         except Exception as exc:
             logger.warning("OrchestrationServer._checkpoint_complete error: %s", exc)
 
+    # Mirrors the robot_uri pattern in orchestration-message.schema.json: a
+    # malformed incoming URI cannot be echoed back schema-validly, so it is
+    # omitted from the response instead (empty = omitted on the wire).
+    _URI_RE = re.compile(r"^[a-z][a-z0-9+.-]*://.+$")
+
     def _handle(self, msg: OrchestrationMessage) -> OrchestrationMessage:
         """Plan a task from *msg* and return a response message.
 
         The message's ``robot_uri`` selects the target robot; only when it
         is absent does the configured default robot apply (wire-protocol.md
-        §1). The response always carries the resolved URI.
+        §1). The response carries the resolved URI when it is echoable.
         """
         robot_uri = msg.robot_uri or self.default_robot_uri
+        echo_uri = robot_uri if self._URI_RE.match(robot_uri) else ""
         try:
             robot = self._resolve_robot(robot_uri)
             graph = self.agent.plan(msg.task, robot)
@@ -291,20 +300,51 @@ class OrchestrationServer:
                 {"skill_id": s.skill_id, "name": s.name}
                 for s in order
             ]
+            metadata: dict[str, Any] = {
+                "status": "planned", "skills": skills, "count": len(skills),
+            }
+            if self.execute_tasks and skills:
+                metadata["execution"] = self._execute(robot, graph)
             return OrchestrationMessage(
                 task=msg.task,
-                robot_uri=robot_uri,
-                metadata={"status": "planned", "skills": skills, "count": len(skills)},
+                robot_uri=echo_uri,
+                metadata=metadata,
                 source="orchestration_server",
             )
         except Exception as exc:
             logger.warning("OrchestrationServer._handle error: %s", exc)
             return OrchestrationMessage(
                 task=msg.task,
-                robot_uri=robot_uri,
+                robot_uri=echo_uri,
                 metadata={"status": "error", "error": str(exc)},
                 source="orchestration_server",
             )
+
+    def _execute(self, robot: Any, graph: Any) -> dict[str, Any]:
+        """Run the planned graph and summarize the outcome.
+
+        Execute mode stays within wire-protocol 1.0: the response status is
+        still "planned" (the plan succeeded) and the execution outcome rides
+        in the extra ``metadata.execution`` key, which spec §1 requires
+        clients to tolerate. An execution failure is therefore reported
+        here, never as ``status: "error"`` (that means discovery/planning
+        raised, §3).
+        """
+        from apyrobo.skills.executor import SkillExecutor
+
+        try:
+            result = SkillExecutor(robot).execute_graph(graph)
+            status = getattr(result.status, "value", None) or str(result.status)
+            execution: dict[str, Any] = {
+                "status": status,
+                "steps_completed": result.steps_completed,
+            }
+            if getattr(result, "error", None):
+                execution["error"] = result.error
+            return execution
+        except Exception as exc:
+            logger.warning("OrchestrationServer._execute error: %s", exc)
+            return {"status": "failed", "error": str(exc)}
 
     def _resolve_robot(self, robot_uri: str) -> Any:
         """Return the robot for *robot_uri*, discovering and caching it."""

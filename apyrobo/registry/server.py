@@ -53,15 +53,23 @@ def _check_token(
 # ---------------------------------------------------------------------------
 
 
-def create_app(auth_token: str | None = None) -> FastAPI:
+def create_app(auth_token: str | None = None, seed: bool = False) -> FastAPI:
     """Create and configure the registry FastAPI application.
 
     Args:
         auth_token: If provided, ``POST /skills`` requires this bearer token.
+        seed: If True, preload the bundled seed index (the packages that are
+            real today) so a fresh registry starts non-empty.
     """
     global _DEFAULT_AUTH_TOKEN
     if auth_token is not None:
         _DEFAULT_AUTH_TOKEN = auth_token
+
+    if seed:
+        from apyrobo.registry.client import load_seed_index
+
+        for pkg in load_seed_index():
+            _store.setdefault(pkg.name, {}).setdefault(pkg.version, pkg)
 
     app = FastAPI(
         title="APYROBO Skill Registry",

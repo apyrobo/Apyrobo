@@ -18,11 +18,19 @@ def test_gazebo_native_adapter_smoke_spawn_and_topics():
     assert report["topic_count"] >= 3
 
 
-def test_mujoco_and_isaac_adapters_are_registered():
-    mujoco = Robot.discover("mujoco://m1")
+def test_isaac_adapter_is_registered():
     isaac = Robot.discover("isaac://i1")
-    assert mujoco.capabilities().metadata["backend"] == "mujoco"
     assert isaac.capabilities().metadata["backend"] == "isaac_sim"
+
+
+def test_mujoco_adapter_is_registered():
+    import pytest
+    pytest.importorskip("mujoco")
+    robot = Robot.discover("mujoco://m1")
+    try:
+        assert robot.capabilities().metadata["backend"] == "mujoco"
+    finally:
+        robot._adapter.shutdown()
 
 
 def test_domain_randomization_and_reality_gap_calibration():

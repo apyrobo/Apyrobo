@@ -98,8 +98,8 @@ class TestSkillRegistryClient:
         result = client.get("some-package")
         assert result is None
 
-    def test_search_returns_empty_on_error(self):
+    def test_search_falls_back_to_seed_when_unreachable(self):
         from apyrobo.registry.client import SkillRegistryClient
         client = SkillRegistryClient("http://localhost:0")
         result = client.search("navigation")
-        assert result == []
+        assert "apyrobo-skills-ros-nav" in {pkg.name for pkg in result}

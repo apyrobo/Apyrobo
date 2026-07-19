@@ -5,6 +5,9 @@ in any language — against the [APYROBO Protocol spec](../spec/README.md) and
 produces a machine-readable report. A spec nobody can test against is a blog
 post; this suite is what makes an alternative implementation checkable.
 
+Results for every first-party target are published in
+[conformance_results.md](conformance_results.md) and kept current by CI.
+
 ## Quick start
 
 ```bash
