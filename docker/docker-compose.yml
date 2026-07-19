@@ -305,13 +305,15 @@ services:
       - bash
       - tests/integration/gazebo_nav_boot.sh
     healthcheck:
-      # Ready once the NavigateToPose action server is live (bt_navigator
-      # active) — the last thing to come up after SLAM + Nav2 bringup.
+      # Ready once the NavigateToPose action server is live AND slam_toolbox
+      # has published a map. The action server alone races SLAM startup: a
+      # goal accepted before the map frame exists leaves Nav2 unable to
+      # drive the robot (seen as "Δ=0.00 m" e2e failures on fast runners).
       test:
         - CMD
         - bash
         - -c
-        - "source /opt/ros/humble/setup.bash && ros2 action list 2>/dev/null | grep -q navigate_to_pose"
+        - "source /opt/ros/humble/setup.bash && ros2 action list 2>/dev/null | grep -q navigate_to_pose && timeout 10 ros2 topic echo /map --once >/dev/null 2>&1"
       interval: 10s
       timeout: 15s
       retries: 18
