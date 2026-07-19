@@ -259,17 +259,15 @@ services:
     depends_on:
       gazebo-sim:
         condition: service_healthy
+    # After the integration tests, the conformance suite runs against the
+    # same live physics robot — docs/conformance_results.md cites this run.
     command:
-      - pytest
-      - -p
-      - "no:launch_testing"
-      - -m
-      - integration
-      - -k
-      - gazebo
-      - tests/integration/test_gazebo_turtlebot.py
-      - -v
-      - --tb=short
+      - bash
+      - -c
+      - >-
+        pytest -p "no:launch_testing" -m integration -k gazebo
+        tests/integration/test_gazebo_turtlebot.py -v --tb=short
+        && apyrobo conformance ros2://burger
 
   # ---------------------------------------------------------------------------
   # Nav2 end-to-end — profile: gazebo-nav

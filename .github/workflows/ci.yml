@@ -124,6 +124,59 @@ jobs:
         run: node "$GITHUB_WORKSPACE/demos/ts_interop/demo.mjs"
 
   # ------------------------------------------------------------------
+  # Conformance: every first-party target that can run without external
+  # infrastructure, against the frozen spec. ros2:// gets the same suite
+  # against the live Gazebo sim in integration.yml; vda5050:// runs it
+  # in-process in tests/test_vda5050_adapter.py. Results are published
+  # in docs/conformance_results.md — keep that table in sync.
+  # ------------------------------------------------------------------
+  conformance:
+    name: Conformance (first-party targets)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install apyrobo with conformance + websocket extras
+        run: pip install ".[conformance,websocket]"
+
+      - name: Adapter targets (in-process)
+        run: |
+          mkdir -p conformance-reports
+          for scheme in mock gazebo_native isaac mujoco; do
+            apyrobo conformance "$scheme://ci-probe" \
+              --output "conformance-reports/$scheme.json"
+          done
+
+      - name: Wire protocol — stdio
+        run: |
+          apyrobo conformance "stdio:apyrobo serve" \
+            --output conformance-reports/stdio.json
+
+      - name: Wire protocol — WebSocket
+        run: |
+          apyrobo serve --transport websocket --ws-port 8765 &
+          SERVE_PID=$!
+          for _ in $(seq 1 30); do
+            nc -z localhost 8765 && break
+            sleep 1
+          done
+          apyrobo conformance ws://localhost:8765 \
+            --output conformance-reports/websocket.json
+          kill $SERVE_PID
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-reports
+          path: conformance-reports/
+
+  # ------------------------------------------------------------------
   # CI-05: Docker container test job (exercises docker-compose.yml)
   # ------------------------------------------------------------------
   docker-test:
