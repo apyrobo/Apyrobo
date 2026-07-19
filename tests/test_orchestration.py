@@ -262,6 +262,26 @@ class TestExecuteMode:
         server.run()
         jsonschema.validate(adapter.sent[0].to_dict(), schema)
 
+    def test_malformed_robot_uri_not_echoed(self):
+        # Fuzz-found: echoing a malformed robot_uri (e.g. "0") back in the
+        # error response violated the schema's URI pattern. The server now
+        # omits robot_uri when the incoming value isn't echoable.
+        jsonschema = pytest.importorskip("jsonschema")
+        import pathlib
+        schema = json.loads(
+            (pathlib.Path(__file__).parent.parent
+             / "spec" / "schemas" / "orchestration-message.schema.json").read_text()
+        )
+        adapter = MockOrchestrationAdapter(
+            tasks=[OrchestrationMessage(task="", robot_uri="0")]
+        )
+        server = OrchestrationServer(adapter, self._make_agent())
+        server.run()
+        response = adapter.sent[0]
+        assert response.metadata["status"] == "error"
+        assert "robot_uri" not in response.to_dict()
+        jsonschema.validate(response.to_dict(), schema)
+
     def test_planning_error_skips_execution(self):
         adapter = MockOrchestrationAdapter(
             tasks=[OrchestrationMessage(task="go to (1, 1)", robot_uri="bogus://x")]

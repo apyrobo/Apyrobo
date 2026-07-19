@@ -68,6 +68,9 @@ conformance = [
 vda5050 = [
     "paho-mqtt>=2.0",      # MQTT transport for the vda5050:// master-control adapter
 ]
+mujoco = [
+    "mujoco>=3.0",         # real physics for the mujoco:// bridge
+]
 full = [
     "apyrobo[llm,api,registry,dashboard,websocket,slack,conformance,vda5050]",
 ]
@@ -95,6 +98,8 @@ include = ["apyrobo*"]
 "apyrobo.conformance" = ["schemas/*.json"]
 # Bundled registry seed index — `apyrobo registry search` works offline.
 "apyrobo.registry" = ["seed_index.json"]
+# Default MuJoCo scene for the mujoco:// bridge.
+"apyrobo.sim" = ["assets/*.xml"]
 
 [tool.ruff]
 target-version = "py310"

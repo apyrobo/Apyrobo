@@ -1,0 +1,45 @@
+<!--
+  Default scene for the real mujoco:// bridge (apyrobo/sim/mujoco_bridge.py).
+
+  A planar mobile base (x/y slides + yaw hinge, position-servo actuators)
+  and one free-floating "package" box on a ground plane. The base carries a
+  suction-style gripper: gripper_close activates the "grasp_weld" equality
+  constraint when the package is within reach, gripper_open releases it and
+  the package falls under gravity. Pass model_path= to Robot.discover to
+  use your own scene; the bridge looks up bodies/joints/actuators by the
+  names used here (see mujoco_bridge.py for the naming contract).
+-->
+<mujoco model="apyrobo_pickplace_arena">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+
+  <worldbody>
+    <light directional="true" pos="0 0 3" dir="0 0 -1"/>
+    <geom name="floor" type="plane" size="10 10 0.1"
+          friction="1 0.005 0.0001" rgba="0.85 0.85 0.85 1"/>
+
+    <body name="base" pos="0 0 0.10">
+      <joint name="base_x" type="slide" axis="1 0 0" damping="10"/>
+      <joint name="base_y" type="slide" axis="0 1 0" damping="10"/>
+      <joint name="base_yaw" type="hinge" axis="0 0 1" damping="4"/>
+      <geom name="chassis" type="box" size="0.18 0.12 0.06"
+            density="800" rgba="0.20 0.40 0.90 1"/>
+      <site name="grip_site" pos="0.22 0 0" size="0.02" rgba="1 0 0 0.5"/>
+    </body>
+
+    <body name="package" pos="1.0 0.5 0.06">
+      <freejoint name="package_free"/>
+      <geom name="package_geom" type="box" size="0.05 0.05 0.05"
+            density="200" friction="1 0.005 0.0001" rgba="0.90 0.60 0.10 1"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="drive_x" joint="base_x" kp="120" kv="40" forcerange="-120 120"/>
+    <position name="drive_y" joint="base_y" kp="120" kv="40" forcerange="-120 120"/>
+    <position name="drive_yaw" joint="base_yaw" kp="20" kv="6" forcerange="-40 40"/>
+  </actuator>
+
+  <equality>
+    <weld name="grasp_weld" body1="base" body2="package" active="false"/>
+  </equality>
+</mujoco>

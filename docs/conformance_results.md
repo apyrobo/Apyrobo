@@ -17,7 +17,7 @@ Last updated: 2026-07-19 (spec 1.0).
 | `ros2://` | Suite wired into CI vs a live physics TurtleBot3 in Gazebo — result pending the job's first run; this row flips to Conformant (or gets fixed) when it lands | `gazebo` profile CI job ([integration.yml](../.github/workflows/integration.yml)), every commit |
 | `gazebo_native://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `isaac://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
-| `mujoco://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
+| `mujoco://` | **Conformant** — 21/21, 0 warnings, vs **real MuJoCo physics** (the bridge loads and steps an actual model; fail-fast on disconnect) | `conformance` CI job + `tests/test_mujoco_bridge.py`, every commit |
 | `gazebo://` | Not CI-covered — needs a live ROS-topic Gazebo Classic rig; run `apyrobo conformance gazebo://<robot>` inside the `gazebo` compose profile | — |
 | `http://` | Not CI-covered — needs a live HTTP robot endpoint; run `apyrobo conformance http://<host>` against yours | — |
 | `mqtt://` | Not CI-covered — needs a live MQTT broker + robot; run `apyrobo conformance mqtt://<broker>` against yours | — |
@@ -27,11 +27,11 @@ instead of failing fast. `vda5050://` passes this check (fail-fast,
 0 warnings); the in-memory adapters accept the command. Recorded, not
 hidden.
 
-² The in-memory stand-ins satisfy the adapter *contract* but do not drive a
-real simulator — that is exactly what
+² The in-memory stand-ins (`gazebo_native://`, `isaac://`) satisfy the
+adapter *contract* but do not drive a real simulator — that is exactly what
 [Arc 3 of the roadmap](../ROADMAP.md#arc-3--modern-simulation-no-stand-ins)
-exists to fix. Contract-conformant ≠ physically real; this table says which
-is which.
+exists to fix (`mujoco://` already graduated to a real bridge).
+Contract-conformant ≠ physically real; this table says which is which.
 
 ## Wire-protocol servers (WP checks, 8 MUST)
 

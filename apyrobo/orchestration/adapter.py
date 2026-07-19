@@ -30,6 +30,7 @@ import contextlib
 import json
 import logging
 import queue
+import re
 import sys
 import threading
 import time
@@ -277,14 +278,20 @@ class OrchestrationServer:
         except Exception as exc:
             logger.warning("OrchestrationServer._checkpoint_complete error: %s", exc)
 
+    # Mirrors the robot_uri pattern in orchestration-message.schema.json: a
+    # malformed incoming URI cannot be echoed back schema-validly, so it is
+    # omitted from the response instead (empty = omitted on the wire).
+    _URI_RE = re.compile(r"^[a-z][a-z0-9+.-]*://.+$")
+
     def _handle(self, msg: OrchestrationMessage) -> OrchestrationMessage:
         """Plan a task from *msg* and return a response message.
 
         The message's ``robot_uri`` selects the target robot; only when it
         is absent does the configured default robot apply (wire-protocol.md
-        §1). The response always carries the resolved URI.
+        §1). The response carries the resolved URI when it is echoable.
         """
         robot_uri = msg.robot_uri or self.default_robot_uri
+        echo_uri = robot_uri if self._URI_RE.match(robot_uri) else ""
         try:
             robot = self._resolve_robot(robot_uri)
             graph = self.agent.plan(msg.task, robot)
@@ -300,7 +307,7 @@ class OrchestrationServer:
                 metadata["execution"] = self._execute(robot, graph)
             return OrchestrationMessage(
                 task=msg.task,
-                robot_uri=robot_uri,
+                robot_uri=echo_uri,
                 metadata=metadata,
                 source="orchestration_server",
             )
@@ -308,7 +315,7 @@ class OrchestrationServer:
             logger.warning("OrchestrationServer._handle error: %s", exc)
             return OrchestrationMessage(
                 task=msg.task,
-                robot_uri=robot_uri,
+                robot_uri=echo_uri,
                 metadata={"status": "error", "error": str(exc)},
                 source="orchestration_server",
             )
