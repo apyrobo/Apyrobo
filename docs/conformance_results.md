@@ -14,7 +14,7 @@ Last updated: 2026-07-19 (spec 1.0).
 |--------|--------|----------------|
 | `mock://` | **Conformant** — 20/20, 1 SHOULD warning¹ | `conformance` CI job, every commit |
 | `vda5050://` | **Conformant** — full suite, 0 warnings, vs a simulated VDA 5050 AGV (in-process transport; the MQTT transport is real but the conformance rig doesn't need a broker) | `tests/test_vda5050_adapter.py`, every commit |
-| `ros2://` | Suite wired into CI vs a live physics TurtleBot3 in Gazebo — result pending the job's first run; this row flips to Conformant (or gets fixed) when it lands | `gazebo` profile CI job ([integration.yml](../.github/workflows/integration.yml)), every commit |
+| `ros2://` | First CI run vs a live physics TurtleBot3 in Gazebo completed every check with 1 SHOULD warning¹ (rclpy then segfaulted at interpreter teardown, after the report was written — the job now reads the JSON verdict); row flips to **Conformant** on the first green run | `gazebo` profile CI job ([integration.yml](../.github/workflows/integration.yml)), every commit |
 | `gazebo_native://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `isaac://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `mujoco://` | **Conformant** — 21/21, 0 warnings, vs **real MuJoCo physics** (the bridge loads and steps an actual model; fail-fast on disconnect) | `conformance` CI job + `tests/test_mujoco_bridge.py`, every commit |
@@ -23,9 +23,10 @@ Last updated: 2026-07-19 (spec 1.0).
 | `mqtt://` | Not CI-covered — needs a live MQTT broker + robot; run `apyrobo conformance mqtt://<broker>` against yours | — |
 
 ¹ **FAIL-01 (SHOULD)**: commands issued while disconnected return silently
-instead of failing fast. `vda5050://` passes this check (fail-fast,
-0 warnings); the in-memory adapters accept the command. Recorded, not
-hidden.
+instead of failing fast. `vda5050://` and `mujoco://` pass this check
+(fail-fast, 0 warnings); the in-memory adapters — and, per its first live
+CI run, `ros2://` — accept the command. Recorded, not hidden; making the
+ros2 adapter fail fast is a flagged follow-up.
 
 ² The in-memory stand-ins (`gazebo_native://`, `isaac://`) satisfy the
 adapter *contract* but do not drive a real simulator — that is exactly what
