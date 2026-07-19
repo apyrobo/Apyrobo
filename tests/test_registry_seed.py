@@ -134,7 +134,12 @@ class TestOfflineFallback:
 
 class TestServerSeed:
     def test_create_app_seed_preloads_store(self):
-        server = pytest.importorskip("apyrobo.registry.server")
+        # Not importorskip: pytest 8 only swallows ModuleNotFoundError, and
+        # registry.server raises a custom ImportError without FastAPI.
+        try:
+            from apyrobo.registry import server
+        except ImportError:
+            pytest.skip("fastapi not installed")
         original = dict(server._store)
         server._store.clear()
         try:

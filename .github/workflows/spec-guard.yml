@@ -30,5 +30,12 @@ jobs:
             echo "OK: PR description references an RFC issue."
             exit 0
           fi
-          echo "::error::This PR modifies spec/, which is frozen at 1.0. Every spec change needs an accepted RFC: add the 'rfc-accepted' label or reference the RFC issue in the PR description (e.g. 'RFC: #123'). Process: docs/rfc_process.md"
+          # An ADR reference (e.g. "ADR-0001") covers process-bootstrap
+          # changes decided outside a numbered RFC issue — the ADR itself
+          # is the durable record (docs/rfc_process.md).
+          if printf '%s' "$PR_BODY" | grep -qiE 'ADR-[0-9]{4}'; then
+            echo "OK: PR description references an ADR."
+            exit 0
+          fi
+          echo "::error::This PR modifies spec/, which is frozen at 1.0. Every spec change needs an accepted RFC: add the 'rfc-accepted' label, or reference the RFC issue (e.g. 'RFC: #123') or recording ADR (e.g. 'ADR-0001') in the PR description. Process: docs/rfc_process.md"
           exit 1

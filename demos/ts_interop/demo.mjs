@@ -42,9 +42,15 @@ const { values: opts } = parseArgs({
     task: { type: "string", default: "deliver package from (1, 2) to (5, 5)" },
     ws: { type: "string" },
     timeout: { type: "string", default: "120000" },
+    // How long to keep retrying the initial --ws connection. The server
+    // opens its port only once robot discovery succeeds (a Gazebo stack
+    // can take many minutes to boot), and Docker's port proxy accepts TCP
+    // before the server is really there — so retry at the protocol level.
+    "connect-timeout": { type: "string", default: "600000" },
   },
 });
 const timeoutMs = Number(opts.timeout);
+const connectTimeoutMs = Number(opts["connect-timeout"]);
 
 const say = (line = "") => console.log(line);
 
@@ -56,7 +62,20 @@ say();
 let client;
 if (opts.ws !== undefined) {
   say(`① Connecting to a running server at ${opts.ws} …`);
-  client = await ApyroboClient.connect(opts.ws);
+  const deadline = Date.now() + connectTimeoutMs;
+  for (;;) {
+    try {
+      client = await ApyroboClient.connect(opts.ws);
+      break;
+    } catch (err) {
+      if (Date.now() >= deadline) {
+        console.error(`   gave up after ${connectTimeoutMs} ms: ${err.message}`);
+        process.exit(1);
+      }
+      say(`   not up yet (${err.message}) — retrying in 5 s`);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
 } else {
   const serveCommand = (
     process.env.APYROBO_SERVE ?? "apyrobo serve"

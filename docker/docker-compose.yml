@@ -261,13 +261,18 @@ services:
         condition: service_healthy
     # After the integration tests, the conformance suite runs against the
     # same live physics robot — docs/conformance_results.md cites this run.
+    # rclpy can segfault at interpreter teardown AFTER the report is
+    # written, so the verdict comes from the JSON report, not the exit code.
     command:
       - bash
       - -c
       - >-
         pytest -p "no:launch_testing" -m integration -k gazebo
         tests/integration/test_gazebo_turtlebot.py -v --tb=short
-        && apyrobo conformance ros2://burger
+        && { apyrobo conformance ros2://burger --output /tmp/conf.json || true; }
+        && python3 -c "import json,sys; r=json.load(open('/tmp/conf.json'));
+        print('ros2:// conformant:', r['conformant']);
+        sys.exit(0 if r['conformant'] else 1)"
 
   # ---------------------------------------------------------------------------
   # Nav2 end-to-end — profile: gazebo-nav
