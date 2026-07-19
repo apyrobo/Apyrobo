@@ -14,7 +14,7 @@ Last updated: 2026-07-19 (spec 1.0).
 |--------|--------|----------------|
 | `mock://` | **Conformant** — 20/20, 1 SHOULD warning¹ | `conformance` CI job, every commit |
 | `vda5050://` | **Conformant** — full suite, 0 warnings, vs a simulated VDA 5050 AGV (in-process transport; the MQTT transport is real but the conformance rig doesn't need a broker) | `tests/test_vda5050_adapter.py`, every commit |
-| `ros2://` | First CI run vs a live physics TurtleBot3 in Gazebo completed every check with 1 SHOULD warning¹ (rclpy then segfaulted at interpreter teardown, after the report was written — the job now reads the JSON verdict); row flips to **Conformant** on the first green run | `gazebo` profile CI job ([integration.yml](../.github/workflows/integration.yml)), every commit |
+| `ros2://` | **Conformant** — full suite vs a live physics TurtleBot3 in Gazebo, 1 SHOULD warning¹ | `gazebo` profile CI job ([integration.yml](../.github/workflows/integration.yml)), every commit |
 | `gazebo_native://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `isaac://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `mujoco://` | **Conformant** — 21/21, 0 warnings, vs **real MuJoCo physics** (the bridge loads and steps an actual model; fail-fast on disconnect) | `conformance` CI job + `tests/test_mujoco_bridge.py`, every commit |
