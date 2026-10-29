@@ -65,6 +65,7 @@
 - **Hardware Auto-Discovery** — `apyrobo connect ros2://ur10` detects robot type and loads the right skill package automatically
 - **Compute Profiles** — `--profile jetson-orin` / `--profile workstation-gpu` / `--profile cpu-only` configure models for any hardware
 - **Orchestration Server** — `apyrobo serve` exposes a JSON stdio interface; plug in Slack, Discord, web UI, or ROS service
+- **MCP Server** — `apyrobo mcp` lets Claude, Cursor or any MCP client drive a robot through the safety enforcer ([docs/mcp.md](docs/mcp.md))
 - **Policy-Backed Skills** — run a VLA/LeRobot policy as a skill-graph node with a hard per-tick bound and the safety enforcer wrapping every action ([docs](docs/policy_skills.md))
 - **Skill Package Ecosystem** — real ROS 2 Nav2 skills + the `ros2://` adapter (drives a TurtleBot3 in Gazebo), plus reference scaffolds for UR arms, Spot, Franka, PX4, and AGVs to wire to their vendor SDKs ([packages/](packages/))
 
@@ -403,6 +404,7 @@ docker-compose up apyrobo-api
 | [Skill Authoring Guide](docs/skill_authoring.md) | Write, test, and publish custom skills |
 | [Adapter Authoring Guide](docs/adapter_authoring.md) | Add support for new hardware |
 | [Policy-Backed Skills](docs/policy_skills.md) | Run VLA / LeRobot policies inside the safety envelope |
+| [MCP Server](docs/mcp.md) | Drive a robot from Claude, Cursor or any MCP client, through the safety enforcer |
 | [Protocol Spec](spec/README.md) | The language-agnostic APYROBO protocol, v1.0 (frozen) |
 | [Conformance Suite](docs/conformance.md) | Test any adapter or server against the spec |
 | [TypeScript Client](packages/apyrobo-client-ts/README.md) | Wire-protocol SDK for web dashboards and bots |
