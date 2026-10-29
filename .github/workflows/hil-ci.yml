@@ -52,7 +52,9 @@ concurrency:
 
 jobs:
   hil-test:
-    name: HIL — ${{ secrets.ROBOT_TYPE || 'turtlebot4' }}
+    # `secrets` is not available in jobs.<id>.name; using it there makes the
+    # whole workflow file invalid, and GitHub records a failed run on every push.
+    name: HIL skill tests
     runs-on: [self-hosted, hil-runner]
     environment: hardware
     timeout-minutes: 30
