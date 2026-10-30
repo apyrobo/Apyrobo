@@ -104,28 +104,34 @@ class TestStopAndLifecycle:
         assert abs(adapter.get_position()[0] - 0.3) < 0.1
 
 
+# The package box in assets/pickplace_arena.xml has half-size 0.05 m, so it
+# rests on the floor with its centre at ~0.05 m. It spawns at 0.06 m and is
+# still settling (dropping, bouncing) when the adapter starts, so a reading taken right after
+# construction is not its resting height and must not be the reference.
+PACKAGE_REST_Z = 0.05
+
+
 class TestGrasp:
     def test_grasp_refused_out_of_reach(self, adapter):
         assert adapter.gripper_close() is False  # package is ~1.1 m away
 
     def test_pick_carry_place(self, adapter):
-        start = adapter.object_position()
         adapter.move(0.85, 0.42)
         assert adapter.gripper_close() is True
         # Suction lift: the constraint holds the object off the floor.
         adapter.move(0.5, 0.4)
-        assert adapter.object_position()[2] > start[2] + 0.03
+        assert adapter.object_position()[2] > PACKAGE_REST_Z + 0.03
         adapter.move(-1.0, -0.8)
         assert adapter.gripper_open() is True
         # Let it fall and settle.
         deadline = time.time() + 2.0
         while time.time() < deadline:
             adapter.move(-1.0, -0.8)  # a few extra sim steps
-            if abs(adapter.object_position()[2] - start[2]) < 0.01:
+            if abs(adapter.object_position()[2] - PACKAGE_REST_Z) < 0.01:
                 break
         px, py, pz = adapter.object_position()
         assert abs(px - (-1.0)) < 0.5 and abs(py - (-0.8)) < 0.5
-        assert abs(pz - start[2]) < 0.01  # back on the floor
+        assert abs(pz - PACKAGE_REST_Z) < 0.01  # back on the floor
 
 
 class TestFullPipeline:
