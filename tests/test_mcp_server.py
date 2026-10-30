@@ -12,8 +12,10 @@ import pytest
 from apyrobo.mcp_server import (
     INVALID_PARAMS,
     METHOD_NOT_FOUND,
+    MODERN_PROTOCOL_VERSIONS,
     PARSE_ERROR,
     SUPPORTED_PROTOCOL_VERSIONS,
+    UNSUPPORTED_PROTOCOL_VERSION,
     build_server,
     parse_zone,
 )
@@ -103,6 +105,117 @@ def test_serve_loop_parse_error_and_stdout_isolation(server, capsys):
 
 
 # -- safety behaviour -------------------------------------------------------
+
+
+# -- protocol 2026-07-28 (stateless, no initialize) -------------------------
+
+MODERN = "2026-07-28"
+
+
+def modern(server, method, params=None, version=MODERN, capabilities=None, msg_id=7):
+    meta = {
+        "io.modelcontextprotocol/protocolVersion": version,
+        "io.modelcontextprotocol/clientInfo": {"name": "test-client", "version": "1.0"},
+        "io.modelcontextprotocol/clientCapabilities": capabilities or {},
+    }
+    return rpc(server, method, {**(params or {}), "_meta": meta}, msg_id=msg_id)
+
+
+def test_modern_version_is_supported():
+    assert MODERN in MODERN_PROTOCOL_VERSIONS
+    assert MODERN not in SUPPORTED_PROTOCOL_VERSIONS  # no initialize for it
+
+
+def test_server_discover(server):
+    resp = modern(server, "server/discover")
+    assert resp["id"] == 7
+    result = resp["result"]
+    assert result["resultType"] == "complete"
+    assert result["supportedVersions"] == [MODERN]
+    assert "tools" in result["capabilities"]
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "apyrobo"
+    assert "safety" in result["instructions"]
+    assert result["ttlMs"] >= 0 and result["cacheScope"] in ("public", "private")
+
+
+def test_modern_tools_list_without_initialize(server):
+    result = modern(server, "tools/list")["result"]
+    assert result["resultType"] == "complete"
+    assert result["ttlMs"] >= 0 and result["cacheScope"] in ("public", "private")
+    assert [t["name"] for t in result["tools"]] == [
+        t["name"] for t in rpc(server, "tools/list")["result"]["tools"]
+    ]
+    assert "resultType" not in rpc(server, "tools/list")["result"]  # legacy unchanged
+
+
+def test_modern_tools_call_still_goes_through_safety(server):
+    ok = modern(server, "tools/call", {"name": "move_to", "arguments": {"x": 1, "y": 0}})
+    assert ok["result"]["resultType"] == "complete"
+    assert ok["result"]["isError"] is False
+    assert "io.modelcontextprotocol/serverInfo" in ok["result"]["_meta"]
+    refused = modern(server, "tools/call", {"name": "move_to", "arguments": {"x": 3, "y": 3}})
+    assert refused["result"]["isError"] is True
+    assert "refused by safety policy" in refused["result"]["content"][0]["text"].lower()
+    unknown = modern(server, "tools/call", {"name": "fly", "arguments": {}})
+    assert unknown["error"]["code"] == INVALID_PARAMS
+
+
+def test_modern_unsupported_version_lists_supported(server):
+    resp = modern(server, "tools/list", version="1900-01-01")
+    err = resp["error"]
+    assert err["code"] == UNSUPPORTED_PROTOCOL_VERSION == -32022
+    assert err["data"] == {"supported": [MODERN], "requested": "1900-01-01"}
+    # A legacy version sent the modern way is rejected too: it needs initialize.
+    resp = modern(server, "server/discover", version="2025-06-18")
+    assert resp["error"]["code"] == UNSUPPORTED_PROTOCOL_VERSION
+
+
+def test_modern_request_missing_required_meta_is_invalid_params(server):
+    no_caps = rpc(
+        server,
+        "tools/list",
+        {"_meta": {"io.modelcontextprotocol/protocolVersion": MODERN}},
+    )
+    assert no_caps["error"]["code"] == INVALID_PARAMS
+    bare_discover = rpc(server, "server/discover")
+    assert bare_discover["error"]["code"] == INVALID_PARAMS
+
+
+def test_modern_drops_ping(server):
+    assert modern(server, "ping")["error"]["code"] == METHOD_NOT_FOUND
+
+
+def test_initialize_still_works_after_modern_requests(server):
+    modern(server, "server/discover")
+    resp = rpc(server, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}})
+    assert resp["result"]["protocolVersion"] == "2025-06-18"
+
+
+def test_cli_stdio_modern_round_trip():
+    meta = {
+        "io.modelcontextprotocol/protocolVersion": MODERN,
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+    lines = [
+        {"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {"_meta": meta}},
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "robot_status", "arguments": {}, "_meta": meta},
+        },
+    ]
+    proc = subprocess.run(
+        [sys.executable, "-m", "apyrobo", "mcp"],
+        input="".join(json.dumps(m) + "\n" for m in lines),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    replies = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+    assert [r["id"] for r in replies] == [1, 2]
+    assert replies[0]["result"]["supportedVersions"] == [MODERN]
+    assert replies[1]["result"]["isError"] is False
 
 
 def test_status_reports_policy(server):

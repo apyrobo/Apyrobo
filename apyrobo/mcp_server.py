@@ -25,9 +25,23 @@ from apyrobo.__version__ import __version__
 
 logger = logging.getLogger(__name__)
 
-# Newest first. The server answers with the client's requested version when
-# it is one of these, otherwise with the newest.
+# Legacy (``initialize`` handshake) versions, newest first. The server answers
+# ``initialize`` with the client's requested version when it is one of these,
+# otherwise with the newest.
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+# Modern (stateless) versions: no handshake, every request carries its version
+# and client capabilities in ``params._meta``. The server is dual-era: a
+# request with that metadata is served statelessly, anything else as before.
+MODERN_PROTOCOL_VERSIONS = ("2026-07-28",)
+
+META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+
+# How long a modern client may cache tools/list and server/discover. The
+# tool set never changes while the server runs.
+LIST_TTL_MS = 3_600_000
 
 # JSON-RPC 2.0 error codes
 PARSE_ERROR = -32700
@@ -35,6 +49,8 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+# MCP error codes (2026-07-28)
+UNSUPPORTED_PROTOCOL_VERSION = -32022
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -364,8 +380,12 @@ class RobotToolbox:
 class MCPServer:
     """A minimal MCP server over newline-delimited JSON-RPC on stdio.
 
-    Implements the parts of the protocol a tools-only server needs:
-    ``initialize``, ``ping``, ``tools/list`` and ``tools/call``.
+    Implements the parts of the protocol a tools-only server needs. Legacy
+    clients (2025-06-18 and earlier) use ``initialize``, ``ping``,
+    ``tools/list`` and ``tools/call``. Modern clients (2026-07-28) send no
+    handshake: each request carries its protocol version in ``params._meta``,
+    and the server answers ``server/discover``, ``tools/list`` and
+    ``tools/call`` statelessly.
     """
 
     def __init__(self, toolbox: RobotToolbox) -> None:
@@ -400,6 +420,13 @@ class MCPServer:
             # notifications/initialized, notifications/cancelled, … need no reply.
             return None
 
+        meta = params.get("_meta")
+        if method != "initialize" and (
+            method == "server/discover"
+            or (isinstance(meta, dict) and META_PROTOCOL_VERSION in meta)
+        ):
+            return self._handle_modern(msg_id, method, params)
+
         try:
             if method == "initialize":
                 result = self._initialize(params)
@@ -416,6 +443,54 @@ class MCPServer:
             return _error(msg_id, INTERNAL_ERROR, str(exc))
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
 
+    def _handle_modern(self, msg_id: Any, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Serve one stateless (2026-07-28) request."""
+        meta = params.get("_meta")
+        if not isinstance(meta, dict) or META_PROTOCOL_VERSION not in meta:
+            return _error(msg_id, INVALID_PARAMS, f"Missing _meta[{META_PROTOCOL_VERSION!r}]")
+        requested = meta[META_PROTOCOL_VERSION]
+        if requested not in MODERN_PROTOCOL_VERSIONS:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": UNSUPPORTED_PROTOCOL_VERSION,
+                    "message": "Unsupported protocol version",
+                    "data": {"supported": list(MODERN_PROTOCOL_VERSIONS), "requested": requested},
+                },
+            }
+        if not isinstance(meta.get(META_CLIENT_CAPABILITIES), dict):
+            return _error(msg_id, INVALID_PARAMS, f"Missing _meta[{META_CLIENT_CAPABILITIES!r}]")
+
+        try:
+            if method == "server/discover":
+                result: dict[str, Any] = {
+                    "supportedVersions": list(MODERN_PROTOCOL_VERSIONS),
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "instructions": INSTRUCTIONS,
+                    "ttlMs": LIST_TTL_MS,
+                    "cacheScope": "public",
+                }
+            elif method == "tools/list":
+                result = {
+                    "tools": self.toolbox.list_tools(),
+                    "ttlMs": LIST_TTL_MS,
+                    "cacheScope": "public",
+                }
+            elif method == "tools/call":
+                response = self._tools_call(msg_id, params)
+                if "error" in response:
+                    return response
+                result = response["result"]
+            else:
+                return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("MCP: internal error in %s", method)
+            return _error(msg_id, INTERNAL_ERROR, str(exc))
+        result["resultType"] = "complete"
+        result["_meta"] = {META_SERVER_INFO: _server_info()}
+        return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         requested = params.get("protocolVersion")
         if requested in SUPPORTED_PROTOCOL_VERSIONS:
@@ -425,7 +500,7 @@ class MCPServer:
         return {
             "protocolVersion": self.protocol_version,
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "apyrobo", "version": __version__},
+            "serverInfo": _server_info(),
             "instructions": INSTRUCTIONS,
         }
 
@@ -483,6 +558,10 @@ class MCPServer:
     def _write(out: IO[str], response: Any) -> None:
         out.write(json.dumps(response, separators=(",", ":")) + "\n")
         out.flush()
+
+
+def _server_info() -> dict[str, str]:
+    return {"name": "apyrobo", "version": __version__}
 
 
 def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
