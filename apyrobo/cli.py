@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import subprocess
@@ -1590,6 +1591,42 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# MCP server command
+# ---------------------------------------------------------------------------
+
+def cmd_mcp(args: argparse.Namespace) -> None:
+    """Serve the robot to an MCP client (Claude, Cursor, …) over stdio."""
+    from apyrobo.mcp_server import build_server, parse_zone
+
+    try:
+        zones = [parse_zone(z) for z in (getattr(args, "no_go", None) or [])]
+        server = build_server(
+            robot_uri=args.robot,
+            policy=args.policy,
+            max_speed=args.max_speed,
+            no_go_zones=zones,
+            provider=args.provider,
+        )
+    except (ValueError, ImportError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    policy = server.toolbox.enforcer.policy
+    print(
+        f"apyrobo mcp — robot={args.robot} policy={policy.name} "
+        f"max_speed={policy.max_speed} no_go_zones={len(policy.collision_zones)} "
+        "(waiting for an MCP client on stdio)",
+        file=sys.stderr, flush=True,
+    )
+    try:
+        server.serve()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        with contextlib.suppress(Exception):
+            server.toolbox.enforcer.stop()
+
+
+# ---------------------------------------------------------------------------
 # Conformance command
 # ---------------------------------------------------------------------------
 
@@ -2909,6 +2946,23 @@ def main() -> None:
         help="Slash command to register with the Slack adapter (default: /apyrobo)",
     )
 
+    # mcp — MCP server for AI clients
+    p_mcp = sub.add_parser(
+        "mcp",
+        help="Serve the robot to an MCP client (Claude, Cursor, …) through the safety enforcer",
+    )
+    p_mcp.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
+                       help="Robot URI (default: mock://turtlebot4)")
+    p_mcp.add_argument("--policy", default="default", choices=["default", "strict"],
+                       help="Base safety policy (default: default)")
+    p_mcp.add_argument("--max-speed", dest="max_speed", type=float, default=None,
+                       metavar="M_S", help="Override the policy speed limit (m/s)")
+    p_mcp.add_argument("--no-go", dest="no_go", action="append", default=None,
+                       metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                       help="Add a rectangular no-go zone in metres (repeatable)")
+    p_mcp.add_argument("--provider", default="rule",
+                       help="Planner for plan_task/execute_task (default: rule, no API key)")
+
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
     profiles_sub = p_profiles.add_subparsers(dest="profiles_command")
@@ -3026,6 +3080,7 @@ def main() -> None:
         "voice": cmd_voice,
         "profiles": cmd_profiles,
         "serve": cmd_serve,
+        "mcp": cmd_mcp,
         "init": cmd_init,
         "shell": cmd_shell,
         "tutorial": cmd_tutorial,
