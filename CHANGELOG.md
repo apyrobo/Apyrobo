@@ -35,6 +35,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `docs/positioning.md` — market research: personas, landscape, bases
   beyond ROS 2, and the two user-acquisition wedges now on the roadmap.
 
+### Fixed
+
+- **`mujoco://` stops its physics thread at exit.** Adapters that were never
+  `shutdown()` (for example after `apyrobo conformance mujoco://...`) now have
+  their physics thread stopped and joined before Python exits, instead of
+  leaving it inside MuJoCo's native step during interpreter teardown. A
+  disconnected adapter now idles instead of spinning a CPU core.
+
 ## [4.1.0] - 2026-07-12
 
 The Standard Protocol release, part one: spec 1.0 frozen, the flagship
