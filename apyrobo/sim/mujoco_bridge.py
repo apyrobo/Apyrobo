@@ -20,9 +20,11 @@ graspable "package" box (``assets/pickplace_arena.xml``); pass
 
 from __future__ import annotations
 
+import atexit
 import logging
 import threading
 import time
+import weakref
 from importlib import resources
 from typing import Any
 
@@ -38,6 +40,22 @@ logger = logging.getLogger(__name__)
 
 _ARRIVAL_TOL = 0.05  # metres
 _YAW_TOL = 0.05  # radians
+_IDLE_SLEEP = 0.01  # seconds the physics thread naps while disconnected
+
+# Adapters whose physics thread may still be running. At interpreter exit the
+# threads are stopped and joined before Python tears down the mujoco module:
+# a daemon thread still inside mj_step (which runs without the GIL) while the
+# model and data are freed can crash the process after all work is done.
+_LIVE_ADAPTERS: weakref.WeakSet[MuJoCoBridgeAdapter] = weakref.WeakSet()
+
+
+def _shutdown_all() -> None:
+    """Stop every live adapter's physics thread (registered with atexit)."""
+    for adapter in list(_LIVE_ADAPTERS):
+        adapter.shutdown()
+
+
+atexit.register(_shutdown_all)
 
 
 class MuJoCoNotInstalledError(ImportError):
@@ -122,6 +140,7 @@ class MuJoCoBridgeAdapter(CapabilityAdapter):
             target=self._physics_loop, name=f"mujoco-{robot_name}", daemon=True
         )
         self._thread.start()
+        _LIVE_ADAPTERS.add(self)
         logger.info(
             "MuJoCoBridgeAdapter %r: live physics from %s (nq=%d)",
             robot_name, self._model_path, self._model.nq,
@@ -153,7 +172,8 @@ class MuJoCoBridgeAdapter(CapabilityAdapter):
         dt = float(self._model.opt.timestep)
         while not self._shutdown.is_set():
             with self._lock:
-                if self._state == AdapterState.CONNECTED:
+                connected = self._state == AdapterState.CONNECTED
+                if connected:
                     self._advance_setpoint(dt)
                     self._data.ctrl[self._aid["drive_x"]] = self._setpoint[0]
                     self._data.ctrl[self._aid["drive_y"]] = self._setpoint[1]
@@ -161,7 +181,10 @@ class MuJoCoBridgeAdapter(CapabilityAdapter):
                         self._data.ctrl[self._aid["drive_yaw"]] = self._yaw_goal
                     self._mj.mj_step(self._model, self._data)
                     self._update_arrival()
-            if self._realtime:
+            if not connected:
+                # Nothing to step: nap instead of spinning on the lock.
+                self._shutdown.wait(_IDLE_SLEEP)
+            elif self._realtime:
                 time.sleep(dt)
 
     def _advance_setpoint(self, dt: float) -> None:
@@ -405,6 +428,12 @@ class MuJoCoBridgeAdapter(CapabilityAdapter):
         logger.info("MuJoCoBridgeAdapter %r: disconnected", self.robot_name)
 
     def shutdown(self) -> None:
-        """Stop the physics thread entirely (disconnect keeps it idling)."""
+        """Stop the physics thread entirely (disconnect keeps it idling).
+
+        Safe to call more than once. Also runs automatically at interpreter
+        exit for any adapter that was never shut down.
+        """
         self._shutdown.set()
-        self._thread.join(timeout=2.0)
+        if self._thread is not threading.current_thread():
+            self._thread.join(timeout=2.0)
+        _LIVE_ADAPTERS.discard(self)
