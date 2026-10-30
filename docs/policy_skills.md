@@ -70,6 +70,13 @@ class LeRobotBasePolicy:
 tensors in, base deltas out). Run it in sim first: the same `PolicyRunner`
 drives `mock://` and the Gazebo stack unchanged.
 
+Runnable version: [`examples/04_learned_policy_safety.py`](../examples/04_learned_policy_safety.py)
+wraps a LeRobot-shaped stand-in policy (plain lists instead of tensors, no
+torch needed) and runs three episodes on `mock://`: a nominal run, a
+one-off 25 m runaway action clamped to a single 0.5 m step, and a drift
+into a keep-out zone that the `SafetyEnforcer` rejects, ending the episode
+with the robot stopped. `tests/test_example_learned_policy.py` checks all three.
+
 ## Honesty line
 
 Verified with deterministic mock policies, including an adversarial
