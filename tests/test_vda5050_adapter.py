@@ -293,3 +293,73 @@ class TestCapabilitiesAndConformance:
             if c.level == "MUST" and c.status == "fail"
         ]
         assert report.conformant, f"MUST failures: {must_fails}"
+
+
+# ---------------------------------------------------------------------------
+# Protocol version detection
+# ---------------------------------------------------------------------------
+
+class TestProtocolVersion:
+    def test_unsupported_major_is_refused_at_construction(self):
+        agv = SimulatedAgv()
+        with pytest.raises(Vda5050Error, match=r"implements VDA 5050 2\.x.*'3\.0\.0'"):
+            Vda5050Adapter(
+                "AGV-1", transport=FakeTransport(agv), manufacturer="test",
+                protocol_version="3.0.0",
+            )
+
+    def test_minor_versions_of_2_are_accepted(self):
+        agv = SimulatedAgv()
+        adapter = Vda5050Adapter(
+            "AGV-1", transport=FakeTransport(agv), manufacturer="test",
+            protocol_version="2.1.0",
+        )
+        assert adapter._base_topic == "uagv/v2/test/AGV-1"
+
+    def test_connection_is_watched_across_majors(self, rig):
+        _, transport, _ = rig
+        assert "uagv/+/test/AGV-1/connection" in transport.subscribed
+
+    def test_matching_version_header_is_fine(self, rig):
+        adapter, transport, agv = rig
+        transport.emit(f"{agv.base}/state", {**agv._state(), "version": "2.0.0"})
+        adapter.move(1.0, 2.0)
+        assert adapter.get_health()["version_mismatch"] is None
+
+    def test_agv_announcing_on_v3_topic_is_reported(self, rig):
+        adapter, transport, _ = rig
+        transport.emit("uagv/v3/test/AGV-1/connection",
+                       {"connectionState": "ONLINE", "version": "3.0.0"})
+        health = adapter.get_health()
+        assert health["agv_protocol_version"] == "3.0.0"
+        assert "VDA 5050 3.0.0" in health["version_mismatch"]
+        with pytest.raises(Vda5050Error, match=r"speaks VDA 5050 3\.0\.0"):
+            adapter.move(1.0, 1.0)
+
+    def test_v3_header_on_v2_topic_fails_order_in_flight_fast(self, rig):
+        adapter, transport, agv = rig
+
+        def v3_reply(order: dict[str, Any]) -> None:
+            transport.emit(f"{agv.base}/state", {
+                **agv._state(orderId=order["orderId"]), "version": "3.0.0",
+            })
+        agv._handle_order = v3_reply  # type: ignore[method-assign]
+        with pytest.raises(Vda5050Error, match=r"speaks VDA 5050 3\.0\.0"):
+            adapter.move(1.0, 1.0)  # fails at once, not after order_timeout_sec
+
+    def test_mismatched_state_is_not_parsed(self, rig):
+        adapter, transport, _ = rig
+        transport.emit("uagv/v3/test/AGV-1/state", {
+            "version": "3.0.0", "agvPosition": {"x": 9.0, "y": 9.0, "theta": 0.0},
+        })
+        assert adapter.get_position() == (0.0, 0.0)
+
+    def test_reconnect_clears_the_mismatch(self, rig):
+        adapter, transport, _ = rig
+        transport.emit("uagv/v3/test/AGV-1/connection",
+                       {"connectionState": "ONLINE", "version": "3.0.0"})
+        adapter.disconnect()
+        adapter.connect()
+        assert adapter.get_health()["version_mismatch"] is None
+        adapter.move(2.0, 0.0)
+        assert adapter.get_position() == (2.0, 0.0)
