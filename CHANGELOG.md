@@ -16,7 +16,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   drive a robot over stdio, with every motion command passed through the
   `SafetyEnforcer`. Over-limit speeds are clamped and reported; targets in a
   no-go zone (`--no-go x_min,y_min,x_max,y_max`) are refused with a readable
-  tool error. Defaults to `mock://turtlebot4`. See docs/mcp.md.
+  tool error. Defaults to `mock://turtlebot4`. Try it without installing:
+  `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp`. See
+  docs/mcp.md.
 - **`vda5050://` — VDA 5050 master-control adapter** (`apyrobo/core/vda5050_adapter.py`,
   `pip install 'apyrobo[vda5050]'`): drive any VDA 5050-compliant AMR over
   MQTT — publishes `order`/`instantActions`, consumes
