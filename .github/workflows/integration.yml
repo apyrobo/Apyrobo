@@ -2,7 +2,7 @@ name: ROS 2 Integration Tests
 
 on:
   push:
-    branches: [main, "claude/**"]
+    branches: [main, "feat/**", "fix/**", "docs/**", "chore/**"]
   pull_request:
     branches: [main]
 
