@@ -86,6 +86,17 @@ def _major(version: str) -> str:
     return str(version).strip().lstrip("vV").split(".", 1)[0]
 
 
+def _order_refs(error: dict[str, Any]) -> list[Any]:
+    """orderId values an AGV error names in its errorReferences."""
+    refs = error.get("errorReferences") or []
+    if not isinstance(refs, list):
+        return []
+    return [
+        r.get("referenceValue") for r in refs
+        if isinstance(r, dict) and r.get("referenceKey") == "orderId"
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Transport — paho by default, injectable for tests
 # ---------------------------------------------------------------------------
@@ -177,6 +188,7 @@ class Vda5050Adapter(CapabilityAdapter):
         self._goal_node_id: str | None = None
         self._order_done = threading.Event()
         self._order_error: str | None = None
+        self._order_stopped = False
 
         logger.info(
             "Vda5050Adapter created for %s (broker=%s, topic=%s)",
@@ -285,36 +297,43 @@ class Vda5050Adapter(CapabilityAdapter):
             self._agv_errors = errors if isinstance(errors, list) else []
             self._driving = bool(s.get("driving", False))
 
+            if not self._active_order_id:
+                return
+            ours = self._active_order_id
+            # An error that names our order fails it even when the state still
+            # carries another orderId: that is how an AGV rejects an order it
+            # never accepted (e.g. a validationError or orderError). Any FATAL
+            # error fails it too, whatever orderId the state carries, because
+            # an AGV in a FATAL state cannot drive. Before, both cases waited
+            # for the state to carry our orderId, so move() sat out the full
+            # order timeout.
+            order_refs = [
+                e for e in self._agv_errors
+                if isinstance(e, dict) and ours in _order_refs(e)
+            ]
+            fatal = [
+                e for e in self._agv_errors
+                if isinstance(e, dict) and e.get("errorLevel") == "FATAL"
+            ]
+            if order_refs or fatal:
+                err = (order_refs or fatal)[0]
+                self._order_error = str(
+                    err.get("errorType") or err.get("errorDescription") or "AGV error"
+                )
+                self._order_done.set()
+                return
+
             # Order progress (VDA5050 §6.10): done when the state references
             # our order, the node/edge horizons are empty, and lastNodeId is
             # the goal.
-            if self._active_order_id and s.get("orderId") == self._active_order_id:
-                fatal = [
-                    e for e in self._agv_errors
-                    if isinstance(e, dict) and e.get("errorLevel") == "FATAL"
-                ]
-                order_refs = [
-                    e for e in self._agv_errors
-                    if isinstance(e, dict) and any(
-                        r.get("referenceKey") == "orderId"
-                        and r.get("referenceValue") == self._active_order_id
-                        for r in (e.get("errorReferences") or [])
-                        if isinstance(r, dict)
-                    )
-                ]
-                if fatal or order_refs:
-                    err = (order_refs or fatal)[0]
-                    self._order_error = str(
-                        err.get("errorType") or err.get("errorDescription") or "AGV error"
-                    )
-                    self._order_done.set()
-                elif (
-                    not s.get("nodeStates")
-                    and not s.get("edgeStates")
-                    and s.get("lastNodeId") == self._goal_node_id
-                ):
-                    self._order_error = None
-                    self._order_done.set()
+            if (
+                s.get("orderId") == ours
+                and not s.get("nodeStates")
+                and not s.get("edgeStates")
+                and s.get("lastNodeId") == self._goal_node_id
+            ):
+                self._order_error = None
+                self._order_done.set()
 
     # ------------------------------------------------------------------
     # Outbound: order / instantActions
@@ -393,6 +412,7 @@ class Vda5050Adapter(CapabilityAdapter):
             self._active_order_id = order["orderId"]
             self._goal_node_id = order["nodes"][1]["nodeId"]
             self._order_error = None
+            self._order_stopped = False
         self._order_done.clear()
         self._publish("order", order)
         logger.info(
@@ -404,6 +424,11 @@ class Vda5050Adapter(CapabilityAdapter):
             raise Vda5050Error(
                 f"order {order['orderId']} timed out after "
                 f"{self._order_timeout_sec:.0f}s (goal ({x}, {y}))"
+            )
+        if self._order_stopped:
+            raise Vda5050Error(
+                f"order {order['orderId']} was cancelled by stop() before the "
+                f"AGV reached the goal ({x}, {y})"
             )
         if self._order_error is not None:
             raise Vda5050Error(
@@ -425,6 +450,9 @@ class Vda5050Adapter(CapabilityAdapter):
         with contextlib.suppress(Exception):
             self._publish("instantActions", action)
         with self._lock:
+            if self._active_order_id is not None and not self._order_done.is_set():
+                # A move() blocked on this order must not report success.
+                self._order_stopped = True
             self._active_order_id = None
             self._goal_node_id = None
         self._order_done.set()
