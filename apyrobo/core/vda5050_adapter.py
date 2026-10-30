@@ -28,6 +28,13 @@ and blocks until the state stream reports the goal node reached, an order
 error, or `order_timeout_sec`. `stop()` publishes a HARD-blocking
 `cancelOrder` instant action and never raises (safety contract §2).
 
+Protocol version: the adapter implements VDA 5050 2.x. Constructing it
+with another major (``protocol_version="3.0.0"``) raises `Vda5050Error`.
+If the AGV announces itself on another major's topics, or its messages
+carry another major in the ``version`` header, the mismatch is reported in
+`get_health()`, any order in flight fails, and `move()` refuses with a
+readable error instead of timing out. `connect()` clears it.
+
 Transport: paho-mqtt (`pip install 'apyrobo[vda5050]'`) by default; any
 object satisfying the small `Vda5050Transport` duck type can be injected
 via the ``transport=`` kwarg — the test suite drives the full protocol
@@ -67,6 +74,16 @@ except ImportError:  # pragma: no cover
 
 class Vda5050Error(RuntimeError):
     """Raised on order rejection, transport failure, or timeout."""
+
+
+#: Major versions of VDA 5050 this adapter implements. Orders, state
+#: parsing and topic layout follow 2.x; other majors are refused up front
+#: rather than silently talking past the AGV.
+SUPPORTED_MAJOR_VERSIONS: frozenset[str] = frozenset({"2"})
+
+
+def _major(version: str) -> str:
+    return str(version).strip().lstrip("vV").split(".", 1)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +145,16 @@ class Vda5050Adapter(CapabilityAdapter):
         self._order_timeout_sec: float = float(
             kwargs.get("order_timeout_sec", self.ORDER_TIMEOUT_SEC)
         )
+        major = _major(self._version)
+        if major not in SUPPORTED_MAJOR_VERSIONS:
+            raise Vda5050Error(
+                f"vda5050:// implements VDA 5050 2.x; protocol_version="
+                f"{self._version!r} is not supported yet. Configure the AGV "
+                "(or its gateway) for VDA 5050 2.x and pass "
+                "protocol_version='2.0.0'."
+            )
         self._transport = kwargs.get("transport") or _PahoTransport()
 
-        major = self._version.split(".", 1)[0]
         self._base_topic = (
             f"{self._interface}/v{major}/{self._manufacturer}/{robot_name}"
         )
@@ -144,6 +168,9 @@ class Vda5050Adapter(CapabilityAdapter):
         self._agv_online: bool | None = None
         self._factsheet: dict[str, Any] = {}
         self._driving = False
+        # Set when the AGV speaks a different VDA 5050 major than we do.
+        self._agv_version: str | None = None
+        self._version_mismatch: str | None = None
 
         # Active-order tracking for blocking move()
         self._active_order_id: str | None = None
@@ -162,10 +189,19 @@ class Vda5050Adapter(CapabilityAdapter):
 
     def connect(self) -> None:
         host, _, port = self._broker.partition(":")
+        with self._lock:
+            self._agv_version = None
+            self._version_mismatch = None
         self._transport.on_message = self._on_message
         self._transport.connect(host or "localhost", int(port or 1883))
-        for sub in ("state", "connection", "factsheet"):
+        for sub in ("state", "factsheet"):
             self._transport.subscribe(f"{self._base_topic}/{sub}")
+        # Connection is watched across all majors ("+" wildcard) so an AGV
+        # announcing itself on e.g. uagv/v3/... is reported instead of the
+        # master silently waiting on v2 topics nobody publishes to.
+        self._transport.subscribe(
+            f"{self._interface}/+/{self._manufacturer}/{self.robot_name}/connection"
+        )
         super().connect()
         logger.info("Vda5050Adapter: connected to %s", self._broker)
 
@@ -186,6 +222,8 @@ class Vda5050Adapter(CapabilityAdapter):
             return
         if not isinstance(data, dict):
             return
+        if self._check_version(topic, data):
+            return
         suffix = topic.rsplit("/", 1)[-1]
         if suffix == "state":
             self._handle_state(data)
@@ -193,6 +231,46 @@ class Vda5050Adapter(CapabilityAdapter):
             self._agv_online = data.get("connectionState") == "ONLINE"
         elif suffix == "factsheet":
             self._factsheet = data
+
+    def _check_version(self, topic: str, data: dict[str, Any]) -> bool:
+        """Detect an AGV speaking another VDA 5050 major.
+
+        Looks at the major in the topic (``{interface}/v{major}/...``) and
+        at the message header's ``version`` field. On a mismatch, records
+        it, fails any order in flight with a readable error, and returns
+        True so the message is not parsed with the wrong schema.
+        """
+        ours = _major(self._version)
+        topic_major: str | None = None
+        prefix = f"{self._interface}/"
+        if topic.startswith(prefix):
+            seg = topic[len(prefix):].split("/", 1)[0]
+            if seg[:1] in ("v", "V"):
+                topic_major = _major(seg)
+        header_version = data.get("version")
+        theirs: str | None = None
+        if topic_major is not None and topic_major != ours:
+            theirs = str(header_version) if header_version else f"{topic_major}.x"
+        elif isinstance(header_version, str) and _major(header_version) != ours:
+            theirs = header_version
+        if theirs is None:
+            return False
+
+        message = (
+            f"AGV {self.robot_name} speaks VDA 5050 {theirs} (on {topic}); "
+            f"this adapter speaks {self._version}. Configure the AGV for "
+            "VDA 5050 2.x; other majors are not supported yet."
+        )
+        with self._lock:
+            first = self._version_mismatch is None
+            self._agv_version = theirs
+            self._version_mismatch = message
+            if self._active_order_id is not None:
+                self._order_error = message
+                self._order_done.set()
+        if first:
+            logger.error("Vda5050Adapter: %s", message)
+        return True
 
     def _handle_state(self, s: dict[str, Any]) -> None:
         with self._lock:
@@ -308,6 +386,8 @@ class Vda5050Adapter(CapabilityAdapter):
                 "vda5050:// is not connected — call connect() first "
                 "(commands are never queued for replay; wire-safety §4)"
             )
+        if self._version_mismatch is not None:
+            raise Vda5050Error(self._version_mismatch)
         order = self._build_order(x, y, speed)
         with self._lock:
             self._active_order_id = order["orderId"]
@@ -397,6 +477,9 @@ class Vda5050Adapter(CapabilityAdapter):
             "battery_pct": self._battery_pct,
             "driving": self._driving,
             "errors": len(self._agv_errors),
+            "protocol_version": self._version,
+            "agv_protocol_version": self._agv_version,
+            "version_mismatch": self._version_mismatch,
         }
 
     @property
