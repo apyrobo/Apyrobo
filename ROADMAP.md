@@ -45,7 +45,28 @@ lives in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Now — v8.0.0: The Standard Protocol (July – December 2026)
+## Now — Agent safety / MCP (October 2026 →)
+
+**Unlock: Adoption.** AI agents are starting to drive robots through MCP, and
+nothing sits between the model and the motors. APYROBO's lane is to be that
+layer for mobile robots and fleets: any MCP client on one side, Nav2, VDA 5050
+or a simulator on the other, the safety enforcer in between.
+
+| Status | Item | Description |
+|--------|------|-------------|
+| :white_check_mark: | **`apyrobo mcp`** | MCP server over stdio: `robot_status`, `list_capabilities`, `move_to`, `rotate`, `stop`, `plan_task`, `execute_task`, `safety_report`. Over-limit speeds clamped and reported, no-go targets refused with a readable error, `stop` always allowed. On `main`, not yet in a PyPI release ([docs/mcp.md](docs/mcp.md)) |
+| :construction: | **One-command try-out** | `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp` today; `uvx apyrobo mcp` after the next release |
+| :construction: | **Scripted demo transcript** | A mock:// session driven over stdio as a client would, committed so anyone can see what the model gets back |
+| :clipboard: | **MCP protocol 2026-07-28** | Negotiate the newest protocol version; today the server answers such clients with 2025-06-18 |
+| :clipboard: | **Human approval for over-limit moves** | Opt-in: ask the user through MCP elicitation instead of clamping silently; clamp when the client can't ask |
+| :clipboard: | **Real robot over MCP** | `apyrobo mcp --robot ros2://…` driving the TurtleBot3/Nav2 Gazebo stack, with an integration test |
+
+**Gate:** someone outside the project drives a robot (sim or real) through
+`apyrobo mcp` and tells us about it.
+
+---
+
+## Also now — v8.0.0: The Standard Protocol (July – December 2026)
 
 **Unlock: Permanence.** v1–v7 built the features; v8 makes APYROBO the thing other people build *on*. The goal is that "AI-native robotics orchestration" has a spec, a conformance suite, and a governance story — so that adopting APYROBO (or even forking it) is cheaper than starting from scratch, and implementations in other languages strengthen the standard instead of fragmenting it. Kubernetes won because of the API contract, not the codebase. This milestone extracts APYROBO's contract.
 
