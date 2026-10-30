@@ -1,6 +1,6 @@
 <p align="center">
   <strong>APYROBO</strong><br>
-  <em>The open-source AI orchestration layer for robotics</em>
+  <em>The safety layer between your AI agent and your robot</em>
 </p>
 
 <p align="center">
@@ -15,7 +15,19 @@
 
 ---
 
-**APYROBO gives AI agents the runtime to act in the physical world.** It sits on top of [ROS 2](https://docs.ros.org/en/humble/) and provides capability discovery, skill orchestration, swarm coordination, and safety enforcement. One layer, any hardware, any LLM.
+**APYROBO is the safety layer between your AI agent and your robot.** Claude, Cursor or any [MCP](https://modelcontextprotocol.io) client — or your own LLM agent — plans and drives the robot through APYROBO, and motion commands pass the safety enforcer first: over-limit speeds are clamped, targets in a no-go zone are refused with a readable error, `stop` is always allowed. Built for mobile robots and fleets: it sits on top of [ROS 2](https://docs.ros.org/en/humble/) and Nav2 (and VDA 5050 AGVs over `vda5050://`), with capability discovery, a skill graph and swarm coordination underneath.
+
+### Try it in 60 seconds (no robot, no ROS)
+
+```bash
+# needs uv (https://docs.astral.sh/uv/); runs the MCP server on a simulated mock:// robot
+uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+```
+
+Point Claude Code at it with `claude mcp add apyrobo -- uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4`,
+then ask: *"drive to (1, 1) at 2 m/s, then to (3, 3)"*. The first move is clamped to 0.5 m/s; the second is refused because (3, 3) is inside the no-go zone.
+Claude Desktop and Cursor configs, the tool list and the flags are in [docs/mcp.md](docs/mcp.md).
+`apyrobo mcp` is not in a PyPI release yet (`pip install apyrobo` gives 4.0.0 without it), so the one-liner installs from GitHub.
 
 ```
    "deliver the package to dock 3"
@@ -45,7 +57,7 @@
 
 | Challenge | How APYROBO Solves It |
 |-----------|----------------------|
-| LLMs can't control robots safely | Safety enforcer wraps every command with hard constraints |
+| AI agents can't be trusted with a robot | Motion commands from an agent — over MCP, or through the skill pipeline with a `SafetyEnforcer` wrapping the robot — pass hard constraints first: speed limits, no-go zones, watchdog, audit log |
 | Robot code is tied to hardware | Capability adapters abstract any robot behind a semantic API |
 | Multi-robot coordination is ad-hoc | Swarm bus + coordinator handles task splitting natively |
 | Skill composition is manual | Skill graph engine chains skills with pre/postconditions |
