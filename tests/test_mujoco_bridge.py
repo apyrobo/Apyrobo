@@ -164,3 +164,48 @@ class TestConformance:
             assert warnings == [], f"expected 0 warnings: {warnings}"
         finally:
             a.shutdown()
+
+
+class TestShutdown:
+    def test_shutdown_stops_thread_and_is_idempotent(self):
+        a = MuJoCoBridgeAdapter("shutdown_bot")
+        assert a._thread.is_alive()
+        a.shutdown()
+        assert not a._thread.is_alive()
+        a.shutdown()  # second call is a no-op, not an error
+
+    def test_exit_hook_stops_adapters_never_shut_down(self):
+        from apyrobo.sim import mujoco_bridge
+
+        a = MuJoCoBridgeAdapter("forgotten_bot")
+        assert a in mujoco_bridge._LIVE_ADAPTERS
+        mujoco_bridge._shutdown_all()
+        assert not a._thread.is_alive()
+        assert a not in mujoco_bridge._LIVE_ADAPTERS
+
+    def test_disconnected_adapter_still_shuts_down(self):
+        a = MuJoCoBridgeAdapter("idle_bot")
+        a.disconnect()
+        time.sleep(0.05)  # physics thread is idling, not stepping
+        t = a.get_health()["sim_time_s"]
+        time.sleep(0.05)
+        assert a.get_health()["sim_time_s"] == t
+        a.shutdown()
+        assert not a._thread.is_alive()
+
+    def test_process_exits_cleanly_without_explicit_shutdown(self):
+        import subprocess
+        import sys
+
+        code = (
+            "from apyrobo.sim.mujoco_bridge import MuJoCoBridgeAdapter\n"
+            "adapters = [MuJoCoBridgeAdapter(f'exit_bot{i}') for i in range(3)]\n"
+            "adapters[0].move(0.3, 0.2)\n"
+            "adapters[1].disconnect()\n"
+            "print('done')\n"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.strip() == "done"
