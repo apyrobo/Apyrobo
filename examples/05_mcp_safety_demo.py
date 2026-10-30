@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""
+MCP safety demo — drive ``apyrobo mcp`` over stdio the way an AI client does.
+
+This script starts the real ``apyrobo mcp`` server as a subprocess on
+mock:// (no ROS 2 or hardware needed) with a 0.5 m/s speed limit and one
+no-go zone, then speaks MCP to it over stdio exactly like Claude, Cursor or
+any other MCP client would: ``initialize``, ``tools/list`` and a series of
+``tools/call`` requests.
+
+What it shows, step by step:
+
+  1. robot_status   — the robot, its position and the active safety policy
+  2. move_to (1, 0) — a normal move at an allowed speed: it runs
+  3. move_to (2, 0) at 5 m/s — over the limit: it runs, clamped to 0.5 m/s,
+                      and the result says so
+  4. move_to (3, 3) — inside the no-go zone: refused with a readable error,
+                      the robot does not move
+  5. stop           — always allowed
+  6. safety_report  — the clamp and the refusal, as an audit trail
+
+Run from the repo root:
+    python examples/05_mcp_safety_demo.py                 # print the transcript
+    python examples/05_mcp_safety_demo.py --write PATH    # also save it as Markdown
+
+The committed docs/mcp_demo_transcript.md is this script's output.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+MAX_SPEED = "0.5"
+NO_GO = "2,2,4,4"
+SERVER_CMD = [
+    sys.executable, "-m", "apyrobo", "mcp",
+    "--robot", "mock://turtlebot4",
+    "--max-speed", MAX_SPEED,
+    "--no-go", NO_GO,
+]
+
+STEPS: list[tuple[str, str, dict[str, Any]]] = [
+    ("Check the robot and the active safety policy", "robot_status", {}),
+    ("A normal move at an allowed speed", "move_to", {"x": 1.0, "y": 0.0, "speed": 0.3}),
+    ("An over-limit move: 5 m/s against a 0.5 m/s limit", "move_to",
+     {"x": 2.0, "y": 0.0, "speed": 5.0}),
+    ("A target inside the no-go zone", "move_to", {"x": 3.0, "y": 3.0}),
+    ("Stop (always allowed)", "stop", {}),
+    ("The audit trail", "safety_report", {}),
+]
+
+
+class StdioClient:
+    """A tiny MCP client: one JSON-RPC message per line on stdin/stdout."""
+
+    def __init__(self, cmd: list[str]) -> None:
+        self.proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        self._next_id = 1
+
+    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        msg_id = self._next_id
+        self._next_id += 1
+        self._send({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params})
+        assert self.proc.stdout is not None
+        line = self.proc.stdout.readline()
+        if not line:
+            raise RuntimeError(f"server closed the connection during {method}")
+        reply = json.loads(line)
+        if reply.get("id") != msg_id:
+            raise RuntimeError(f"unexpected reply id {reply.get('id')!r}, wanted {msg_id}")
+        if "error" in reply:
+            raise RuntimeError(f"{method} failed: {reply['error']}")
+        return reply["result"]
+
+    def notify(self, method: str) -> None:
+        self._send({"jsonrpc": "2.0", "method": method})
+
+    def _send(self, message: dict[str, Any]) -> None:
+        assert self.proc.stdin is not None
+        self.proc.stdin.write(json.dumps(message) + "\n")
+        self.proc.stdin.flush()
+
+    def close(self) -> None:
+        if self.proc.stdin:
+            self.proc.stdin.close()
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+
+
+def run_demo() -> dict[str, Any]:
+    """Run the session and return everything the transcript is built from."""
+    client = StdioClient(SERVER_CMD)
+    try:
+        init = client.request("initialize", {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "apyrobo-demo-client", "version": "1.0"},
+        })
+        client.notify("notifications/initialized")
+        tools = client.request("tools/list", {})["tools"]
+        calls = []
+        for title, name, arguments in STEPS:
+            result = client.request("tools/call", {"name": name, "arguments": arguments})
+            calls.append({
+                "title": title,
+                "tool": name,
+                "arguments": arguments,
+                "is_error": bool(result.get("isError")),
+                "text": result["content"][0]["text"],
+            })
+    finally:
+        client.close()
+    return {
+        "protocol_version": init["protocolVersion"],
+        "server_name": init["serverInfo"]["name"],
+        "tools": [t["name"] for t in tools],
+        "calls": calls,
+    }
+
+
+def to_markdown(session: dict[str, Any]) -> str:
+    cmd = " ".join(["apyrobo", *SERVER_CMD[3:]])
+    out = [
+        "# apyrobo mcp: safety demo transcript",
+        "",
+        "Generated by `python examples/05_mcp_safety_demo.py --write "
+        "docs/mcp_demo_transcript.md`; tests/test_example_mcp_demo.py checks it "
+        "still matches. The script starts the real server and talks to it over "
+        "stdio like any MCP client:",
+        "",
+        "```bash",
+        cmd,
+        "```",
+        "",
+        f"Handshake: `initialize` agreed protocol `{session['protocol_version']}` "
+        f"with server `{session['server_name']}`; `tools/list` returned "
+        f"{len(session['tools'])} tools: "
+        + ", ".join(f"`{t}`" for t in session["tools"]) + ".",
+        "",
+    ]
+    for i, call in enumerate(session["calls"], 1):
+        args = json.dumps(call["arguments"])
+        verdict = "error (isError: true)" if call["is_error"] else "ok"
+        lang = "text" if call["is_error"] else "json"
+        out += [
+            f"## {i}. {call['title']}",
+            "",
+            f"Client calls `{call['tool']}` with `{args}`. Server replies: {verdict}.",
+            "",
+            f"```{lang}",
+            call["text"],
+            "```",
+            "",
+        ]
+    return "\n".join(out)
+
+
+def main(argv: list[str] | None = None) -> dict[str, Any]:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    parser.add_argument("--write", metavar="PATH", help="save the transcript as Markdown")
+    parser.add_argument("--quiet", action="store_true", help="do not print the transcript")
+    args = parser.parse_args(argv)
+    session = run_demo()
+    md = to_markdown(session)
+    if not args.quiet:
+        print(md)
+    if args.write:
+        Path(args.write).write_text(md, encoding="utf-8")
+    return session
+
+
+if __name__ == "__main__":
+    main()
