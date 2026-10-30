@@ -15,14 +15,33 @@ It needs no extra dependencies and defaults to `mock://turtlebot4`, so you can
 try it on a laptop without ROS.
 
 > **Availability:** `apyrobo mcp` is newer than the latest PyPI release
-> (4.1.0). Until the next release, install from GitHub:
-> `pip install "git+https://github.com/apyrobo/Apyrobo"`.
+> (4.0.0), so `pip install apyrobo` does not include it yet. Until the next
+> release, run it from GitHub as shown below. After that release the shorter
+> form `uvx apyrobo mcp` will work too.
 
 ## Try it in a minute
 
+With [uv](https://docs.astral.sh/uv/) installed (and `git`), one command
+fetches APYROBO from GitHub into a throwaway environment and starts the
+server:
+
+```bash
+uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+```
+
+It prints one line to stderr and then waits for an MCP client on stdio
+(Ctrl-C to quit); normally your client starts it for you. With
+[pipx](https://pipx.pypa.io) instead:
+
+```bash
+pipx run --spec git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+```
+
+Or install it into your own environment:
+
 ```bash
 pip install "git+https://github.com/apyrobo/Apyrobo"
-apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4   # Ctrl-C to quit; a client normally starts it
+apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
 ```
 
 Then add it to your client (below) and ask something like:
@@ -37,33 +56,47 @@ four-step task.
 ### Claude Code
 
 ```bash
-claude mcp add apyrobo -- apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+claude mcp add apyrobo -- uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
 ```
+
+If you installed with `pip`, use `-- apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4`
+instead.
 
 ### Claude Desktop
 
-Add to `claude_desktop_config.json` (Settings → Developer → Edit Config), then
-restart Claude Desktop:
+Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
 
 ```json
 {
   "mcpServers": {
     "apyrobo": {
-      "command": "apyrobo",
-      "args": ["mcp", "--max-speed", "0.5", "--no-go", "2,2,4,4"]
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/apyrobo/Apyrobo",
+        "apyrobo", "mcp", "--max-speed", "0.5", "--no-go", "2,2,4,4"
+      ]
     }
   }
 }
 ```
+
+Then fully quit Claude Desktop (from the menu bar or system tray, not just
+closing the window) and open it again; it only reads the config at start-up.
+If you installed with `pip`, use `"command": "apyrobo"` and
+`"args": ["mcp", "--max-speed", "0.5", "--no-go", "2,2,4,4"]`.
 
 ### Cursor
 
 Add the same `mcpServers` block to `~/.cursor/mcp.json` (or `.cursor/mcp.json`
 in a project).
 
-If `apyrobo` is installed in a virtualenv, use the full path to the
-executable as `command` (for example `/home/you/.venvs/robot/bin/apyrobo`),
-because GUI clients don't inherit your shell's `PATH`.
+GUI clients don't inherit your shell's `PATH`. If the client can't find
+`uvx` or `apyrobo`, use the full path to the executable as `command` (run
+`which uvx` or `which apyrobo` to get it, for example
+`/home/you/.local/bin/uvx`).
+
+The first start with `uvx` downloads and builds APYROBO (about 15 seconds
+in our test); later starts reuse uv's cache.
 
 ## Tools
 
