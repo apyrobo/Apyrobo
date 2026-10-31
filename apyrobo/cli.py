@@ -1608,7 +1608,9 @@ def cmd_mcp(args: argparse.Namespace) -> None:
             provider=args.provider,
             policy_file=getattr(args, "policy_file", None),
         )
-    except (ValueError, ImportError) as exc:
+    except (ValueError, ImportError, RuntimeError, OSError) as exc:
+        # Adapters report a missing ROS 2 install or an unreachable robot as
+        # RuntimeError/ConnectionError; show their message, not a traceback.
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
     policy = server.toolbox.enforcer.policy
