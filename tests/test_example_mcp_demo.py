@@ -87,3 +87,10 @@ def test_committed_transcript_matches(example, session):
         "docs/mcp_demo_transcript.md is stale; regenerate it with "
         "python examples/05_mcp_safety_demo.py --write docs/mcp_demo_transcript.md --quiet"
     )
+
+
+def test_mcp_docs_link_the_transcript_and_example():
+    docs = (ROOT / "docs" / "mcp.md").read_text(encoding="utf-8")
+    assert "](mcp_demo_transcript.md)" in docs
+    assert "examples/05_mcp_safety_demo.py" in docs
+    assert EXAMPLE.exists() and TRANSCRIPT.exists()
