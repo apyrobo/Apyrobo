@@ -19,6 +19,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import IO, Any
 
 from apyrobo.__version__ import __version__
@@ -579,26 +580,140 @@ def parse_zone(spec: str) -> dict[str, float]:
     return {"x_min": x_min, "y_min": y_min, "x_max": x_max, "y_max": y_max}
 
 
+_POLICY_FILE_KEYS = {"name", "base", "max_speed", "max_angular_speed", "no_go_zones"}
+_ZONE_KEYS = ("x_min", "y_min", "x_max", "y_max")
+
+
+def _positive(value: Any, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError(f"{where} must be a positive number, got {value!r}")
+    return float(value)
+
+
+def _file_zone(raw: Any, index: int, where: str) -> dict[str, Any]:
+    label = f"{where}: no_go_zones[{index}]"
+    if isinstance(raw, str):
+        try:
+            return parse_zone(raw)
+        except ValueError as exc:
+            raise ValueError(f"{label}: {exc}") from None
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"{label} must be a mapping with x_min, y_min, x_max, y_max "
+            f"(and an optional name) or an 'x_min,y_min,x_max,y_max' string"
+        )
+    unknown = sorted(set(raw) - set(_ZONE_KEYS) - {"name"})
+    if unknown:
+        raise ValueError(f"{label} has unknown keys {unknown}")
+    missing = [k for k in _ZONE_KEYS if k not in raw]
+    if missing:
+        raise ValueError(f"{label} is missing {missing}")
+    zone: dict[str, Any] = {}
+    for key in _ZONE_KEYS:
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{label}.{key} must be a number, got {value!r}")
+        zone[key] = float(value)
+    if zone["x_min"] > zone["x_max"] or zone["y_min"] > zone["y_max"]:
+        raise ValueError(f"{label} has min > max")
+    if "name" in raw:
+        if not isinstance(raw["name"], str) or not raw["name"].strip():
+            raise ValueError(f"{label}.name must be a non-empty string")
+        zone = {"name": raw["name"].strip(), **zone}
+    return zone
+
+
+def load_policy_file(path: str | Path) -> dict[str, Any]:
+    """Read a JSON or YAML safety policy file for ``apyrobo mcp --policy-file``.
+
+    Accepted keys (all optional): ``name``, ``base`` (``default`` or
+    ``strict``), ``max_speed`` (m/s), ``max_angular_speed`` (rad/s) and
+    ``no_go_zones`` — a list of ``{name?, x_min, y_min, x_max, y_max}``
+    mappings or ``"x_min,y_min,x_max,y_max"`` strings, in metres.
+
+    Any problem (missing file, bad syntax, unknown key, wrong type) raises
+    ``ValueError`` with a readable message; nothing falls back silently.
+    """
+    import yaml
+
+    p = Path(path)
+    where = str(p)
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"cannot read policy file {where}: {exc.strerror or exc}") from None
+    try:
+        # YAML is a superset of JSON, so .yaml/.yml and any other suffix use it.
+        data = json.loads(text) if p.suffix.lower() == ".json" else yaml.safe_load(text)
+    except (json.JSONDecodeError, yaml.YAMLError) as exc:
+        fmt = "JSON" if p.suffix.lower() == ".json" else "YAML"
+        raise ValueError(f"policy file {where} is not valid {fmt}: {exc}") from None
+    if not isinstance(data, dict):
+        raise ValueError(f"policy file {where} must contain a mapping of settings at the top level")
+    unknown = sorted(set(data) - _POLICY_FILE_KEYS)
+    if unknown:
+        raise ValueError(
+            f"policy file {where} has unknown keys {unknown}; "
+            f"allowed: {sorted(_POLICY_FILE_KEYS)}"
+        )
+    out: dict[str, Any] = {}
+    if "name" in data:
+        if not isinstance(data["name"], str) or not data["name"].strip():
+            raise ValueError(f"{where}: name must be a non-empty string")
+        out["name"] = data["name"].strip()
+    if "base" in data:
+        if not isinstance(data["base"], str):
+            raise ValueError(f"{where}: base must be a policy name such as 'default' or 'strict'")
+        out["base"] = data["base"]
+    for key in ("max_speed", "max_angular_speed"):
+        if key in data:
+            out[key] = _positive(data[key], f"{where}: {key}")
+    zones = data.get("no_go_zones", [])
+    if zones is None:
+        zones = []
+    if not isinstance(zones, list):
+        raise ValueError(f"{where}: no_go_zones must be a list")
+    out["no_go_zones"] = [_file_zone(z, i, where) for i, z in enumerate(zones)]
+    return out
+
+
 def build_server(
     robot_uri: str = "mock://turtlebot4",
-    policy: str = "default",
+    policy: str | None = None,
     max_speed: float | None = None,
     no_go_zones: list[dict[str, float]] | None = None,
     provider: str = "rule",
     agent: Any = None,
+    policy_file: str | Path | None = None,
 ) -> MCPServer:
-    """Discover the robot, wrap it in a safety enforcer and return the server."""
+    """Discover the robot, wrap it in a safety enforcer and return the server.
+
+    Precedence: ``max_speed`` and ``policy`` given here override the policy
+    file; ``no_go_zones`` given here are added to the file's zones; the
+    file overrides the base policy (``policy`` or the file's ``base``,
+    else ``default``).
+    """
     from apyrobo.core.robot import Robot
     from apyrobo.safety.enforcer import POLICY_REGISTRY, SafetyEnforcer, SafetyPolicy
 
-    base = POLICY_REGISTRY.get(policy)
+    file_cfg = load_policy_file(policy_file) if policy_file is not None else {}
+    base_name = policy or file_cfg.get("base") or "default"
+    base = POLICY_REGISTRY.get(base_name)
     if base is None:
-        raise ValueError(f"unknown policy {policy!r}; choose from {sorted(POLICY_REGISTRY)}")
+        raise ValueError(f"unknown policy {base_name!r}; choose from {sorted(POLICY_REGISTRY)}")
+    name = file_cfg.get("name", base.name)
+    if max_speed is not None or no_go_zones:
+        name = f"{name}+cli"
+    speed = max_speed if max_speed is not None else file_cfg.get("max_speed", base.max_speed)
     safety = SafetyPolicy(
-        name=base.name if max_speed is None and not no_go_zones else f"{base.name}+cli",
-        max_speed=max_speed if max_speed is not None else base.max_speed,
-        max_angular_speed=base.max_angular_speed,
-        collision_zones=list(base.collision_zones) + list(no_go_zones or []),
+        name=name,
+        max_speed=speed,
+        max_angular_speed=file_cfg.get("max_angular_speed", base.max_angular_speed),
+        collision_zones=(
+            list(base.collision_zones)
+            + list(file_cfg.get("no_go_zones", []))
+            + list(no_go_zones or [])
+        ),
         human_proximity_limit=base.human_proximity_limit,
         move_timeout=base.move_timeout,
         speed_profile=base.speed_profile,
