@@ -132,6 +132,44 @@ checks and executes.
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
 
+## On a ROS 2 robot or a Gazebo sim
+
+`mock://` is for trying it out. To drive a real ROS 2 robot, or a Gazebo
+simulation of one, give the server a `ros2://` URI:
+
+```bash
+apyrobo mcp --robot ros2://burger --max-speed 0.22 --no-go 0,0,1,1
+```
+
+Run it in a shell where ROS 2 is sourced (`rclpy` and `nav2_msgs` must
+import) and on the same `ROS_DOMAIN_ID` as the robot. The `ros2://` adapter
+subscribes to `/odom` for the pose that `robot_status`, `move_to` and the
+safety checks use, and sends each `move_to` to Nav2 as a `navigate_to_pose`
+goal. If no Nav2 action server is found it falls back to driving `/cmd_vel`
+directly, which has no obstacle avoidance. Clamps and no-go refusals happen
+in APYROBO before the goal reaches Nav2, so a refused target is never sent.
+If Nav2 rejects or aborts the goal, never answers it, navigation times out,
+or `stop` cancels it, `move_to` comes back as an error (`isError`) naming
+the reason and the robot's current position, not as a success.
+
+**What CI checks.** On every push,
+[`tests/integration/test_gazebo_nav2_e2e.py`](../tests/integration/test_gazebo_nav2_e2e.py)
+starts `apyrobo mcp --robot ros2://burger` against a physics-simulated
+TurtleBot3 with Nav2 and slam_toolbox (ROS 2 Humble, Gazebo Classic) and
+talks to it over stdio as an MCP client would: an over-limit `move_to` is
+clamped and reported, goes through Nav2 and gets the robot to the target
+region; a target in the no-go zone is refused and the robot does not move;
+`stop` and `safety_report` answer. To run the same stack locally with
+Docker:
+
+```bash
+docker compose -f docker/docker-compose.yml --profile gazebo-nav up \
+    --build --abort-on-container-exit --exit-code-from gazebo-nav-test
+```
+
+Not covered yet: real hardware in CI, and the ROS 2 Jazzy + Gazebo Harmonic
+image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
+
 ## What this does and doesn't guarantee
 
 The enforcer checks each command against the policy you set (speed limits and
@@ -140,5 +178,10 @@ for the full list). It is a software guard between a model and a robot, not a
 certified safety system: keep hardware e-stops and site safety measures in
 place, and try new setups on `mock://` or a simulator first.
 
-The server speaks MCP over stdio (protocol versions 2025-06-18, 2025-03-26 and
-2024-11-05) and implements `initialize`, `ping`, `tools/list` and `tools/call`.
+The server speaks MCP over stdio. Clients that open with `initialize`
+(protocol versions 2025-06-18, 2025-03-26 and 2024-11-05) get `initialize`,
+`ping`, `tools/list` and `tools/call`. Clients on protocol 2026-07-28 send no
+handshake: each request carries its version in `params._meta`, and the server
+answers `server/discover`, `tools/list` and `tools/call` statelessly. The
+2026-07-28 support is checked against the specification text by unit tests,
+not yet against a shipping 2026-07-28 client.

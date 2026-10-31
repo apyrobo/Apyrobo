@@ -81,6 +81,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   FATAL error fails it on the first state that shows it. Tested against a
   simulated AGV, not hardware.
 
+### Changed
+
+- docs/mcp.md covers `apyrobo mcp` on `ros2://` robots (Nav2, the
+  Gazebo end-to-end test CI runs) and protocol 2026-07-28 clients; a test
+  keeps the page in step with the server's supported versions and methods.
+
 ## [4.1.0] - 2026-07-12
 
 The Standard Protocol release, part one: spec 1.0 frozen, the flagship
