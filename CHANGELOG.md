@@ -44,6 +44,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   their physics thread stopped and joined before Python exits, instead of
   leaving it inside MuJoCo's native step during interpreter teardown. A
   disconnected adapter now idles instead of spinning a CPU core.
+- **Bare-install smoke test no longer fails on a cold CI runner.** The
+  1500 ms `import apyrobo` budget is now checked on the fastest of three
+  fresh interpreters (the cold first import is still reported), and a new
+  check fails if `import apyrobo` loads an optional heavy dependency such as
+  litellm, torch or numpy.
 
 ## [4.1.0] - 2026-07-12
 
