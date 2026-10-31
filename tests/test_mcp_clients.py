@@ -81,6 +81,27 @@ def test_claude_code_prints_a_shell_command(tmp_path):
                                  "--from", GIT_SOURCE, "apyrobo", "mcp", "--max-speed", "0.5"]
 
 
+def test_confirm_moves_passes_through(tmp_path):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, out, _ = _run(_args("cursor", cfg_max_speed=0.5, cfg_confirm_moves=True),
+                        _which({"uvx": str(uvx)}))
+    assert code == 0
+    args = json.loads(out)["mcpServers"]["apyrobo"]["args"]
+    assert args[-3:] == ["--max-speed", "0.5", "--confirm-moves"]
+    assert mcp_clients.server_args() == []
+
+
+def test_cli_parses_config_confirm_moves(monkeypatch):
+    import apyrobo.cli as cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_mcp", lambda args: seen.update(vars(args)))
+    monkeypatch.setattr(sys, "argv", ["apyrobo", "mcp", "config", "cursor", "--confirm-moves"])
+    cli.main()
+    assert seen["cfg_confirm_moves"] is True
+
+
 def test_policy_file_is_made_absolute(tmp_path, monkeypatch):
     policy = tmp_path / "lab.json"
     policy.write_text("{}")

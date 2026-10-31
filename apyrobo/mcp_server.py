@@ -22,7 +22,8 @@ import logging
 import secrets
 import sys
 import time
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO, Any
 
@@ -62,6 +63,8 @@ MOTION_TOOLS = ("move_to", "rotate", "execute_task")
 CONFIRM_INPUT_KEY = "confirm_move"
 # How long a confirmation request stays valid (seconds).
 CONFIRM_TTL_S = 600
+# End of the client's input stream (a JSON ``null`` line is a message).
+_EOF = object()
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -447,6 +450,14 @@ class MCPServer:
         # Seals the requestState of a confirmation round trip, so a client
         # cannot confirm one move and then send different arguments.
         self._state_key = secrets.token_bytes(32)
+        # Capabilities the client declared in initialize (legacy sessions).
+        self._client_caps: dict[str, Any] = {}
+        # Set by serve(): the stdio channel used to send a legacy client an
+        # elicitation/create request in the middle of a tools/call.
+        self._lines: Iterator[str] | None = None
+        self._out: IO[str] | None = None
+        self._backlog: deque[Any] = deque()
+        self._elicit_seq = 0
 
     # -- dispatch ------------------------------------------------------
 
@@ -491,15 +502,9 @@ class MCPServer:
             elif method == "tools/list":
                 result = {"tools": self.toolbox.list_tools()}
             elif method == "tools/call":
-                if self.confirm_moves and params.get("name") in MOTION_TOOLS:
-                    return _tool_result(
-                        msg_id,
-                        "REFUSED: this server runs with --confirm-moves, so every motion "
-                        "command needs the user's confirmation, and confirmation currently "
-                        "needs an MCP client on protocol 2026-07-28 with elicitation "
-                        "support. The robot did not move.",
-                        is_error=True,
-                    )
+                gate = self._legacy_confirm(msg_id, params)
+                if gate is not None:
+                    return gate
                 return self._tools_call(msg_id, params)
             else:
                 return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
@@ -647,18 +652,107 @@ class MCPServer:
         if isinstance(answer, dict) and answer.get("action") == "accept":
             return None
         action = answer.get("action") if isinstance(answer, dict) else None
-        return _tool_result(
-            msg_id,
-            json.dumps({
-                "status": "declined",
-                "tool": name,
-                "user_action": action or "none",
-                "detail": "The user did not confirm this motion command. The robot did not move.",
-            }, indent=2),
-            is_error=False,
-        )
+        return _declined(msg_id, name, action)
+
+    def _legacy_confirm(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any] | None:
+        """Ask the user to confirm a motion command (initialize-era sessions).
+
+        The server sends the client an ``elicitation/create`` request on the
+        same stdio stream and waits for its answer before the tool runs.
+        Returns None when the call may run, or the tool result to send instead.
+        """
+        name = params.get("name")
+        if not self.confirm_moves or name not in MOTION_TOOLS:
+            return None
+        arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            return None  # _tools_call reports the bad arguments
+        elicitation = self._client_caps.get("elicitation")
+        if not isinstance(elicitation, dict) or (elicitation and "form" not in elicitation):
+            return _tool_result(
+                msg_id,
+                "REFUSED: this server runs with --confirm-moves, so every motion command "
+                "needs the user's confirmation, and this client did not declare form "
+                "elicitation support. The robot did not move.",
+                is_error=True,
+            )
+        if self._lines is None or self._out is None:
+            return _tool_result(
+                msg_id,
+                "REFUSED: this server runs with --confirm-moves and has no channel to ask "
+                "the user for confirmation. The robot did not move.",
+                is_error=True,
+            )
+        try:
+            prompt = self.toolbox.confirmation_prompt(name, arguments)
+        except ToolError as exc:
+            return _tool_result(msg_id, str(exc), is_error=True)
+        if prompt is None:
+            return None  # the policy refuses it anyway; no need to ask
+        answer = self._elicit(msg_id, prompt)
+        action = answer.get("action") if isinstance(answer, dict) else None
+        if action == "accept":
+            return None
+        return _declined(msg_id, name, action)
+
+    def _elicit(self, call_id: Any, prompt: str) -> dict[str, Any] | None:
+        """Send ``elicitation/create`` and wait for the client's answer.
+
+        Requests that arrive meanwhile are kept and handled after this call
+        (``ping`` is answered at once). Returns the elicitation result, a
+        ``cancel`` action when the client cancels the tool call, or None when
+        the client errors or closes the stream.
+        """
+        assert self._out is not None
+        self._elicit_seq += 1
+        request_id = f"apyrobo-confirm-{self._elicit_seq}"
+        request_params: dict[str, Any] = {
+            "message": prompt,
+            "requestedSchema": {"type": "object", "properties": {}},
+        }
+        if self.protocol_version >= "2025-11-25":
+            request_params["mode"] = "form"
+        self._write(self._out, {
+            "jsonrpc": "2.0", "id": request_id,
+            "method": "elicitation/create", "params": request_params,
+        })
+        while True:
+            message = self._next_message()
+            if message is _EOF:
+                return None
+            if not isinstance(message, dict):
+                self._backlog.append(message)
+                continue
+            method = message.get("method")
+            if method is None and message.get("id") == request_id:
+                result = message.get("result")
+                return result if isinstance(result, dict) else None
+            if method == "notifications/cancelled":
+                cancelled = (message.get("params") or {}).get("requestId")
+                if cancelled in (call_id, request_id):
+                    return {"action": "cancel"}
+                continue
+            if method == "ping" and "id" in message:
+                self._write(self._out, {"jsonrpc": "2.0", "id": message["id"], "result": {}})
+                continue
+            self._backlog.append(message)
+
+    def _next_message(self) -> Any:
+        """Next decoded message from stdin, or ``_EOF`` at end of input."""
+        assert self._lines is not None and self._out is not None
+        for line in self._lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError as exc:
+                self._write(self._out, _error(None, PARSE_ERROR, f"Parse error: {exc}"))
+        return _EOF
 
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
+        caps = params.get("capabilities")
+        self._client_caps = caps if isinstance(caps, dict) else {}
         requested = params.get("protocolVersion")
         if requested in SUPPORTED_PROTOCOL_VERSIONS:
             self.protocol_version = requested
@@ -703,15 +797,18 @@ class MCPServer:
         """
         stdin = stdin or sys.stdin
         out = stdout or sys.stdout
-        for line in stdin:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError as exc:
-                self._write(out, _error(None, PARSE_ERROR, f"Parse error: {exc}"))
-                continue
+        self._lines, self._out = iter(stdin), out
+        self._backlog.clear()
+        try:
+            self._serve_loop(out)
+        finally:
+            self._lines = self._out = None
+
+    def _serve_loop(self, out: IO[str]) -> None:
+        while True:
+            message = self._backlog.popleft() if self._backlog else self._next_message()
+            if message is _EOF:
+                return
             with contextlib.redirect_stdout(sys.stderr):
                 if isinstance(message, list):
                     replies = [r for r in (self.handle(m) for m in message) if r is not None]
@@ -725,6 +822,19 @@ class MCPServer:
     def _write(out: IO[str], response: Any) -> None:
         out.write(json.dumps(response, separators=(",", ":")) + "\n")
         out.flush()
+
+
+def _declined(msg_id: Any, name: Any, action: Any) -> dict[str, Any]:
+    return _tool_result(
+        msg_id,
+        json.dumps({
+            "status": "declined",
+            "tool": name,
+            "user_action": action or "none",
+            "detail": "The user did not confirm this motion command. The robot did not move.",
+        }, indent=2),
+        is_error=False,
+    )
 
 
 def _server_info() -> dict[str, str]:

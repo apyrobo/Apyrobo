@@ -153,11 +153,15 @@ where it is and returns a plain `declined` result. Approval never lifts a
 policy limit, and a target in a no-go zone is refused without asking.
 `stop` and the read-only tools never ask.
 
-This works today with clients on protocol 2026-07-28 that support form
-elicitation (tested against the official MCP Python SDK client). Clients
-that open with `initialize`, or that lack elicitation, get every motion
-command refused with a readable error, because the operator asked for
-confirmation and the server cannot get it from them.
+This works with clients that declare form elicitation, in both protocol
+eras: on 2026-07-28 through the multi-round-trip `input_required` result,
+and in sessions that open with `initialize` (2025-06-18 and later) through
+an `elicitation/create` request the server sends mid-call and waits on.
+Both are tested against the official MCP Python SDK client. Clients that
+lack elicitation get every motion command refused with a readable error,
+because the operator asked for confirmation and the server cannot get it
+from them. `apyrobo mcp config <client> --confirm-moves` puts the flag in
+the generated config.
 
 ## On a ROS 2 robot or a Gazebo sim
 

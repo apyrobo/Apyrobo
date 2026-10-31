@@ -57,8 +57,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - **`apyrobo mcp --confirm-moves`** asks the user to confirm every motion
   command (`move_to`, `rotate`, `execute_task`) through MCP elicitation,
   showing the target and the clamped speed; declining leaves the robot
-  still. Works with 2026-07-28 clients that support form elicitation;
-  other clients get motion refused (fail closed). Off by default.
+  still. Works with clients that support form elicitation, both on
+  2026-07-28 and in `initialize` sessions (the server sends
+  `elicitation/create` and waits); other clients get motion refused (fail
+  closed). Off by default. `apyrobo mcp config … --confirm-moves` passes
+  the flag through.
 - **MCP safety demo** (`examples/05_mcp_safety_demo.py`): drives the real
   server on `mock://turtlebot4` over stdio as a client would (a normal
   move, a clamped move, a refused no-go move, stop, safety report). Its

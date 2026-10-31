@@ -2975,7 +2975,7 @@ def main() -> None:
                        help="Add a rectangular no-go zone in metres (repeatable)")
     p_mcp.add_argument("--confirm-moves", dest="confirm_moves", action="store_true",
                        help="Ask the user to confirm every motion command (MCP elicitation); "
-                            "clients without it get motion refused")
+                            "clients without form elicitation get motion refused")
     p_mcp.add_argument("--provider", default="rule",
                        help="Planner for plan_task/execute_task (default: rule, no API key)")
     mcp_sub = p_mcp.add_subparsers(dest="mcp_command")
@@ -2997,6 +2997,7 @@ def main() -> None:
                               metavar="M_S")
     p_mcp_config.add_argument("--no-go", dest="cfg_no_go", action="append", default=None,
                               metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+    p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true")
 
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
