@@ -38,6 +38,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   stateless 2026-07-28 era, lists the tools, runs a normal move, sees an
   over-limit move clamped and a no-go move refused, and reads them back in
   `safety_report`.
+- **`apyrobo mcp --policy-file PATH`** loads a JSON or YAML safety policy
+  (`name`, `base`, `max_speed`, `max_angular_speed`, and `no_go_zones` as
+  named `{name, x_min, y_min, x_max, y_max}` rectangles or
+  `"x_min,y_min,x_max,y_max"` strings), so a map's no-go zones are written
+  once instead of repeated as `--no-go` flags. `--max-speed` and `--policy`
+  on the command line override the file and `--no-go` zones are added to
+  it. A refused move names the zone it hit. A missing file, bad syntax,
+  unknown key or wrong value stops the server at start with a readable
+  error; nothing falls back silently.
 - **MCP safety demo** (`examples/05_mcp_safety_demo.py`): drives the real
   server on `mock://turtlebot4` over stdio as a client would (a normal
   move, a clamped move, a refused no-go move, stop, safety report). Its

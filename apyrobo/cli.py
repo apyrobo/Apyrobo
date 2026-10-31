@@ -1606,6 +1606,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
             max_speed=args.max_speed,
             no_go_zones=zones,
             provider=args.provider,
+            policy_file=getattr(args, "policy_file", None),
         )
     except (ValueError, ImportError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -2953,8 +2954,11 @@ def main() -> None:
     )
     p_mcp.add_argument("--robot", default="mock://turtlebot4", metavar="URI",
                        help="Robot URI (default: mock://turtlebot4)")
-    p_mcp.add_argument("--policy", default="default", choices=["default", "strict"],
-                       help="Base safety policy (default: default)")
+    p_mcp.add_argument("--policy", default=None, choices=["default", "strict"],
+                       help="Base safety policy (default: the policy file's base, else default)")
+    p_mcp.add_argument("--policy-file", dest="policy_file", default=None, metavar="PATH",
+                       help="JSON or YAML safety policy (name, base, max_speed, "
+                            "max_angular_speed, no_go_zones); command-line flags override it")
     p_mcp.add_argument("--max-speed", dest="max_speed", type=float, default=None,
                        metavar="M_S", help="Override the policy speed limit (m/s)")
     p_mcp.add_argument("--no-go", dest="no_go", action="append", default=None,
