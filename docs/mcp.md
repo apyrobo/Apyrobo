@@ -148,6 +148,9 @@ safety checks use, and sends each `move_to` to Nav2 as a `navigate_to_pose`
 goal. If no Nav2 action server is found it falls back to driving `/cmd_vel`
 directly, which has no obstacle avoidance. Clamps and no-go refusals happen
 in APYROBO before the goal reaches Nav2, so a refused target is never sent.
+If Nav2 rejects or aborts the goal, never answers it, navigation times out,
+or `stop` cancels it, `move_to` comes back as an error (`isError`) naming
+the reason and the robot's current position, not as a success.
 
 **What CI checks.** On every push,
 [`tests/integration/test_gazebo_nav2_e2e.py`](../tests/integration/test_gazebo_nav2_e2e.py)
