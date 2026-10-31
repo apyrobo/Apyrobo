@@ -39,6 +39,7 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "pre-commit>=3.7",
+    "mcp>=2.2,<3",          # official MCP client for tests/test_mcp_official_client.py
 ]
 api = [
     "fastapi>=0.110",
