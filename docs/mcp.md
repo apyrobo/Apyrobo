@@ -53,6 +53,13 @@ The model sees the first move's speed clamped to 0.5 m/s, and the move to
 (4, 4). Ask for "deliver the package to (5, 1)" and it plans and runs a
 four-step task.
 
+To see what a client gets back before installing anything, read the
+[safety demo transcript](mcp_demo_transcript.md): a scripted session against
+the real server on `mock://turtlebot4` with a normal move, a clamped move, a
+refused no-go move, `stop` and `safety_report`. From a clone you can replay it
+with `python examples/05_mcp_safety_demo.py`; a test keeps the committed
+transcript in step with the script.
+
 ### Claude Code
 
 ```bash
