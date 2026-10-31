@@ -78,6 +78,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **Importing `apyrobo.core.isaac_adapter` no longer changes what
+  `isaac://` resolves to.** The Isaac SDK/REST adapter used to re-register
+  itself over the `isaac://` in-memory stand-in on import, so behaviour
+  depended on import order. `isaac://` is now always the stand-in; the SDK
+  adapter is an explicit opt-in under `isaac_sim://` (import the module,
+  then `Robot.discover("isaac_sim://scene")`).
 - **`ros2://` `move()` raises when the goal is not reached.** It now raises
   `Ros2NavigationError` when Nav2 rejects, aborts or never answers the goal,
   navigation times out, or `stop()` cancels it, instead of returning as a
