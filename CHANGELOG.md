@@ -24,12 +24,20 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   (`server/discover`, `tools/list`, `tools/call`, no `initialize`), so a
   client on the newest spec no longer gets "method not found". Clients that
   use `initialize` (2025-06-18 and earlier) behave as before. Checked
-  against the spec text; not yet tried with a shipping 2026-07-28 client.
+  against the spec text and the official MCP Python SDK client (see below);
+  not yet tried with a desktop host on 2026-07-28.
 - **`apyrobo mcp` accepts protocol 2025-11-25 in `initialize`.** Clients
   on that version used to be answered with 2025-06-18; the server now
   agrees on 2025-11-25. Nothing else changed for a tools-only stdio server:
   tool names already follow the new naming guidance, and bad arguments
   already come back as tool errors (`isError`), not protocol errors.
+- **`apyrobo mcp` is tested against the official MCP client.**
+  `tests/test_mcp_official_client.py` starts the server over stdio with the
+  MCP Python SDK client (`mcp>=2.2,<3`, added to the `dev` extra only; core
+  dependencies unchanged) and, in both the `initialize` era and the
+  stateless 2026-07-28 era, lists the tools, runs a normal move, sees an
+  over-limit move clamped and a no-go move refused, and reads them back in
+  `safety_report`.
 - **MCP safety demo** (`examples/05_mcp_safety_demo.py`): drives the real
   server on `mock://turtlebot4` over stdio as a client would (a normal
   move, a clamped move, a refused no-go move, stop, safety report). Its

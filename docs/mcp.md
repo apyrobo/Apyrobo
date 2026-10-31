@@ -186,4 +186,8 @@ asks. Clients on protocol 2026-07-28 send no
 handshake: each request carries its version in `params._meta`, and the server
 answers `server/discover`, `tools/list` and `tools/call` statelessly. The
 2026-07-28 support is checked against the specification text by unit tests,
-not yet against a shipping 2026-07-28 client.
+and both eras are tested in CI against the official MCP Python SDK client
+(`mcp` 2.x, `tests/test_mcp_official_client.py`): it connects, lists the
+tools, and sees a normal move run, an over-limit move clamped and a no-go
+move refused. Desktop hosts (Claude Desktop, Cursor) have not been tried on
+2026-07-28 yet.
