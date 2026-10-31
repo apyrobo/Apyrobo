@@ -82,6 +82,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   the registry uses to verify PyPI ownership. Not published to the registry
   yet; that needs a PyPI release. A test keeps its version equal to
   pyproject's and its flags real.
+- docs/mcp.md: a Troubleshooting section (client can't find `uvx`, tools
+  missing in Claude Desktop, slow first start, where logs go, `ros2://`
+  without a sourced ROS 2 or on the wrong `ROS_DOMAIN_ID`), and
+  `--policy-file` in the options table.
 
 ### Fixed
 
