@@ -13,6 +13,8 @@
   <a href="https://discord.gg/n3uX7VmrUr"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
+<!-- mcp-name: io.github.apyrobo/apyrobo -->
+
 ---
 
 **APYROBO is the safety layer between your AI agent and your robot.** Claude, Cursor or any [MCP](https://modelcontextprotocol.io) client — or your own LLM agent — plans and drives the robot through APYROBO, and motion commands pass the safety enforcer first: over-limit speeds are clamped, targets in a no-go zone are refused with a readable error, `stop` is always allowed. Built for mobile robots and fleets: it sits on top of [ROS 2](https://docs.ros.org/en/humble/) and Nav2 (and VDA 5050 AGVs over `vda5050://`), with capability discovery, a skill graph and swarm coordination underneath.

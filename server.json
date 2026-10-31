@@ -1,0 +1,59 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.apyrobo/apyrobo",
+  "title": "APYROBO",
+  "description": "Safety layer between AI agents and robots: clamps speeds, refuses moves into no-go zones",
+  "version": "4.1.0",
+  "repository": {
+    "url": "https://github.com/apyrobo/Apyrobo",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "apyrobo",
+      "version": "4.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        },
+        {
+          "type": "named",
+          "name": "--robot",
+          "description": "Robot URI, e.g. mock://turtlebot4 (no robot needed) or ros2://turtlebot3",
+          "default": "mock://turtlebot4"
+        },
+        {
+          "type": "named",
+          "name": "--policy",
+          "description": "Base safety policy",
+          "choices": ["default", "strict"]
+        },
+        {
+          "type": "named",
+          "name": "--policy-file",
+          "description": "JSON or YAML safety policy (max_speed, max_angular_speed, no_go_zones); command-line flags override it",
+          "format": "filepath"
+        },
+        {
+          "type": "named",
+          "name": "--max-speed",
+          "description": "Speed limit in m/s; faster moves are clamped",
+          "format": "number"
+        },
+        {
+          "type": "named",
+          "name": "--no-go",
+          "description": "Rectangular no-go zone in metres as X_MIN,Y_MIN,X_MAX,Y_MAX; moves into it are refused",
+          "isRepeated": true
+        }
+      ]
+    }
+  ]
+}
