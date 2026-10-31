@@ -97,6 +97,22 @@ If you installed with `pip`, use `"command": "apyrobo"` and
 Add the same `mcpServers` block to `~/.cursor/mcp.json` (or `.cursor/mcp.json`
 in a project).
 
+### Let apyrobo print the snippet
+
+```bash
+apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
+```
+
+prints the block above with the absolute path of `uvx` on this machine (GUI
+clients don't read your shell's `PATH`) and says where the config file is on
+your OS. Use `cursor` or `claude-code` instead of `claude-desktop` for those
+clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
+than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
+`--max-speed` and `--no-go` flags as `apyrobo mcp`, checks them, and makes a
+relative `--policy-file` path absolute. It only prints: merge the output
+into your config yourself. Without installing, run it as
+`uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp config claude-desktop`.
+
 If the tools don't show up, see [Troubleshooting](#troubleshooting).
 
 ## Tools
