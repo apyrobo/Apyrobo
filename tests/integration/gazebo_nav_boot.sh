@@ -71,6 +71,21 @@ for _ in $(seq 1 30); do
     sleep 1
 done
 
+# slam_toolbox only publishes the map frame once it has placed a scan, and
+# Nav2's global costmap waits on base_link→map until it does. Make sure the
+# lidar is publishing before Nav2 comes up, so a missing map frame later
+# points at SLAM rather than at a silent sensor.
+echo "[gazebo_nav_boot] waiting for /scan before Nav2 bringup…"
+SCAN_OK=0
+for _ in $(seq 1 30); do
+    if timeout 3 ros2 topic echo /scan --once > /dev/null 2>&1; then
+        SCAN_OK=1
+        break
+    fi
+    sleep 1
+done
+[ "$SCAN_OK" = 1 ] || echo "[gazebo_nav_boot] WARNING: no /scan message after 30 s" >&2
+
 # SLAM mode: slam_toolbox publishes map→odom immediately (no localization
 # bootstrap), and the turtlebot3_world walls give it features to match on.
 # The map argument is unused with slam:=True but bringup_launch.py requires
@@ -81,6 +96,28 @@ ros2 launch nav2_bringup bringup_launch.py \
     use_sim_time:=True \
     autostart:=True \
     map:=/opt/ros/humble/share/nav2_bringup/maps/turtlebot3_world.yaml &
+
+# If slam_toolbox has not published map→odom within MAP_WAIT_S, the
+# healthcheck will eventually fail with only "Timed out waiting for transform
+# from base_link to map" in the log. Print what the map frame depends on so
+# the failure can be diagnosed from the CI log.
+MAP_WAIT_S="${MAP_WAIT_S:-120}"
+(
+    for _ in $(seq 1 "$MAP_WAIT_S"); do
+        if timeout 4 ros2 run tf2_ros tf2_echo map odom 2>/dev/null | grep -q "Translation"; then
+            echo "[gazebo_nav_boot] map frame is up"
+            exit 0
+        fi
+        sleep 1
+    done
+    echo "[gazebo_nav_boot] DIAG: no map→odom transform after ${MAP_WAIT_S} s; dumping state" >&2
+    ros2 node list 2>&1 | sed 's/^/[gazebo_nav_boot] DIAG node: /' >&2
+    ros2 topic info /scan --verbose 2>&1 | sed 's/^/[gazebo_nav_boot] DIAG \/scan: /' >&2
+    timeout 5 ros2 topic echo /scan --once --field header 2>&1 | sed 's/^/[gazebo_nav_boot] DIAG scan header: /' >&2
+    timeout 5 ros2 topic echo /clock --once 2>&1 | sed 's/^/[gazebo_nav_boot] DIAG clock: /' >&2
+    timeout 6 ros2 run tf2_ros tf2_echo odom base_scan 2>&1 | head -n 8 | sed 's/^/[gazebo_nav_boot] DIAG tf odom→base_scan: /' >&2
+    timeout 5 ros2 topic echo /map --once --field info 2>&1 | head -n 12 | sed 's/^/[gazebo_nav_boot] DIAG map info: /' >&2
+) &
 
 echo "[gazebo_nav_boot] up — waiting on gzserver (healthcheck watches for navigate_to_pose)…"
 wait "$GZ_PID"
