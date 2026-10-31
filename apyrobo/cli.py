@@ -1612,6 +1612,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
             no_go_zones=zones,
             provider=args.provider,
             policy_file=getattr(args, "policy_file", None),
+            confirm_moves=getattr(args, "confirm_moves", False),
         )
     except (ValueError, ImportError, RuntimeError, OSError) as exc:
         # Adapters report a missing ROS 2 install or an unreachable robot as
@@ -1622,6 +1623,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
     print(
         f"apyrobo mcp — robot={args.robot} policy={policy.name} "
         f"max_speed={policy.max_speed} no_go_zones={len(policy.collision_zones)} "
+        f"confirm_moves={'on' if getattr(server, 'confirm_moves', False) else 'off'} "
         "(waiting for an MCP client on stdio)",
         file=sys.stderr, flush=True,
     )
@@ -2971,6 +2973,9 @@ def main() -> None:
     p_mcp.add_argument("--no-go", dest="no_go", action="append", default=None,
                        metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
                        help="Add a rectangular no-go zone in metres (repeatable)")
+    p_mcp.add_argument("--confirm-moves", dest="confirm_moves", action="store_true",
+                       help="Ask the user to confirm every motion command (MCP elicitation); "
+                            "clients without it get motion refused")
     p_mcp.add_argument("--provider", default="rule",
                        help="Planner for plan_task/execute_task (default: rule, no API key)")
     mcp_sub = p_mcp.add_subparsers(dest="mcp_command")

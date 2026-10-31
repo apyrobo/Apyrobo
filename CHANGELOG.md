@@ -54,6 +54,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   where that client's config file lives on this OS. `--robot`, `--policy`,
   `--policy-file` (made absolute), `--max-speed` and `--no-go` pass through
   and are checked first. It only prints; it never touches your config file.
+- **`apyrobo mcp --confirm-moves`** asks the user to confirm every motion
+  command (`move_to`, `rotate`, `execute_task`) through MCP elicitation,
+  showing the target and the clamped speed; declining leaves the robot
+  still. Works with 2026-07-28 clients that support form elicitation;
+  other clients get motion refused (fail closed). Off by default.
 - **MCP safety demo** (`examples/05_mcp_safety_demo.py`): drives the real
   server on `mock://turtlebot4` over stdio as a client would (a normal
   move, a clamped move, a refused no-go move, stop, safety report). Its
