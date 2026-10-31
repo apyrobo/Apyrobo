@@ -11,8 +11,24 @@ degradation assertions are skipped when litellm happens to be installed.
 """
 from __future__ import annotations
 
+import subprocess
 import sys
 import time
+
+IMPORT_BUDGET_S = 1.5
+IMPORT_RUNS = 3
+
+# Optional dependencies that must never load as a side effect of
+# `import apyrobo`: each belongs to an extra and costs real start-up time.
+HEAVY_OPTIONAL_MODULES = frozenset({
+    "litellm", "openai", "anthropic", "torch", "transformers", "lerobot",
+    "numpy", "mujoco", "rclpy", "paho", "fastapi", "uvicorn",
+})
+
+_IMPORT_TIMER = (
+    "import time; t = time.perf_counter(); import apyrobo; "
+    "print(time.perf_counter() - t)"
+)
 
 
 def check(name: str, ok: bool, detail: str = "") -> bool:
@@ -20,19 +36,47 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
+def _fresh_import_seconds() -> float:
+    """Time `import apyrobo` in a new interpreter (no modules cached)."""
+    out = subprocess.run(
+        [sys.executable, "-c", _IMPORT_TIMER],
+        check=True, capture_output=True, text=True,
+    )
+    return float(out.stdout.strip().splitlines()[-1])
+
+
 def main() -> int:
     results: list[bool] = []
 
+    before = set(sys.modules)
     t0 = time.perf_counter()
     import apyrobo  # noqa: F401
-    elapsed = time.perf_counter() - t0
-    results.append(check("import apyrobo", True, f"{elapsed * 1000:.0f} ms"))
-    # This is a cold first import on a shared CI runner (disk-bound, noisy):
-    # locally it measures ~350 ms, CI runners ~650 ms. The budget exists to
-    # catch a heavyweight dependency entering the import path — litellm-class
-    # imports cost seconds — so it is set above runner noise, not at the
-    # roadmap's warm-import target (500 ms, tracked in docs/core_split_plan.md).
-    results.append(check("import under 1500 ms", elapsed < 1.5, f"{elapsed * 1000:.0f} ms"))
+    cold = time.perf_counter() - t0
+    results.append(check("import apyrobo", True, f"cold first import {cold * 1000:.0f} ms"))
+
+    # The import budget exists to catch a heavyweight dependency entering the
+    # import path (litellm-class imports cost seconds on every start). The
+    # cold first import above also pays for writing .pyc files and a cold
+    # disk cache, which on a shared CI runner swings from ~300 ms to ~1.8 s
+    # with no code change, so the budget is checked on the fastest of a few
+    # fresh interpreters instead. A heavy dependency is slow in every one of
+    # them, so it still fails. The roadmap's warm-import target (500 ms) is
+    # tracked in docs/core_split_plan.md.
+    best = min(_fresh_import_seconds() for _ in range(IMPORT_RUNS))
+    results.append(check(
+        f"import under {IMPORT_BUDGET_S * 1000:.0f} ms",
+        best < IMPORT_BUDGET_S,
+        f"fastest of {IMPORT_RUNS} fresh interpreters: {best * 1000:.0f} ms",
+    ))
+
+    pulled = sorted(
+        {name.split(".")[0] for name in set(sys.modules) - before} & HEAVY_OPTIONAL_MODULES
+    )
+    results.append(check(
+        "import pulls in no optional heavy dependency",
+        not pulled,
+        ", ".join(pulled) if pulled else "",
+    ))
 
     from apyrobo.core.robot import Robot
 
