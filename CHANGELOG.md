@@ -56,6 +56,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **`ros2://` `move()` raises when the goal is not reached.** It now raises
+  `Ros2NavigationError` when Nav2 rejects, aborts or never answers the goal,
+  navigation times out, or `stop()` cancels it, instead of returning as a
+  success; through `apyrobo mcp` the tool result is an error.
+- **`ros2://` reports its real pose.** `get_position()` and
+  `get_orientation()` return the odometry pose instead of (0, 0) and 0 rad,
+  so the safety checks and `apyrobo mcp` see where the robot is. An
+  unanswered first Nav2 goal is now resent within the acceptance timeout.
 - README's "Connecting to a Robot" table now lists `mujoco://` as the live MuJoCo physics bridge it is (needs `apyrobo[mujoco]`), adds the `isaac://` in-memory stand-in, and a test keeps the table's stand-in labels in line with the adapter registry.
 - **`mujoco://` stops its physics thread at exit.** Adapters that were never
   `shutdown()` (for example after `apyrobo conformance mujoco://...`) now have
