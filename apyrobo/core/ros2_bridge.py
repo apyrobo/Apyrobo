@@ -275,6 +275,11 @@ if _HAS_ROS2:
         NAV2_SERVER_WAIT_SEC = 5.0
         ODOM_WAIT_SEC = 5.0
         GOAL_ACCEPT_TIMEOUT_SEC = 10.0
+        # Resend an unanswered goal after this long. The first goal from a
+        # freshly started node can be lost: Nav2 logs "Failed to send goal
+        # response (timeout)" when it has not yet discovered our response
+        # reader, and the client never hears back.
+        GOAL_RESEND_SEC = 2.0
         GOAL_TOLERANCE_M = 0.25
         CMD_VEL_HZ = 10.0
         PROPORTIONAL_GAIN_LINEAR = 0.8
@@ -306,6 +311,11 @@ if _HAS_ROS2:
             self._nav2_server_wait_sec = float(kwargs.get("nav2_server_wait_sec", yaml_cfg.get("nav2_server_wait_sec", self.NAV2_SERVER_WAIT_SEC) if isinstance(yaml_cfg, dict) else self.NAV2_SERVER_WAIT_SEC))
             self._odom_wait_sec = float(kwargs.get("odom_wait_sec", yaml_cfg.get("odom_wait_sec", self.ODOM_WAIT_SEC) if isinstance(yaml_cfg, dict) else self.ODOM_WAIT_SEC))
             self._goal_accept_timeout_sec = float(kwargs.get("goal_accept_timeout_sec", yaml_cfg.get("goal_accept_timeout_sec", self.GOAL_ACCEPT_TIMEOUT_SEC) if isinstance(yaml_cfg, dict) else self.GOAL_ACCEPT_TIMEOUT_SEC))
+            resend_default = (
+                yaml_cfg.get("goal_resend_sec", self.GOAL_RESEND_SEC)
+                if isinstance(yaml_cfg, dict) else self.GOAL_RESEND_SEC
+            )
+            self._goal_resend_sec = float(kwargs.get("goal_resend_sec", resend_default))
             self._odom_reliability = str(kwargs.get("odom_reliability", yaml_cfg.get("odom_reliability", "best_effort") if isinstance(yaml_cfg, dict) else "best_effort")).lower()
 
             # Feedback hook for RT-08
@@ -547,21 +557,28 @@ if _HAS_ROS2:
                 x, y, math.degrees(target_yaw),
             )
 
-            # Send goal asynchronously
-            send_future = self._nav2_client.send_goal_async(
-                goal_msg,
-                feedback_callback=self._nav2_feedback,
-            )
-            send_future.add_done_callback(self._nav2_goal_response)
-
-            # Block until goal is accepted or rejected (with timeout)
+            # Send the goal and block until it is accepted or rejected. A goal
+            # with no answer after goal_resend_sec is sent again (see
+            # GOAL_RESEND_SEC); answers to earlier sends are then stale.
+            self._goal_handle = None
+            resend_sec = getattr(self, "_goal_resend_sec", self.GOAL_RESEND_SEC)
             t0 = time.time()
+            self._send_nav2_goal(goal_msg)
+            last_send = t0
             while self._nav_state == NavState.NAVIGATING and self._goal_handle is None:
                 time.sleep(0.05)
-                if time.time() - t0 > self._goal_accept_timeout_sec:
+                now = time.time()
+                if now - t0 > self._goal_accept_timeout_sec:
                     logger.error("Nav2: goal acceptance timed out")
                     self._nav_state = NavState.TIMED_OUT
                     return
+                if resend_sec > 0 and now - last_send >= resend_sec:
+                    logger.warning(
+                        "Nav2: no answer to the goal after %.1fs, sending it again",
+                        now - last_send,
+                    )
+                    self._send_nav2_goal(goal_msg)
+                    last_send = now
 
             # Now block until navigation completes (with configurable timeout)
             t0 = time.time()
@@ -575,8 +592,28 @@ if _HAS_ROS2:
 
             logger.info("Nav2: navigation finished — state=%s", self._nav_state.value)
 
-        def _nav2_goal_response(self, future: Any) -> None:
+        def _send_nav2_goal(self, goal_msg: Any) -> None:
+            """Send one NavigateToPose goal; only the latest send's answer counts."""
+            self._goal_send_seq = getattr(self, "_goal_send_seq", 0) + 1
+            seq = self._goal_send_seq
+            send_future = self._nav2_client.send_goal_async(
+                goal_msg,
+                feedback_callback=self._nav2_feedback,
+            )
+            send_future.add_done_callback(
+                lambda f, seq=seq: self._nav2_goal_response(f, seq)
+            )
+
+        def _nav2_goal_response(self, future: Any, seq: int | None = None) -> None:
             """Callback when Nav2 accepts or rejects the goal."""
+            if seq is not None and seq != getattr(self, "_goal_send_seq", seq):
+                # Answer to a send that was superseded by a resend of the same
+                # goal: cancel it if accepted so only the latest one runs.
+                stale = future.result()
+                if stale is not None and getattr(stale, "accepted", False):
+                    logger.info("Nav2: cancelling a superseded copy of the goal")
+                    stale.cancel_goal_async()
+                return
             self._goal_handle = future.result()
             if not self._goal_handle.accepted:
                 logger.error("Nav2: goal REJECTED")

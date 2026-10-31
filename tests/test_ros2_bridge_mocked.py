@@ -823,6 +823,74 @@ class TestMoveNav2:
         adapter._move_nav2(5.0, 5.0)
         assert adapter._nav_state in (NavState.TIMED_OUT, NavState.NAVIGATING)
 
+    def test_move_nav2_resends_an_unanswered_goal(self):
+        """A goal whose answer is lost is sent again; the resend's answer counts."""
+        adapter, _ = _build_adapter(has_nav2=True)
+        adapter._goal_accept_timeout_sec = 5.0
+        adapter._goal_resend_sec = 0.1
+        adapter._nav_timeout_sec = 5.0
+
+        sends = []
+
+        def fake_send(msg, feedback_callback=None):
+            fut = MagicMock()
+            callbacks = []
+            fut.add_done_callback.side_effect = callbacks.append
+            sends.append(callbacks)
+            if len(sends) == 2:
+                # Nav2 answers the resend at once and the goal then succeeds.
+                handle = MagicMock()
+                handle.accepted = True
+                result_future = MagicMock()
+                result = MagicMock()
+                result.status = _goal_status_mock.STATUS_SUCCEEDED
+                result_future.result.return_value = result
+                result_future.add_done_callback.side_effect = lambda cb: cb(result_future)
+                handle.get_result_async.return_value = result_future
+                fut.result.return_value = handle
+                fut.add_done_callback.side_effect = lambda cb: cb(fut)
+            return fut
+
+        adapter._nav2_client.send_goal_async.side_effect = fake_send
+
+        adapter._move_nav2(1.0, 1.0)
+
+        assert len(sends) == 2
+        assert adapter._nav_state == NavState.SUCCEEDED
+
+    def test_stale_goal_answer_is_cancelled_and_ignored(self):
+        """An accepted answer to a superseded send is cancelled, not tracked."""
+        adapter, _ = _build_adapter(has_nav2=True)
+        adapter._nav2_client.send_goal_async.return_value = MagicMock()
+        adapter._send_nav2_goal(MagicMock())
+        first_seq = adapter._goal_send_seq
+        adapter._send_nav2_goal(MagicMock())
+        adapter._goal_handle = None
+        adapter._nav_state = NavState.NAVIGATING
+
+        stale_handle = MagicMock()
+        stale_handle.accepted = True
+        stale_future = MagicMock()
+        stale_future.result.return_value = stale_handle
+        adapter._nav2_goal_response(stale_future, first_seq)
+
+        stale_handle.cancel_goal_async.assert_called_once()
+        stale_handle.get_result_async.assert_not_called()
+        assert adapter._goal_handle is None
+        assert adapter._nav_state == NavState.NAVIGATING
+
+    def test_move_nav2_does_not_reuse_the_previous_goal_handle(self):
+        """A handle left from an earlier goal does not count as acceptance."""
+        adapter, _ = _build_adapter(has_nav2=True)
+        adapter._goal_accept_timeout_sec = 0.1
+        adapter._goal_resend_sec = 0.0
+        adapter._goal_handle = MagicMock()
+        adapter._nav2_client.send_goal_async.return_value = MagicMock()
+
+        adapter._move_nav2(1.0, 1.0)
+
+        assert adapter._nav_state == NavState.TIMED_OUT
+
 
 # ===========================================================================
 # _move_cmd_vel (proportional controller)
