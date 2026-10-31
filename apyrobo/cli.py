@@ -1596,6 +1596,11 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 def cmd_mcp(args: argparse.Namespace) -> None:
     """Serve the robot to an MCP client (Claude, Cursor, …) over stdio."""
+    if getattr(args, "mcp_command", None) == "config":
+        from apyrobo.mcp_clients import main as print_client_config
+
+        sys.exit(print_client_config(args))
+
     from apyrobo.mcp_server import build_server, parse_zone
 
     try:
@@ -2968,6 +2973,25 @@ def main() -> None:
                        help="Add a rectangular no-go zone in metres (repeatable)")
     p_mcp.add_argument("--provider", default="rule",
                        help="Planner for plan_task/execute_task (default: rule, no API key)")
+    mcp_sub = p_mcp.add_subparsers(dest="mcp_command")
+    p_mcp_config = mcp_sub.add_parser(
+        "config",
+        help="Print a ready-to-paste config for an MCP client (writes nothing)",
+    )
+    p_mcp_config.add_argument("client", choices=["claude-desktop", "cursor", "claude-code"])
+    p_mcp_config.add_argument("--launcher", default="auto", choices=["auto", "uvx", "apyrobo"],
+                              help="Start the server with uvx (from git) or the installed "
+                                   "apyrobo (default: uvx if found, else apyrobo)")
+    p_mcp_config.add_argument("--name", default="apyrobo", help="Server name in the client")
+    p_mcp_config.add_argument("--robot", dest="cfg_robot", default=None, metavar="URI")
+    p_mcp_config.add_argument("--policy", dest="cfg_policy", default=None,
+                              choices=["default", "strict"])
+    p_mcp_config.add_argument("--policy-file", dest="cfg_policy_file", default=None,
+                              metavar="PATH")
+    p_mcp_config.add_argument("--max-speed", dest="cfg_max_speed", type=float, default=None,
+                              metavar="M_S")
+    p_mcp_config.add_argument("--no-go", dest="cfg_no_go", action="append", default=None,
+                              metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
 
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")

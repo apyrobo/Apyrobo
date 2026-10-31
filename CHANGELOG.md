@@ -47,6 +47,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   it. A refused move names the zone it hit. A missing file, bad syntax,
   unknown key or wrong value stops the server at start with a readable
   error; nothing falls back silently.
+- **`apyrobo mcp config claude-desktop|cursor|claude-code`** prints a
+  ready-to-paste client config: the `mcpServers` JSON block (or the
+  `claude mcp add` command) with the absolute path of `uvx`, or of the
+  installed `apyrobo` (`--launcher apyrobo`), resolved on this machine, and
+  where that client's config file lives on this OS. `--robot`, `--policy`,
+  `--policy-file` (made absolute), `--max-speed` and `--no-go` pass through
+  and are checked first. It only prints; it never touches your config file.
 - **MCP safety demo** (`examples/05_mcp_safety_demo.py`): drives the real
   server on `mock://turtlebot4` over stdio as a client would (a normal
   move, a clamped move, a refused no-go move, stop, safety report). Its
