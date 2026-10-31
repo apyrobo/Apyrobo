@@ -66,6 +66,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   fresh interpreters (the cold first import is still reported), and a new
   check fails if `import apyrobo` loads an optional heavy dependency such as
   litellm, torch or numpy.
+- **`vda5050://` `move()` no longer reports success after `stop()` or waits
+  out the timeout on a rejected order.** A `stop()` from another thread now
+  fails the blocked `move()`, and an AGV that rejects the order or reports a
+  FATAL error fails it on the first state that shows it. Tested against a
+  simulated AGV, not hardware.
 
 ## [4.1.0] - 2026-07-12
 
