@@ -179,8 +179,10 @@ certified safety system: keep hardware e-stops and site safety measures in
 place, and try new setups on `mock://` or a simulator first.
 
 The server speaks MCP over stdio. Clients that open with `initialize`
-(protocol versions 2025-06-18, 2025-03-26 and 2024-11-05) get `initialize`,
-`ping`, `tools/list` and `tools/call`. Clients on protocol 2026-07-28 send no
+(protocol versions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05) get
+`initialize`, `ping`, `tools/list` and `tools/call`; bad tool arguments come
+back as tool errors (`isError`) the model can read and correct, as 2025-11-25
+asks. Clients on protocol 2026-07-28 send no
 handshake: each request carries its version in `params._meta`, and the server
 answers `server/discover`, `tools/list` and `tools/call` statelessly. The
 2026-07-28 support is checked against the specification text by unit tests,
