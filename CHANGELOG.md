@@ -75,6 +75,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   See docs/policy_skills.md.
 - `docs/positioning.md` — market research: personas, landscape, bases
   beyond ROS 2, and the two user-acquisition wedges now on the roadmap.
+- `server.json` — metadata for the official MCP Registry
+  (`io.github.apyrobo/apyrobo`: the PyPI package run as `uvx apyrobo mcp`
+  over stdio, with `--robot`, `--policy`, `--policy-file`, `--max-speed`
+  and `--no-go` as arguments), plus the `mcp-name` marker in README.md that
+  the registry uses to verify PyPI ownership. Not published to the registry
+  yet; that needs a PyPI release. A test keeps its version equal to
+  pyproject's and its flags real.
 
 ### Fixed
 
