@@ -10,6 +10,8 @@ broker failures on connect and publish, and disconnect → connect cycles.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -163,6 +165,44 @@ class TestFaultStates:
         adapter.move(1.0, 1.0)  # must complete, not raise
         assert adapter.get_position() == (1.0, 1.0)
 
+    def test_rejected_order_fails_fast_while_state_shows_the_old_order(self, rig):
+        adapter, transport, agv = rig
+
+        def reject(order: dict[str, Any]) -> None:
+            # The AGV never accepts the order: its state keeps the previous
+            # orderId and reports an error that names the rejected one.
+            transport.emit("state", agv.state(
+                orderId="previous-order",
+                errors=[{
+                    "errorType": "validationError",
+                    "errorLevel": "WARNING",
+                    "errorReferences": [
+                        {"referenceKey": "orderId", "referenceValue": order["orderId"]}
+                    ],
+                }],
+            ))
+        agv.on_order = reject
+        adapter._order_timeout_sec = 30.0
+        start = time.monotonic()
+        with pytest.raises(Vda5050Error, match="validationError"):
+            adapter.move(1.0, 0.0)
+        assert time.monotonic() - start < 5.0
+
+    def test_fatal_error_fails_fast_while_state_shows_another_order(self, rig):
+        adapter, transport, agv = rig
+
+        def fatal(order: dict[str, Any]) -> None:
+            transport.emit("state", agv.state(
+                orderId="previous-order",
+                errors=[{"errorType": "emergencyStop", "errorLevel": "FATAL"}],
+            ))
+        agv.on_order = fatal
+        adapter._order_timeout_sec = 30.0
+        start = time.monotonic()
+        with pytest.raises(Vda5050Error, match="emergencyStop"):
+            adapter.move(1.0, 0.0)
+        assert time.monotonic() - start < 5.0
+
     def test_order_succeeds_again_once_the_fault_clears(self, rig):
         adapter, transport, agv = rig
 
@@ -258,6 +298,39 @@ class TestBrokerFailures:
         transport.fail_publish = True
         adapter.stop()
         adapter.stop()
+
+    def test_stop_from_another_thread_fails_the_blocked_move(self, rig):
+        adapter, _, agv = rig
+        agv.on_order = agv.ignore
+        adapter._order_timeout_sec = 30.0
+        outcome: list[BaseException | None] = []
+
+        def run() -> None:
+            try:
+                adapter.move(5.0, 0.0)
+                outcome.append(None)
+            except BaseException as exc:  # noqa: BLE001 - recorded for the assert
+                outcome.append(exc)
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        deadline = time.monotonic() + 5.0
+        while adapter._active_order_id is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        adapter.stop()
+        worker.join(timeout=5.0)
+        assert not worker.is_alive()
+        assert len(outcome) == 1
+        assert isinstance(outcome[0], Vda5050Error)
+        assert "cancelled by stop()" in str(outcome[0])
+        assert agv.cancelled == 1
+
+    def test_stop_after_a_finished_move_is_harmless(self, rig):
+        adapter, _, agv = rig
+        adapter.move(1.0, 0.0)
+        adapter.stop()
+        adapter.move(2.0, 0.0)  # a fresh order is not marked stopped
+        assert adapter.get_position() == (2.0, 0.0)
 
     def test_reconnect_resubscribes_and_orders_work_again(self, rig):
         adapter, transport, agv = rig
