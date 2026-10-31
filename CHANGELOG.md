@@ -56,6 +56,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- README's "Connecting to a Robot" table now lists `mujoco://` as the live MuJoCo physics bridge it is (needs `apyrobo[mujoco]`), adds the `isaac://` in-memory stand-in, and a test keeps the table's stand-in labels in line with the adapter registry.
 - **`mujoco://` stops its physics thread at exit.** Adapters that were never
   `shutdown()` (for example after `apyrobo conformance mujoco://...`) now have
   their physics thread stopped and joined before Python exits, instead of

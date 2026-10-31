@@ -367,15 +367,18 @@ Write your own: see the [Adapter Authoring Guide](docs/adapter_authoring.md).
 | `mock://` | Pure Python simulation, no external deps | Nothing |
 | `gazebo://` | Physics-aware mock with simulated delays | Nothing |
 | `gazebo_native://` | Gazebo-shaped in-memory stand-in (spawn/joints/forces APIs) | Nothing |
-| `mujoco://` | MuJoCo-shaped in-memory stand-in | Nothing |
+| `mujoco://` | Live MuJoCo physics: loads and steps a real model (21/21 conformance vs real physics) | `pip install 'apyrobo[mujoco]'` |
+| `isaac://` | Isaac-shaped in-memory stand-in (does not connect to Isaac Sim) | Nothing |
 | `ros2://` | Real ROS 2 robot **or live Gazebo sim** via rclpy | ROS 2 + Docker image |
 | `vda5050://` | Master control for **VDA 5050-compliant AMRs** (the MQTT standard MiR, OTTO, Seegrid are converging on) | MQTT broker + `pip install 'apyrobo[vda5050]'` |
 
-> `ros2://` and `vda5050://` talk to real systems (`vda5050://` is verified
-> against a simulated AGV and the conformance suite; physical-fleet
-> validation is the Arc 1 gate). The sim-flavored schemes are in-memory
-> stand-ins for developing without a simulator installed — each warns at
-> first use. Live physics simulation = `ros2://` against a running Gazebo
+> `ros2://`, `vda5050://` and `mujoco://` talk to real systems (`vda5050://` is
+> verified against a simulated AGV and the conformance suite; physical-fleet
+> validation is the Arc 1 gate; `mujoco://` drives live MuJoCo physics in CI
+> on every commit). `gazebo://` is a physics-flavored mock, and
+> `gazebo_native://` and `isaac://` are in-memory stand-ins for developing
+> without a simulator installed — each warns at first use. Live Gazebo
+> simulation = `ros2://` against a running Gazebo
 > ([proof in CI](tests/integration/README_gazebo.md)).
 
 For your first real robot, use the Docker image which includes ROS 2:
