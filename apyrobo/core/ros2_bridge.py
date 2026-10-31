@@ -796,6 +796,15 @@ if _HAS_ROS2:
         def orientation(self) -> float:
             return self._orientation
 
+        # Robot.get_position()/get_orientation() and the SafetyEnforcer read
+        # these; without them the base class answers (0, 0) and 0 rad, so the
+        # odometry watchdog saw a robot that never left the origin.
+        def get_position(self) -> tuple[float, float]:
+            return self._position
+
+        def get_orientation(self) -> float:
+            return self._orientation
+
         @property
         def nav_state(self) -> NavState:
             return self._nav_state
