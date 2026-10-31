@@ -223,7 +223,8 @@ Conformance check IDs in parentheses.
 | `MQTTAdapter` | `mqtt://` | MQTT topics | `apyrobo/core/adapters.py` |
 | `HTTPAdapter` | `http://` | REST API | `apyrobo/core/adapters.py` |
 | `UnitreeAdapter` | `unitree://` | Vendor SDK | [`apyrobo/core/unitree_adapter.py`](../apyrobo/core/unitree_adapter.py) |
-| `IsaacAdapter` | `isaac://` | Isaac Sim | [`apyrobo/core/isaac_adapter.py`](../apyrobo/core/isaac_adapter.py) |
+| `MuJoCoBridgeAdapter` | `mujoco://` | Live physics engine | [`apyrobo/sim/mujoco_bridge.py`](../apyrobo/sim/mujoco_bridge.py) |
+| `IsaacSimAdapter` | `isaac://` | In-memory stand-in (no Isaac Sim) | [`apyrobo/sim/adapters.py`](../apyrobo/sim/adapters.py) |
 
 ### Tips
 
