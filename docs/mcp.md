@@ -97,13 +97,7 @@ If you installed with `pip`, use `"command": "apyrobo"` and
 Add the same `mcpServers` block to `~/.cursor/mcp.json` (or `.cursor/mcp.json`
 in a project).
 
-GUI clients don't inherit your shell's `PATH`. If the client can't find
-`uvx` or `apyrobo`, use the full path to the executable as `command` (run
-`which uvx` or `which apyrobo` to get it, for example
-`/home/you/.local/bin/uvx`).
-
-The first start with `uvx` downloads and builds APYROBO (about 15 seconds
-in our test); later starts reuse uv's cache.
+If the tools don't show up, see [Troubleshooting](#troubleshooting).
 
 ## Tools
 
@@ -128,6 +122,7 @@ checks and executes.
 | --- | --- | --- |
 | `--robot URI` | `mock://turtlebot4` | Any APYROBO robot URI (`ros2://…`, `gazebo://…`, `mujoco://…`, `vda5050://…`) |
 | `--policy` | `default` | Base policy: `default` (1.5 m/s) or `strict` (0.5 m/s, speed ramp) |
+| `--policy-file PATH` | none | JSON or YAML policy (`name`, `base`, `max_speed`, `max_angular_speed`, `no_go_zones`); flags on the command line override it |
 | `--max-speed M_S` | from policy | Override the speed limit |
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
@@ -169,6 +164,58 @@ docker compose -f docker/docker-compose.yml --profile gazebo-nav up \
 
 Not covered yet: real hardware in CI, and the ROS 2 Jazzy + Gazebo Harmonic
 image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
+
+## Troubleshooting
+
+**Check the server on its own first.** Run the same command your client
+config uses in a terminal, for example
+`uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp`. A working
+server prints one line to stderr (`apyrobo mcp — robot=… (waiting for an MCP
+client on stdio)`) and then waits; Ctrl-C quits. If it prints `Error: …` or a
+traceback instead, fix that before looking at the client.
+
+**The client can't start it (`command not found`, `spawn uvx ENOENT`).** GUI
+clients such as Claude Desktop and Cursor don't run your shell's start-up
+files, so a `PATH` set in `~/.zshrc` or `~/.bashrc` doesn't reach them. Use
+the full path to the executable as `command`: run `which uvx` (or
+`which apyrobo`) in a terminal and paste the result, for example
+`/home/you/.local/bin/uvx` or `/Users/you/.local/bin/uvx`.
+
+**The tools don't appear in Claude Desktop.** It reads the config only at
+start-up, so quit it fully (menu bar or system tray) and reopen it. Open the
+file through Settings → Developer → Edit Config, so you edit the one it
+reads (`~/Library/Application Support/Claude/claude_desktop_config.json` on
+macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), and check
+it is valid JSON (a stray trailing comma is the usual culprit). If the `apyrobo` entry
+is missing after a restart, add it again with the app closed.
+
+**The first start is slow or times out.** The first `uvx` start downloads
+and builds APYROBO (about 15 seconds in our test); later starts reuse uv's
+cache. If your client gives up during that first start, run the `uvx`
+command once in a terminal to fill the cache, then restart the client.
+
+**Where the logs are.** The server writes its start-up line and any errors
+to stderr; stdout carries only MCP messages. Claude Desktop saves each
+server's stderr in `~/Library/Logs/Claude/` (macOS) or
+`%APPDATA%\Claude\logs\` (Windows), in a file named after the server
+(`mcp-server-apyrobo.log`). In Claude Code, `claude mcp list` shows whether
+the server connected, and `/mcp` in a session shows its status.
+
+**`ros2://`: "a ROS 2 import failed".** The server could not import `rclpy`,
+so it exits at start. A client starts the server with its own environment,
+not your terminal's, so a ROS 2 setup you sourced in a shell doesn't apply.
+Wrap the command so it sources ROS 2 first, for example `"command": "bash"`
+with
+`"args": ["-c", "source /opt/ros/humble/setup.bash && exec apyrobo mcp --robot ros2://burger"]`
+(use your distro's `setup.bash` and the full path to `apyrobo` if needed).
+
+**`ros2://`: the robot never moves, or its position doesn't change.** The
+server is most likely on a different `ROS_DOMAIN_ID` from the robot, so it
+sees no `/odom` and no Nav2. Set the same value for the server, either in
+the wrapped command above or in the client's `env` block
+(`"env": {"ROS_DOMAIN_ID": "30"}` in the JSON config, or
+`claude mcp add -e ROS_DOMAIN_ID=30 …` for Claude Code). Check from the same
+shell with `ros2 topic echo /odom --once`.
 
 ## What this does and doesn't guarantee
 
