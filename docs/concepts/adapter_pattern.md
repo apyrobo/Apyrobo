@@ -35,9 +35,9 @@ robot = Robot("unitree://go2@192.168.1.10", UnitreeAdapter("go2", "192.168.1.10"
 from apyrobo.nav2 import Nav2Adapter
 robot = Robot("nav2://turtlebot4", Nav2Adapter("turtlebot4"))
 
-# NVIDIA Isaac Sim
+# NVIDIA Isaac Sim (SDK adapter; importing it registers isaac_sim://)
 from apyrobo.core.isaac_adapter import IsaacSimAdapter
-robot = Robot("isaac://sim_robot_0@localhost:8211", IsaacSimAdapter("localhost", 8211))
+robot = Robot("isaac_sim://sim_robot_0", IsaacSimAdapter("sim_robot_0", host="localhost", port=8211))
 ```
 
 ---
@@ -52,7 +52,8 @@ robot = Robot("isaac://sim_robot_0@localhost:8211", IsaacSimAdapter("localhost",
 | `moveit://` | MoveIt adapter | ROS 2 MoveIt 2 manipulation |
 | `unitree://go2@...` | `UnitreeAdapter` | Unitree Go2 quadruped |
 | `unitree://h1@...` | `UnitreeAdapter` | Unitree H1 humanoid |
-| `isaac://...` | `IsaacSimAdapter` | NVIDIA Isaac Sim |
+| `isaac://...` | `IsaacSimAdapter` (`apyrobo.sim.adapters`) | In-memory stand-in, no Isaac Sim |
+| `isaac_sim://...` | `IsaacSimAdapter` (`apyrobo.core.isaac_adapter`) | NVIDIA Isaac Sim via SDK or REST (opt-in import) |
 | `mqtt://` | MQTT adapter | MQTT-capable robots |
 | `http://` | HTTP adapter | REST-based robot APIs |
 

@@ -19,7 +19,7 @@ from pathlib import Path
 README = Path(__file__).resolve().parent.parent / "README.md"
 
 # Read the registry in a fresh interpreter: other tests import optional
-# modules (e.g. apyrobo.core.isaac_adapter) that re-register a scheme, and the
+# modules that register extra schemes, and the
 # README describes what a plain `import apyrobo` gives a user.
 _SNAPSHOT = """
 import json, apyrobo

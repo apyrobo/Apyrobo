@@ -225,6 +225,7 @@ Conformance check IDs in parentheses.
 | `UnitreeAdapter` | `unitree://` | Vendor SDK | [`apyrobo/core/unitree_adapter.py`](../apyrobo/core/unitree_adapter.py) |
 | `MuJoCoBridgeAdapter` | `mujoco://` | Live physics engine | [`apyrobo/sim/mujoco_bridge.py`](../apyrobo/sim/mujoco_bridge.py) |
 | `IsaacSimAdapter` | `isaac://` | In-memory stand-in (no Isaac Sim) | [`apyrobo/sim/adapters.py`](../apyrobo/sim/adapters.py) |
+| `IsaacSimAdapter` (SDK) | `isaac_sim://`, after `import apyrobo.core.isaac_adapter` | Isaac SDK or REST API (not tested against Isaac Sim in CI) | [`apyrobo/core/isaac_adapter.py`](../apyrobo/core/isaac_adapter.py) |
 
 ### Tips
 

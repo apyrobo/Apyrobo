@@ -207,16 +207,16 @@ class TestIsaacAdapterImport:
 
 
 class TestIsaacAdapterURIScheme:
-    def test_registered_under_isaac_scheme(self):
+    def test_registered_under_isaac_sim_scheme(self):
         from apyrobo.core.adapters import _ADAPTER_REGISTRY
         # Import adapter to trigger registration
         import apyrobo.core.isaac_adapter  # noqa: F401
-        assert "isaac" in _ADAPTER_REGISTRY
+        assert "isaac_sim" in _ADAPTER_REGISTRY
 
     def test_registry_maps_to_isaac_sim_adapter(self):
         from apyrobo.core.adapters import _ADAPTER_REGISTRY
         import apyrobo.core.isaac_adapter as mod
-        assert _ADAPTER_REGISTRY.get("isaac") is mod.IsaacSimAdapter
+        assert _ADAPTER_REGISTRY.get("isaac_sim") is mod.IsaacSimAdapter
 
 
 class TestIsaacAdapterWithoutSDK:

@@ -13,10 +13,13 @@ latency.  When the SDK is absent but Isaac Sim is reachable over the network,
 the adapter transparently falls back to the Isaac REST API (default port 8211)
 so that remote workstations or CI runners can still issue commands.
 
-URI scheme::
+URI scheme (explicit opt-in: import this module, then use ``isaac_sim://``)::
 
-    isaac://my_scene
-    isaac://my_scene?host=192.168.1.50&port=8211
+    isaac_sim://my_scene
+    isaac_sim://my_scene?host=192.168.1.50&port=8211
+
+``isaac://`` is not this adapter: it stays the in-memory stand-in from
+``apyrobo.sim.adapters``, whether or not this module has been imported.
 
 v6.0.0 — APYROBO Ecosystem Integrations
 """
@@ -107,7 +110,7 @@ def _isaac_rest_request(
 # IsaacSimAdapter
 # ---------------------------------------------------------------------------
 
-@register_adapter("isaac")
+@register_adapter("isaac_sim")
 class IsaacSimAdapter(CapabilityAdapter):
     """
     NVIDIA Isaac Sim adapter.
@@ -134,8 +137,9 @@ class IsaacSimAdapter(CapabilityAdapter):
 
     Usage::
 
+        import apyrobo.core.isaac_adapter  # registers isaac_sim://
         from apyrobo.core.robot import Robot
-        robot = await Robot.discover("isaac://warehouse_scene")
+        robot = Robot.discover("isaac_sim://warehouse_scene")
         await robot.move(3.0, 1.0)
     """
 
