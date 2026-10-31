@@ -89,6 +89,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **`apyrobo mcp` prints a readable error when the robot adapter can't
+  start.** For example `--robot ros2://…` in a shell without ROS 2 sourced
+  now prints `Error: The ros2:// adapter is unavailable …` and exits 1
+  instead of a Python traceback.
 - **Importing `apyrobo.core.isaac_adapter` no longer changes what
   `isaac://` resolves to.** The Isaac SDK/REST adapter used to re-register
   itself over the `isaac://` in-memory stand-in on import, so behaviour

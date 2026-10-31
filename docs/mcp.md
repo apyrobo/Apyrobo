@@ -171,8 +171,8 @@ image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
 config uses in a terminal, for example
 `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp`. A working
 server prints one line to stderr (`apyrobo mcp — robot=… (waiting for an MCP
-client on stdio)`) and then waits; Ctrl-C quits. If it prints `Error: …` or a
-traceback instead, fix that before looking at the client.
+client on stdio)`) and then waits; Ctrl-C quits. If it prints `Error: …`
+instead, fix that before looking at the client.
 
 **The client can't start it (`command not found`, `spawn uvx ENOENT`).** GUI
 clients such as Claude Desktop and Cursor don't run your shell's start-up
