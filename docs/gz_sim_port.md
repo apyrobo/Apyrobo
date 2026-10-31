@@ -1,12 +1,15 @@
 # Design note: porting the Gazebo stack to Jazzy + Gazebo Harmonic
 
-**Status:** step 1 done, the rest is a proposal. `docker/Dockerfile.gz-jazzy`
-and `tests/integration/gz_boot.sh` boot a headless Gazebo Harmonic TurtleBot3
-on Jazzy, and `tests/integration/test_gazebo_turtlebot.py` passes against it
-unchanged when run by hand with `docker run` (see the Dockerfile header). It
-is not in Compose or CI yet. The CI jobs described below still run ROS 2
-Humble + Gazebo Classic and stay unchanged until a replacement is green
-beside them.
+**Status:** steps 1 and 2 done, the rest is a proposal.
+`docker/Dockerfile.gz-jazzy` and `tests/integration/gz_boot.sh` boot a
+headless Gazebo Harmonic TurtleBot3 on Jazzy, and
+`tests/integration/test_gazebo_turtlebot.py` passes against it unchanged.
+`tests/integration/gz_nav_boot.sh` adds the lidar, slam_toolbox and Nav2, and
+`tests/integration/test_gazebo_nav2_e2e.py` (natural-language task to Nav2
+to the robot reaching the goal) passes against it unchanged. Both are run by
+hand with `docker run` (see the Dockerfile header); neither is in Compose or
+CI yet. The CI jobs described below still run ROS 2 Humble + Gazebo Classic
+and stay unchanged until a replacement is green beside them.
 
 ## Why
 
@@ -46,11 +49,26 @@ Port beside, not in place, so the green Humble jobs keep guarding `main`:
    paths move to `python3.12` and `pip install` needs a venv with
    `--system-site-packages` or `--break-system-packages`.
 2. **New boot script** `tests/integration/gz_nav_boot.sh`: start
-   `gz sim -s -r` (server only, headless) on the TurtleBot3 world, spawn
-   with `ros_gz_sim create`, and run `ros_gz_bridge parameter_bridge` for
-   `/clock`, `/cmd_vel`, `/odom`, `/scan`, `/tf` and `/joint_states`. Prefer
-   the TurtleBot3 package's own Jazzy launch file over hand-rolled steps if
-   it covers headless mode.
+   `gz sim -s -r --headless-rendering` on `gz_nav_world.sdf`
+   (turtlebot3_world with the ground plane and sun inline and the Sensors
+   system for the lidar), spawn with `ros_gz_sim create`, and run
+   `ros_gz_bridge parameter_bridge` for `/clock`, `/cmd_vel`, `/odom`,
+   `/scan`, `/tf`, `/imu` and `/joint_states`, then `robot_state_publisher`
+   and `nav2_bringup` in SLAM mode. **Done.** What it took:
+   - The burger's lidar is a `gpu_lidar`, so it needs a renderer. ogre2
+     renders it headless through Mesa's software EGL (no GPU, no display),
+     and the sim kept a real-time factor of 1.0 locally.
+   - The gz DiffDrive plugin integrates odometry from (0, 0), while Gazebo
+     Classic's TurtleBot3 published odometry from the world pose, which is
+     what the e2e test's start and goal coordinates assume. The script
+     spawns a patched copy of the model: DiffDrive still drives the wheels
+     but publishes on unbridged topics, and gz's OdometryPublisher system
+     owns `/odom` and `odom -> base_footprint` from the model's pose.
+   - Nav2's Jazzy default controller (MPPI) missed its 20 Hz rate next to
+     software rendering and a goal then failed on a TF extrapolation error.
+     The script uses TurtleBot3's own Jazzy burger parameters
+     (`turtlebot3_navigation2`, DWB at 10 Hz) with `enable_stamped_cmd_vel`
+     set to false, so Nav2 publishes `Twist` like the adapter.
 3. **New Compose profile** `gz-jazzy-nav` reusing
    `tests/integration/test_gazebo_nav2_e2e.py` unchanged. The test only
    talks to `ros2://`, so it is the acceptance check: the same assertion on
@@ -84,8 +102,11 @@ reading docs:
   `model.sdf` with `ros_gz_sim create`. Its worlds include the ground plane
   and sun from fuel.gazebosim.org, a network fetch at every start, so
   `gz_boot.sh` uses `tests/integration/gz_empty_world.sdf` with both inline.
-  The URDF question still applies to the Nav2 step.
+  **Settled:** the Jazzy URDF still carries the placeholder;
+  `gz_nav_boot.sh` strips it the same way.
 - **Startup timing.** The current healthcheck waits for `navigate_to_pose`
   and a first `/map`; Harmonic's startup may need a longer `start_period`.
+  Locally `navigate_to_pose` was up 10 to 18 s after `gz_nav_boot.sh`
+  started.
 - **Runner cost.** GitHub-hosted runners have no GPU; confirm Harmonic's
   server-only mode runs within the current job time budget.
