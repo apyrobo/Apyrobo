@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
 import sys
 
@@ -51,6 +52,31 @@ def test_initialize_echoes_supported_version(server):
     assert result["serverInfo"]["name"] == "apyrobo"
     assert "tools" in result["capabilities"]
     assert "safety" in result["instructions"]
+
+
+def test_initialize_accepts_2025_11_25(server):
+    resp = rpc(server, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {}})
+    assert resp["result"]["protocolVersion"] == "2025-11-25"
+    assert SUPPORTED_PROTOCOL_VERSIONS[0] == "2025-11-25"
+
+
+def test_tool_names_follow_2025_11_25_guidance(server):
+    # SEP-986: 1-128 chars from A-Z a-z 0-9 _ - . and unique within a server.
+    names = [t["name"] for t in rpc(server, "tools/list", {})["result"]["tools"]]
+    assert names and len(names) == len(set(names))
+    assert all(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", n) for n in names)
+
+
+def test_input_validation_errors_are_tool_errors(server):
+    # SEP-1303: argument problems go back as isError results the model can
+    # correct; only unknown tools and malformed requests are protocol errors.
+    assert call(server, "move_to", {})[0] is True
+    is_error, text = call(server, "move_to", {"x": "abc", "y": 1})
+    assert is_error is True and "x" in text
+    unknown = rpc(server, "tools/call", {"name": "fly", "arguments": {}})
+    assert unknown["error"]["code"] == INVALID_PARAMS
+    malformed = rpc(server, "tools/call", {"name": "move_to", "arguments": [1, 2]})
+    assert malformed["error"]["code"] == INVALID_PARAMS
 
 
 def test_initialize_unknown_version_falls_back_to_newest(server):

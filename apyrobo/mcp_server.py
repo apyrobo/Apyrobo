@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Legacy (``initialize`` handshake) versions, newest first. The server answers
 # ``initialize`` with the client's requested version when it is one of these,
 # otherwise with the newest.
-SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 # Modern (stateless) versions: no handshake, every request carries its version
 # and client capabilities in ``params._meta``. The server is dual-era: a
@@ -381,7 +381,7 @@ class MCPServer:
     """A minimal MCP server over newline-delimited JSON-RPC on stdio.
 
     Implements the parts of the protocol a tools-only server needs. Legacy
-    clients (2025-06-18 and earlier) use ``initialize``, ``ping``,
+    clients (2025-11-25 and earlier) use ``initialize``, ``ping``,
     ``tools/list`` and ``tools/call``. Modern clients (2026-07-28) send no
     handshake: each request carries its protocol version in ``params._meta``,
     and the server answers ``server/discover``, ``tools/list`` and
