@@ -15,9 +15,13 @@ so it can be tried on a laptop with no ROS install.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import hmac
 import json
 import logging
+import secrets
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Any
@@ -52,6 +56,12 @@ INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 # MCP error codes (2026-07-28)
 UNSUPPORTED_PROTOCOL_VERSION = -32022
+
+# --confirm-moves: tools that make the robot move ask the user first.
+MOTION_TOOLS = ("move_to", "rotate", "execute_task")
+CONFIRM_INPUT_KEY = "confirm_move"
+# How long a confirmation request stays valid (seconds).
+CONFIRM_TTL_S = 600
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -224,6 +234,47 @@ class RobotToolbox:
         _, handler = self._tools[name]
         return handler(arguments)
 
+    def confirmation_prompt(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """What the user is asked to confirm under --confirm-moves.
+
+        Shows the target and the speed the policy will actually allow.
+        Returns None for a move the policy refuses anyway (target in a
+        no-go zone), so the user is not asked to approve a refused move.
+        Raises ToolError for invalid arguments.
+        """
+        p = self.enforcer.policy
+        if name == "move_to":
+            x, y = _num(arguments, "x"), _num(arguments, "y")
+            speed = _num(arguments, "speed", required=False)
+            from apyrobo.safety.enforcer import SafetyEnforcer
+
+            if any(SafetyEnforcer._point_in_zone(x, y, z) for z in p.collision_zones):
+                return None
+            if speed is None:
+                speed_text = f"default speed (policy limit {p.max_speed} m/s)"
+            elif speed > p.max_speed:
+                speed_text = f"{p.max_speed} m/s (requested {speed}, clamped to the policy limit)"
+            else:
+                speed_text = f"{speed} m/s"
+            return f"Allow the robot to move to x={x}, y={y} at {speed_text}?"
+        if name == "rotate":
+            angle = _num(arguments, "angle_rad")
+            speed = _num(arguments, "speed", required=False)
+            limit = p.max_angular_speed
+            if speed is None:
+                speed_text = f"default speed (policy limit {limit} rad/s)"
+            elif abs(speed) > limit:
+                speed_text = f"{limit} rad/s (requested {speed}, clamped to the policy limit)"
+            else:
+                speed_text = f"{speed} rad/s"
+            return f"Allow the robot to rotate by {angle} rad at {speed_text}?"
+        task = _str(arguments, "task")
+        return (
+            f"Allow the robot to carry out the task {task!r}? Each step stays within "
+            f"the safety policy '{p.name}' (max {p.max_speed} m/s, "
+            f"{len(p.collision_zones)} no-go zone(s))."
+        )
+
     # -- helpers -------------------------------------------------------
 
     def _policy_summary(self) -> dict[str, Any]:
@@ -389,9 +440,13 @@ class MCPServer:
     ``tools/call`` statelessly.
     """
 
-    def __init__(self, toolbox: RobotToolbox) -> None:
+    def __init__(self, toolbox: RobotToolbox, *, confirm_moves: bool = False) -> None:
         self.toolbox = toolbox
         self.protocol_version = SUPPORTED_PROTOCOL_VERSIONS[0]
+        self.confirm_moves = confirm_moves
+        # Seals the requestState of a confirmation round trip, so a client
+        # cannot confirm one move and then send different arguments.
+        self._state_key = secrets.token_bytes(32)
 
     # -- dispatch ------------------------------------------------------
 
@@ -436,6 +491,15 @@ class MCPServer:
             elif method == "tools/list":
                 result = {"tools": self.toolbox.list_tools()}
             elif method == "tools/call":
+                if self.confirm_moves and params.get("name") in MOTION_TOOLS:
+                    return _tool_result(
+                        msg_id,
+                        "REFUSED: this server runs with --confirm-moves, so every motion "
+                        "command needs the user's confirmation, and confirmation currently "
+                        "needs an MCP client on protocol 2026-07-28 with elicitation "
+                        "support. The robot did not move.",
+                        is_error=True,
+                    )
                 return self._tools_call(msg_id, params)
             else:
                 return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
@@ -479,10 +543,19 @@ class MCPServer:
                     "cacheScope": "public",
                 }
             elif method == "tools/call":
-                response = self._tools_call(msg_id, params)
-                if "error" in response:
-                    return response
-                result = response["result"]
+                gate = self._confirm_gate(msg_id, params, meta[META_CLIENT_CAPABILITIES])
+                if gate is not None and "error" in gate:
+                    return gate
+                if gate is not None:
+                    result = gate["result"]
+                    if result.get("resultType") == "input_required":
+                        result["_meta"] = {META_SERVER_INFO: _server_info()}
+                        return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+                else:
+                    response = self._tools_call(msg_id, params)
+                    if "error" in response:
+                        return response
+                    result = response["result"]
             else:
                 return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
         except Exception as exc:  # pragma: no cover - defensive
@@ -491,6 +564,99 @@ class MCPServer:
         result["resultType"] = "complete"
         result["_meta"] = {META_SERVER_INFO: _server_info()}
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+    # -- --confirm-moves ---------------------------------------------------
+
+    def _seal(self, name: str, arguments: dict[str, Any], issued: int) -> str:
+        body = json.dumps(
+            {"tool": name, "arguments": arguments, "issued": issued},
+            sort_keys=True, separators=(",", ":"),
+        )
+        mac = hmac.new(self._state_key, body.encode(), hashlib.sha256).hexdigest()
+        return f"{issued}.{mac}"
+
+    def _state_ok(self, state: Any, name: str, arguments: dict[str, Any]) -> bool:
+        if not isinstance(state, str) or "." not in state:
+            return False
+        issued_s, _ = state.split(".", 1)
+        if not issued_s.isdigit():
+            return False
+        issued = int(issued_s)
+        if not 0 <= time.time() - issued <= CONFIRM_TTL_S:
+            return False
+        return hmac.compare_digest(state, self._seal(name, arguments, issued))
+
+    def _confirm_gate(
+        self, msg_id: Any, params: dict[str, Any], client_caps: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Ask the user to confirm a motion command (2026-07-28 clients).
+
+        Returns None when the call may run, or a response to send instead:
+        an ``input_required`` result carrying the confirmation request, a
+        declined or refused tool result, or a JSON-RPC error.
+        """
+        name = params.get("name")
+        if not self.confirm_moves or name not in MOTION_TOOLS:
+            return None
+        arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            return None  # _tools_call reports the bad arguments
+        elicitation = client_caps.get("elicitation")
+        if not isinstance(elicitation, dict) or (elicitation and "form" not in elicitation):
+            return _tool_result(
+                msg_id,
+                "REFUSED: this server runs with --confirm-moves, so every motion command "
+                "needs the user's confirmation, and this client does not support form "
+                "elicitation. The robot did not move.",
+                is_error=True,
+            )
+        try:
+            prompt = self.toolbox.confirmation_prompt(name, arguments)
+        except ToolError as exc:
+            return _tool_result(msg_id, str(exc), is_error=True)
+        if prompt is None:
+            return None  # the policy refuses it anyway; no need to ask
+
+        responses = params.get("inputResponses")
+        if responses is None:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "resultType": "input_required",
+                    "inputRequests": {
+                        CONFIRM_INPUT_KEY: {
+                            "method": "elicitation/create",
+                            "params": {
+                                "mode": "form",
+                                "message": prompt,
+                                "requestedSchema": {"type": "object", "properties": {}},
+                            },
+                        }
+                    },
+                    "requestState": self._seal(name, arguments, int(time.time())),
+                },
+            }
+        if not self._state_ok(params.get("requestState"), name, arguments):
+            return _error(
+                msg_id, INVALID_PARAMS,
+                "Invalid or expired requestState: call the tool again without "
+                "inputResponses to ask for a new confirmation",
+            )
+        answer = responses.get(CONFIRM_INPUT_KEY) if isinstance(responses, dict) else None
+        if isinstance(answer, dict) and answer.get("action") == "accept":
+            return None
+        action = answer.get("action") if isinstance(answer, dict) else None
+        return _tool_result(
+            msg_id,
+            json.dumps({
+                "status": "declined",
+                "tool": name,
+                "user_action": action or "none",
+                "detail": "The user did not confirm this motion command. The robot did not move.",
+            }, indent=2),
+            is_error=False,
+        )
 
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         requested = params.get("protocolVersion")
@@ -563,6 +729,14 @@ class MCPServer:
 
 def _server_info() -> dict[str, str]:
     return {"name": "apyrobo", "version": __version__}
+
+
+def _tool_result(msg_id: Any, text: str, *, is_error: bool) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "result": {"content": [{"type": "text", "text": text}], "isError": is_error},
+    }
 
 
 def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
@@ -685,6 +859,7 @@ def build_server(
     provider: str = "rule",
     agent: Any = None,
     policy_file: str | Path | None = None,
+    confirm_moves: bool = False,
 ) -> MCPServer:
     """Discover the robot, wrap it in a safety enforcer and return the server.
 
@@ -725,4 +900,6 @@ def build_server(
 
             agent = Agent(provider=provider)
     enforcer = SafetyEnforcer(robot, policy=safety)
-    return MCPServer(RobotToolbox(robot, enforcer, agent, robot_uri))
+    return MCPServer(
+        RobotToolbox(robot, enforcer, agent, robot_uri), confirm_moves=confirm_moves
+    )

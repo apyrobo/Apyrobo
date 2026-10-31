@@ -141,7 +141,23 @@ checks and executes.
 | `--policy-file PATH` | none | JSON or YAML policy (`name`, `base`, `max_speed`, `max_angular_speed`, `no_go_zones`); flags on the command line override it |
 | `--max-speed M_S` | from policy | Override the speed limit |
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
+| `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
+
+### Confirm every move
+
+With `--confirm-moves`, each motion command waits for a yes from the user.
+The server asks through MCP elicitation and shows the target and the speed
+the policy will actually allow (after clamping); declining leaves the robot
+where it is and returns a plain `declined` result. Approval never lifts a
+policy limit, and a target in a no-go zone is refused without asking.
+`stop` and the read-only tools never ask.
+
+This works today with clients on protocol 2026-07-28 that support form
+elicitation (tested against the official MCP Python SDK client). Clients
+that open with `initialize`, or that lack elicitation, get every motion
+command refused with a readable error, because the operator asked for
+confirmation and the server cannot get it from them.
 
 ## On a ROS 2 robot or a Gazebo sim
 
