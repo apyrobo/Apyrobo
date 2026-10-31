@@ -164,6 +164,20 @@ class NavState(str, Enum):
     TIMED_OUT = "timed_out"
 
 
+class Ros2NavigationError(RuntimeError):
+    """Raised by ROS2Adapter.move() when the robot did not reach the goal.
+
+    Covers a goal Nav2 rejected or aborted, a goal Nav2 never answered, a
+    navigation timeout (Nav2 or the cmd_vel fallback) and a goal cancelled by
+    stop() or emergency_stop() before it finished. ``nav_state`` holds the
+    final NavState.
+    """
+
+    def __init__(self, message: str, nav_state: NavState) -> None:
+        super().__init__(message)
+        self.nav_state = nav_state
+
+
 # ---------------------------------------------------------------------------
 # ROS 2 Node Manager (singleton)
 # ---------------------------------------------------------------------------
@@ -513,10 +527,12 @@ if _HAS_ROS2:
             """
             Navigate to (x, y) using Nav2 if available, else cmd_vel.
 
-            This is a blocking call — it waits for Nav2 to accept the goal
-            but returns immediately. Check nav_state for completion.
-            For the executor/agent, the blocking behavior is intentional:
-            skills execute sequentially.
+            This is a blocking call: it returns once the goal is reached and
+            raises Ros2NavigationError when it is not (goal rejected, aborted
+            or never answered by Nav2, navigation timed out, or cancelled by
+            stop()/emergency_stop() before it finished). For the
+            executor/agent, the blocking behavior is intentional: skills
+            execute sequentially.
             """
             if self._state_machine == RobotState.E_STOPPED:
                 raise RuntimeError("Robot is E_STOPPED; call reset_estop() before moving")
@@ -527,6 +543,25 @@ if _HAS_ROS2:
                 self._move_cmd_vel(x, y, speed)
             if self._state_machine != RobotState.E_STOPPED:
                 self._state_machine = RobotState.IDLE
+            self._raise_if_goal_not_reached(x, y)
+
+        _GOAL_NOT_REACHED = {
+            NavState.FAILED: "was rejected or aborted by Nav2",
+            NavState.TIMED_OUT: "timed out (no answer from Nav2, or navigation took too long)",
+            NavState.CANCELLED: "was cancelled by stop() before the robot reached it",
+        }
+
+        def _raise_if_goal_not_reached(self, x: float, y: float) -> None:
+            """Turn a failed, timed-out or cancelled goal into an exception."""
+            reason = self._GOAL_NOT_REACHED.get(self._nav_state)
+            if reason is None:
+                return
+            pos = self._position
+            raise Ros2NavigationError(
+                f"move to ({x:.2f}, {y:.2f}) {reason}; "
+                f"robot is at ({pos[0]:.2f}, {pos[1]:.2f})",
+                self._nav_state,
+            )
 
         def _move_nav2(self, x: float, y: float, speed: float | None = None) -> None:
             """Send a NavigateToPose goal to Nav2."""
