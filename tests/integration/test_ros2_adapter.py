@@ -181,6 +181,10 @@ def test_direct_move_updates_position(robot):
     x, y = adapter.position
     assert abs(x - 3.0) < 0.5, f"Expected x≈3.0, got {x:.3f}"
     assert abs(y - 0.5) < 0.5, f"Expected y≈0.5, got {y:.3f}"
+    # The Robot API (and the SafetyEnforcer that wraps it) must see the same
+    # pose, not the adapter base class's (0, 0) default.
+    assert robot.get_position() == adapter.position
+    assert robot.get_orientation() == adapter.orientation
 
 
 @pytest.mark.integration
