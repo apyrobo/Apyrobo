@@ -4,8 +4,9 @@
 # TurtleBot3 + apyrobo)
 #
 # The Jazzy counterpart of Dockerfile.gazebo (Humble + Gazebo Classic), built
-# beside it as the first step of the port in docs/gz_sim_port.md. Boots a
-# physics-simulated TurtleBot3 with tests/integration/gz_boot.sh. Not wired
+# beside it for the port in docs/gz_sim_port.md. Boots a physics-simulated
+# TurtleBot3 with tests/integration/gz_boot.sh (cmd_vel only), or the full
+# Nav2 + slam_toolbox stack with tests/integration/gz_nav_boot.sh. Not wired
 # into Compose or CI yet.
 #
 # Build:
@@ -16,12 +17,20 @@
 #      until timeout 5 ros2 topic echo /odom --once >/dev/null 2>&1; do sleep 2; done
 #      APYROBO_GAZEBO=1 pytest -p no:launch_testing -m integration \
 #        tests/integration/test_gazebo_turtlebot.py'
+# Run Nav2 in Gazebo and the NL -> Nav2 end-to-end test in one container:
+#   docker run --rm apyrobo-gz-jazzy:latest bash -c \
+#     'tests/integration/gz_nav_boot.sh > /tmp/boot.log 2>&1 &
+#      until ros2 action list 2>/dev/null | grep -q navigate_to_pose; do sleep 2; done
+#      APYROBO_GAZEBO_NAV=1 pytest -p no:launch_testing -m integration \
+#        tests/integration/test_gazebo_nav2_e2e.py'
 # =============================================================================
 
 FROM ros:jazzy-ros-base
 
 # ros-gz brings Gazebo Harmonic, ros_gz_sim and ros_gz_bridge; the Jazzy
 # turtlebot3-gazebo models carry the gz DiffDrive plugin (/cmd_vel, /odom).
+# Nav2, slam_toolbox and TurtleBot3's Jazzy Nav2 parameters serve
+# gz_nav_boot.sh.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-rclpy \
     ros-jazzy-nav2-msgs \
@@ -30,6 +39,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-ros-gz \
     ros-jazzy-turtlebot3-gazebo \
     ros-jazzy-turtlebot3-description \
+    ros-jazzy-turtlebot3-navigation2 \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-robot-state-publisher \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
