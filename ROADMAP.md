@@ -55,9 +55,9 @@ or a simulator on the other, the safety enforcer in between.
 | Status | Item | Description |
 |--------|------|-------------|
 | :white_check_mark: | **`apyrobo mcp`** | MCP server over stdio: `robot_status`, `list_capabilities`, `move_to`, `rotate`, `stop`, `plan_task`, `execute_task`, `safety_report`. Over-limit speeds clamped and reported, no-go targets refused with a readable error, `stop` always allowed. On `main`, not yet in a PyPI release ([docs/mcp.md](docs/mcp.md)) |
-| :construction: | **One-command try-out** | `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp` today; `uvx apyrobo mcp` after the next release |
-| :construction: | **Scripted demo transcript** | A mock:// session driven over stdio as a client would, committed so anyone can see what the model gets back |
-| :clipboard: | **MCP protocol 2026-07-28** | Negotiate the newest protocol version; today the server answers such clients with 2025-06-18 |
+| :white_check_mark: | **One-command try-out** | `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp` (or `pipx run --spec git+…`), with Claude Code, Claude Desktop and Cursor configs in [docs/mcp.md](docs/mcp.md); `uvx apyrobo mcp` after the next release |
+| :white_check_mark: | **Scripted demo transcript** | [`examples/05_mcp_safety_demo.py`](examples/05_mcp_safety_demo.py) drives a mock:// session over stdio as a client would; its output is committed as [docs/mcp_demo_transcript.md](docs/mcp_demo_transcript.md) and a test fails if they drift apart |
+| :white_check_mark: | **MCP protocol 2026-07-28** | Stateless clients on the newest spec are served (`server/discover`, `tools/list`, `tools/call` with the version in `_meta`, no `initialize`) alongside clients that open with `initialize` (2025-06-18 and earlier); tested against the spec text, not yet with a shipping 2026-07-28 client |
 | :clipboard: | **Human approval for over-limit moves** | Opt-in: ask the user through MCP elicitation instead of clamping silently; clamp when the client can't ask |
 | :clipboard: | **Real robot over MCP** | `apyrobo mcp --robot ros2://…` driving the TurtleBot3/Nav2 Gazebo stack, with an integration test |
 
