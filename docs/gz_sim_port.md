@@ -1,8 +1,12 @@
 # Design note: porting the Gazebo stack to Jazzy + Gazebo Harmonic
 
-**Status:** proposal, nothing ported yet. The CI jobs described below still
-run ROS 2 Humble + Gazebo Classic and stay unchanged until a replacement is
-green beside them.
+**Status:** step 1 done, the rest is a proposal. `docker/Dockerfile.gz-jazzy`
+and `tests/integration/gz_boot.sh` boot a headless Gazebo Harmonic TurtleBot3
+on Jazzy, and `tests/integration/test_gazebo_turtlebot.py` passes against it
+unchanged when run by hand with `docker run` (see the Dockerfile header). It
+is not in Compose or CI yet. The CI jobs described below still run ROS 2
+Humble + Gazebo Classic and stay unchanged until a replacement is green
+beside them.
 
 ## Why
 
@@ -67,12 +71,20 @@ reading docs:
   default on Jazzy and switches to `TwistStamped` (parameter
   `enable_stamped_cmd_vel`) from Kilted on
   ([notice](https://discourse.openrobotics.org/t/notice-nav2-migrated-to-twiststamped-to-replace-twist-for-cmd-vel-topics/40944)).
-  What the Jazzy TurtleBot3 bridge expects on `/cmd_vel` needs checking; if
-  it is `TwistStamped`, the adapter needs a configurable message type
-  before the cmd_vel fallback path can work.
+  **Settled for the sim:** the Jazzy TurtleBot3 package's bridge config
+  (`params/turtlebot3_burger_bridge.yaml`) maps `/cmd_vel` as
+  `TwistStamped`, but the gz DiffDrive plugin takes `gz.msgs.Twist` either
+  way, so `gz_boot.sh` ships its own bridge config with `Twist` on
+  `/cmd_vel` and the adapter needs no change. A real Jazzy TurtleBot3 or a
+  Kilted Nav2 stack may still want `TwistStamped`.
 - **Which TurtleBot3 world and model paths** the Jazzy package installs,
   and whether its URDF still carries the `${namespace}` placeholder that
-  `gazebo_nav_boot.sh` strips.
+  `gazebo_nav_boot.sh` strips. Partly settled: models are under
+  `/opt/ros/jazzy/share/turtlebot3_gazebo/models` and spawn from
+  `model.sdf` with `ros_gz_sim create`. Its worlds include the ground plane
+  and sun from fuel.gazebosim.org, a network fetch at every start, so
+  `gz_boot.sh` uses `tests/integration/gz_empty_world.sdf` with both inline.
+  The URDF question still applies to the Nav2 step.
 - **Startup timing.** The current healthcheck waits for `navigate_to_pose`
   and a first `/map`; Harmonic's startup may need a longer `start_period`.
 - **Runner cost.** GitHub-hosted runners have no GPU; confirm Harmonic's
