@@ -19,6 +19,21 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   tool error. Defaults to `mock://turtlebot4`. Try it without installing:
   `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp`. See
   docs/mcp.md.
+- **`apyrobo mcp` serves MCP 2026-07-28 clients.** Requests that carry the
+  protocol version in `params._meta` are served statelessly
+  (`server/discover`, `tools/list`, `tools/call`, no `initialize`), so a
+  client on the newest spec no longer gets "method not found". Clients that
+  use `initialize` (2025-06-18 and earlier) behave as before. Checked
+  against the spec text; not yet tried with a shipping 2026-07-28 client.
+- **MCP safety demo** (`examples/05_mcp_safety_demo.py`): drives the real
+  server on `mock://turtlebot4` over stdio as a client would (a normal
+  move, a clamped move, a refused no-go move, stop, safety report). Its
+  output is committed as docs/mcp_demo_transcript.md and a test fails if
+  the two drift apart.
+- **Learned-policy safety example** (`examples/04_learned_policy_safety.py`):
+  a LeRobot-shaped stand-in policy (no torch) run through `PolicyRunner`
+  and `SafetyEnforcer` on `mock://`, showing a runaway action clamped and a
+  no-go drift refused. Not a real checkpoint yet.
 - **`vda5050://` — VDA 5050 master-control adapter** (`apyrobo/core/vda5050_adapter.py`,
   `pip install 'apyrobo[vda5050]'`): drive any VDA 5050-compliant AMR over
   MQTT — publishes `order`/`instantActions`, consumes
@@ -27,6 +42,8 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   capabilities. APYROBO's first non-ROS base. Verified against an
   in-process simulated AGV and the full adapter conformance suite;
   physical-fleet validation is tracked as the roadmap Arc 1 gate.
+  It also detects an AGV speaking another VDA 5050 major (e.g. 3.x) and
+  fails with a clear error instead of timing out.
 - **Policy-backed skills** (`apyrobo/skills/policy.py`, `run_policy`
   builtin): run a learned policy (VLA / LeRobot / anything with
   `select_action(obs)`) as a skill-graph node — per-tick step bound
@@ -49,6 +66,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   fresh interpreters (the cold first import is still reported), and a new
   check fails if `import apyrobo` loads an optional heavy dependency such as
   litellm, torch or numpy.
+- **`vda5050://` `move()` no longer reports success after `stop()` or waits
+  out the timeout on a rejected order.** A `stop()` from another thread now
+  fails the blocked `move()`, and an AGV that rejects the order or reports a
+  FATAL error fails it on the first state that shows it. Tested against a
+  simulated AGV, not hardware.
 
 ## [4.1.0] - 2026-07-12
 
