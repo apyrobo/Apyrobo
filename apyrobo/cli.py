@@ -3002,6 +3002,12 @@ def main() -> None:
     p_mcp_config.add_argument("--no-go", dest="cfg_no_go", action="append", default=None,
                               metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
     p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true")
+    p_mcp_config.add_argument("--ssh", dest="cfg_ssh", default=None, metavar="USER@HOST",
+                              help="Start the server on this machine over ssh "
+                                   "(key-based login required)")
+    p_mcp_config.add_argument("--ssh-setup", dest="cfg_ssh_setup", default=None, metavar="PATH",
+                              help="Script on that machine to source first, "
+                                   "e.g. /opt/ros/jazzy/setup.bash")
     p_mcp_selftest = mcp_sub.add_parser(
         "selftest",
         help="Check your install and safety policy on mock:// (moves no robot)",
