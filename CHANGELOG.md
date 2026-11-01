@@ -101,6 +101,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   missing in Claude Desktop, slow first start, where logs go, `ros2://`
   without a sourced ROS 2 or on the wrong `ROS_DOMAIN_ID`), and
   `--policy-file` in the options table.
+- `gz-jazzy-nav` Compose profile: the Nav2 end-to-end test
+  (`tests/integration/test_gazebo_nav2_e2e.py`, unchanged) against
+  ROS 2 Jazzy + Gazebo Harmonic in one command (`docker/docker-compose.yml`,
+  docs/gz_sim_port.md). Not run in CI yet.
 
 ### Fixed
 

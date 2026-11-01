@@ -346,6 +346,74 @@ services:
       - -v
       - --tb=short
 
+  # ---------------------------------------------------------------------------
+  # Nav2 end-to-end on ROS 2 Jazzy + Gazebo Harmonic — profile: gz-jazzy-nav
+  #
+  # The Jazzy counterpart of gazebo-nav (docs/gz_sim_port.md, step 3): the
+  # same unchanged test_gazebo_nav2_e2e.py against Nav2 + slam_toolbox in
+  # Gazebo Harmonic, booted by tests/integration/gz_nav_boot.sh. Own network
+  # so it can run beside the Humble profiles. Not in CI yet.
+  #
+  #   docker compose -f docker/docker-compose.yml --profile gz-jazzy-nav up \
+  #       --build --abort-on-container-exit --exit-code-from gz-jazzy-nav-test \
+  #       gz-jazzy-nav-sim gz-jazzy-nav-test
+  # (naming the two services skips building the unrelated apyrobo-api image)
+  # ---------------------------------------------------------------------------
+  gz-jazzy-nav-sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gz-jazzy
+    image: apyrobo-gz-jazzy:latest
+    container_name: apyrobo-gz-jazzy-nav-sim
+    profiles:
+      - gz-jazzy-nav
+    networks:
+      - gz-jazzy-net
+    environment:
+      ROS_DOMAIN_ID: "43"
+      TURTLEBOT3_MODEL: "burger"
+    command:
+      - bash
+      - tests/integration/gz_nav_boot.sh
+    healthcheck:
+      # Same readiness rule as gazebo-nav-sim: the NavigateToPose action
+      # server is live AND slam_toolbox has published a map.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "source /opt/ros/jazzy/setup.bash && ros2 action list 2>/dev/null | grep -q navigate_to_pose && timeout 10 ros2 topic echo /map --once >/dev/null 2>&1"
+      interval: 10s
+      timeout: 15s
+      retries: 18
+      start_period: 120s
+
+  gz-jazzy-nav-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gz-jazzy
+    image: apyrobo-gz-jazzy:latest
+    container_name: apyrobo-gz-jazzy-nav-test
+    profiles:
+      - gz-jazzy-nav
+    networks:
+      - gz-jazzy-net
+    environment:
+      ROS_DOMAIN_ID: "43"
+      APYROBO_GAZEBO_NAV: "1"
+    depends_on:
+      gz-jazzy-nav-sim:
+        condition: service_healthy
+    command:
+      - pytest
+      - -p
+      - "no:launch_testing"
+      - -m
+      - integration
+      - tests/integration/test_gazebo_nav2_e2e.py
+      - -v
+      - --tb=short
+
   # Cross-language interop showcase (demos/ts_interop): the wire-protocol
   # server in execute mode against the live Nav2 sim, WebSocket exposed to
   # the host so the TypeScript client can drive the robot from outside the
@@ -421,4 +489,6 @@ networks:
   apyrobo-net:
     driver: bridge
   ros2-test-net:
+    driver: bridge
+  gz-jazzy-net:
     driver: bridge

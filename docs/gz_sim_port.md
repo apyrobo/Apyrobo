@@ -1,14 +1,14 @@
 # Design note: porting the Gazebo stack to Jazzy + Gazebo Harmonic
 
-**Status:** steps 1 and 2 done, the rest is a proposal.
+**Status:** steps 1 to 3 done, the rest is a proposal.
 `docker/Dockerfile.gz-jazzy` and `tests/integration/gz_boot.sh` boot a
 headless Gazebo Harmonic TurtleBot3 on Jazzy, and
 `tests/integration/test_gazebo_turtlebot.py` passes against it unchanged.
 `tests/integration/gz_nav_boot.sh` adds the lidar, slam_toolbox and Nav2, and
 `tests/integration/test_gazebo_nav2_e2e.py` (natural-language task to Nav2
-to the robot reaching the goal) passes against it unchanged. Both are run by
-hand with `docker run` (see the Dockerfile header); neither is in Compose or
-CI yet. The CI jobs described below still run ROS 2 Humble + Gazebo Classic
+to the robot reaching the goal) passes against it unchanged. The Nav2 stack
+runs as the `gz-jazzy-nav` Compose profile (step 3); neither stack is in CI
+yet. The CI jobs described below still run ROS 2 Humble + Gazebo Classic
 and stay unchanged until a replacement is green beside them.
 
 ## Why
@@ -69,10 +69,17 @@ Port beside, not in place, so the green Humble jobs keep guarding `main`:
      The script uses TurtleBot3's own Jazzy burger parameters
      (`turtlebot3_navigation2`, DWB at 10 Hz) with `enable_stamped_cmd_vel`
      set to false, so Nav2 publishes `Twist` like the adapter.
-3. **New Compose profile** `gz-jazzy-nav` reusing
+3. **Done: Compose profile** `gz-jazzy-nav` reusing
    `tests/integration/test_gazebo_nav2_e2e.py` unchanged. The test only
    talks to `ros2://`, so it is the acceptance check: the same assertion on
-   a different simulator.
+   a different simulator. It runs on its own network and `ROS_DOMAIN_ID`
+   (43), so it can run beside the Humble profiles:
+
+   ```bash
+   docker compose -f docker/docker-compose.yml --profile gz-jazzy-nav up \
+       --build --abort-on-container-exit --exit-code-from gz-jazzy-nav-test \
+       gz-jazzy-nav-sim gz-jazzy-nav-test
+   ```
 4. **New CI job** `gz-jazzy-nav-e2e`, non-blocking (`continue-on-error`)
    until it has been green on `main` for a week, then required.
 5. **Then** port `gazebo`, `gazebo-nav-interop` and the demo recording,
