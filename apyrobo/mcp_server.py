@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import secrets
 import sys
 import time
@@ -87,7 +88,23 @@ def _num(args: dict[str, Any], key: str, *, required: bool = True) -> float | No
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ToolError(f"Argument '{key}' must be a number, got {value!r}.")
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        number = math.inf
+    if not math.isfinite(number):
+        # JSON parsers accept NaN/Infinity literals and overflow 1e400 to inf;
+        # none of them is a position or a speed. Refuse before the robot moves.
+        raise ToolError(f"Argument '{key}' must be a finite number, got {value!r}.")
+    return number
+
+
+def _move_speed(args: dict[str, Any]) -> float | None:
+    """The optional linear ``speed`` of a move: finite and not negative."""
+    speed = _num(args, "speed", required=False)
+    if speed is not None and speed < 0:
+        raise ToolError(f"Argument 'speed' must be 0 or more m/s, got {speed!r}.")
+    return speed
 
 
 def _str(args: dict[str, Any], key: str) -> str:
@@ -248,7 +265,7 @@ class RobotToolbox:
         p = self.enforcer.policy
         if name == "move_to":
             x, y = _num(arguments, "x"), _num(arguments, "y")
-            speed = _num(arguments, "speed", required=False)
+            speed = _move_speed(arguments)
             from apyrobo.safety.enforcer import SafetyEnforcer
 
             if any(SafetyEnforcer._point_in_zone(x, y, z) for z in p.collision_zones):
@@ -345,7 +362,7 @@ class RobotToolbox:
     def _move_to(self, args: dict[str, Any]) -> dict[str, Any]:
         x = _num(args, "x")
         y = _num(args, "y")
-        speed = _num(args, "speed", required=False)
+        speed = _move_speed(args)
         interventions = self._guarded(lambda: self.enforcer.move(x=x, y=y, speed=speed))
         return {
             "status": "moved",
@@ -810,9 +827,12 @@ class MCPServer:
             if message is _EOF:
                 return
             with contextlib.redirect_stdout(sys.stderr):
-                if isinstance(message, list):
+                if isinstance(message, list) and not message:
+                    # JSON-RPC 2.0: an empty batch is a single Invalid Request.
+                    response: Any = _error(None, INVALID_REQUEST, "Empty batch")
+                elif isinstance(message, list):
                     replies = [r for r in (self.handle(m) for m in message) if r is not None]
-                    response: Any = replies or None
+                    response = replies or None
                 else:
                     response = self.handle(message)
             if response is not None:
