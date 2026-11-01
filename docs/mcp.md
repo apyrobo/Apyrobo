@@ -253,6 +253,32 @@ the wrapped command above or in the client's `env` block
 `claude mcp add -e ROS_DOMAIN_ID=30 …` for Claude Code). Check from the same
 shell with `ros2 topic echo /odom --once`.
 
+## How APYROBO fits with other robot MCP servers
+
+Several MCP servers let a model drive a robot. They solve different problems,
+and you can pick by what you are driving. This table states only what each
+project's README and code show on their main branch, checked 1 November 2026;
+open an issue if it has gone stale.
+
+| | What it drives | Speed limits | No-go zones | Asks a human to confirm | Try without a robot | Install |
+|---|---|---|---|---|---|---|
+| [ROS-MCP Server](https://github.com/robotmcp/ros-mcp-server) | Any ROS 1 or ROS 2 robot through rosbridge: topics, services, actions, parameters, camera images | None in the server | None in the server | No | Examples use turtlesim or Isaac Sim (ROS needed) | `uvx ros-mcp`, plus rosbridge on the robot |
+| [Nav2 MCP Server](https://github.com/ajtudela/nav2_mcp_server) | Nav2 on ROS 2 Jazzy: `navigate_to_pose`, `follow_waypoints`, spin, back up, dock, costmaps, lifecycle | Back-up speed capped at 1.0 m/s; navigation speed is whatever Nav2's controller is configured for | None in the server | No | Needs ROS 2 and Nav2 (robot or sim) | `git clone` + `uv sync`, or its Docker image |
+| [armguard-mcp](https://github.com/Lynn-hh/armguard-mcp) | ROS 2 robot arms (MoveIt 2, `ros2_control`; Franka FR3): plan, preview, execute | Speed and step-size caps, plus joint, force and rate limits | Workspace box and keep-out zones | Yes, via MCP elicitation, for moves outside the envelope | Bundled simulated Franka FR3, no ROS | `uvx armguard-mcp` |
+| APYROBO (`apyrobo mcp`) | Mobile robots: `mock://`, or a ROS 2 robot through Nav2 (`ros2://`) | Clamped to `--max-speed` (and `max_angular_speed` in a `--policy-file`) | Rectangles from `--no-go` or `--policy-file`; moves into them are refused | Opt-in `--confirm-moves`, via MCP elicitation; refuses motion if the client can't ask | `mock://turtlebot4`, no ROS | `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp` (`uvx apyrobo mcp` after the next release) |
+
+In short:
+
+- **A robot arm:** armguard-mcp is built for manipulators; APYROBO is not.
+- **Full ROS access** (inspect and call any topic, service or parameter):
+  ROS-MCP Server.
+- **Nav2's actions as tools:** Nav2 MCP Server gives an agent Nav2's actions;
+  APYROBO puts speed limits, no-go zones and confirmation in front of the
+  robot.
+- **A mobile robot where the model must stay inside limits you set:**
+  APYROBO, and you can try the limits on `mock://` before connecting the real
+  robot.
+
 ## What this does and doesn't guarantee
 
 The enforcer checks each command against the policy you set (speed limits and
