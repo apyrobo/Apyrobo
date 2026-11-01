@@ -115,6 +115,20 @@ into your config yourself. Without installing, run it as
 
 If the tools don't show up, see [Troubleshooting](#troubleshooting).
 
+### Check your limits first
+
+`apyrobo mcp selftest` takes the same policy flags as the server and prints
+what they do on `mock://`, before you touch a client config. It lists the
+tools, runs a normal move, shows an over-limit move clamped to your limit, and
+tries a move into each no-go zone. It exits 0 if all of that held, 1 if not.
+
+```bash
+apyrobo mcp selftest --max-speed 0.5 --no-go 2,2,4,4
+```
+
+It refuses any robot other than `mock://`, so it cannot move hardware. It does
+not exercise `--confirm-moves`, which needs a client that can ask you.
+
 ## Tools
 
 | Tool | Moves the robot | What it does |
