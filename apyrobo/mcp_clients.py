@@ -45,6 +45,7 @@ def server_args(
     policy_file: str | None = None,
     max_speed: float | None = None,
     no_go: Sequence[str] | None = None,
+    confirm_moves: bool = False,
 ) -> list[str]:
     """The ``apyrobo mcp`` flags to pass through, in a stable order.
 
@@ -70,6 +71,8 @@ def server_args(
     for zone in no_go or []:
         parse_zone(zone)  # fail now, not when the client starts the server
         out += ["--no-go", zone.replace(" ", "")]
+    if confirm_moves:
+        out.append("--confirm-moves")
     return out
 
 
@@ -175,6 +178,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
             policy_file=getattr(args, "cfg_policy_file", None),
             max_speed=getattr(args, "cfg_max_speed", None),
             no_go=getattr(args, "cfg_no_go", None),
+            confirm_moves=bool(getattr(args, "cfg_confirm_moves", False)),
         )
         launch = resolve_launch(flags, getattr(args, "launcher", "auto") or "auto", which)
         client = args.client
