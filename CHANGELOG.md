@@ -104,7 +104,8 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `gz-jazzy-nav` Compose profile: the Nav2 end-to-end test
   (`tests/integration/test_gazebo_nav2_e2e.py`, unchanged) against
   ROS 2 Jazzy + Gazebo Harmonic in one command (`docker/docker-compose.yml`,
-  docs/gz_sim_port.md). Not run in CI yet.
+  docs/gz_sim_port.md). CI runs it as the non-blocking `gz-jazzy-nav-e2e`
+  job beside the required Humble + Gazebo Classic job.
 
 ### Fixed
 

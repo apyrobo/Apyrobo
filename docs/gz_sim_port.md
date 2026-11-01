@@ -1,15 +1,16 @@
 # Design note: porting the Gazebo stack to Jazzy + Gazebo Harmonic
 
-**Status:** steps 1 to 3 done, the rest is a proposal.
+**Status:** steps 1 to 4 done, the rest is a proposal.
 `docker/Dockerfile.gz-jazzy` and `tests/integration/gz_boot.sh` boot a
 headless Gazebo Harmonic TurtleBot3 on Jazzy, and
 `tests/integration/test_gazebo_turtlebot.py` passes against it unchanged.
 `tests/integration/gz_nav_boot.sh` adds the lidar, slam_toolbox and Nav2, and
 `tests/integration/test_gazebo_nav2_e2e.py` (natural-language task to Nav2
 to the robot reaching the goal) passes against it unchanged. The Nav2 stack
-runs as the `gz-jazzy-nav` Compose profile (step 3); neither stack is in CI
-yet. The CI jobs described below still run ROS 2 Humble + Gazebo Classic
-and stay unchanged until a replacement is green beside them.
+runs as the `gz-jazzy-nav` Compose profile (step 3) and as the non-blocking
+`gz-jazzy-nav-e2e` CI job (step 4). The required CI jobs described below
+still run ROS 2 Humble + Gazebo Classic and stay unchanged until the Jazzy
+job has been green beside them.
 
 ## Why
 
@@ -80,8 +81,10 @@ Port beside, not in place, so the green Humble jobs keep guarding `main`:
        --build --abort-on-container-exit --exit-code-from gz-jazzy-nav-test \
        gz-jazzy-nav-sim gz-jazzy-nav-test
    ```
-4. **New CI job** `gz-jazzy-nav-e2e`, non-blocking (`continue-on-error`)
-   until it has been green on `main` for a week, then required.
+4. **Done: CI job** `gz-jazzy-nav-e2e` in
+   `.github/workflows/integration.yml` runs the step 3 profile,
+   non-blocking (`continue-on-error`) until it has been green on `main` for
+   a week, then required.
 5. **Then** port `gazebo`, `gazebo-nav-interop` and the demo recording,
    update `README_gazebo.md` and the roadmap, and retire the Classic jobs in
    a separate PR.

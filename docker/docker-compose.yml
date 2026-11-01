@@ -352,7 +352,8 @@ services:
   # The Jazzy counterpart of gazebo-nav (docs/gz_sim_port.md, step 3): the
   # same unchanged test_gazebo_nav2_e2e.py against Nav2 + slam_toolbox in
   # Gazebo Harmonic, booted by tests/integration/gz_nav_boot.sh. Own network
-  # so it can run beside the Humble profiles. Not in CI yet.
+  # so it can run beside the Humble profiles. CI: gz-jazzy-nav-e2e
+  # (non-blocking) in .github/workflows/integration.yml.
   #
   #   docker compose -f docker/docker-compose.yml --profile gz-jazzy-nav up \
   #       --build --abort-on-container-exit --exit-code-from gz-jazzy-nav-test \
