@@ -6,8 +6,8 @@
 # The Jazzy counterpart of Dockerfile.gazebo (Humble + Gazebo Classic), built
 # beside it for the port in docs/gz_sim_port.md. Boots a physics-simulated
 # TurtleBot3 with tests/integration/gz_boot.sh (cmd_vel only), or the full
-# Nav2 + slam_toolbox stack with tests/integration/gz_nav_boot.sh. Not wired
-# into Compose or CI yet.
+# Nav2 + slam_toolbox stack with tests/integration/gz_nav_boot.sh. The Nav2
+# stack also runs as the gz-jazzy-nav Compose profile; not in CI yet.
 #
 # Build:
 #   docker build -f docker/Dockerfile.gz-jazzy -t apyrobo-gz-jazzy:latest .
