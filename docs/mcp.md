@@ -115,6 +115,41 @@ into your config yourself. Without installing, run it as
 
 If the tools don't show up, see [Troubleshooting](#troubleshooting).
 
+### Client on your laptop, robot elsewhere
+
+ROS 2 usually runs on the robot and the MCP client on a laptop. MCP over stdio
+crosses that gap through plain ssh, with no port to open:
+
+```bash
+apyrobo mcp config claude-desktop --ssh ubuntu@robot.local \
+    --ssh-setup /opt/ros/jazzy/setup.bash \
+    --robot ros2:// --max-speed 0.5 --no-go 2,2,4,4
+```
+
+prints a config whose `command` is `ssh` (`-T`, `BatchMode=yes`) running
+`apyrobo mcp` on the robot, so the safety policy is enforced there. What's
+different from a local config:
+
+- **Key-based login is required.** Nothing can answer a password prompt over
+  stdio. `ssh -o BatchMode=yes ubuntu@robot.local true` must succeed on the
+  laptop first.
+- **`apyrobo` must be installed on the robot** and on the `PATH` of a
+  non-interactive ssh shell. `--ssh-setup PATH` names a script on the robot to
+  source first: a non-interactive shell has not sourced ROS 2, and `ros2://`
+  needs it. Add your own `export PATH=…` to a script of yours if `apyrobo` is
+  in `~/.local/bin`. `--launcher uvx` runs `uvx` on the robot instead.
+- **`--policy-file` is a path on the robot,** absolute, and isn't checked from
+  the laptop. The other flags are checked as usual.
+- **A custom port** goes in `~/.ssh/config` (`Host`, `Port`); `--ssh` takes the
+  host name.
+- **Nothing on the robot's `stdout` but the server.** A start-up file that
+  prints text breaks the MCP stream.
+
+Run the printed `ssh` command in a terminal first: the server's start-up line
+appears, then it waits for a client. Losing the link does not stop the robot:
+the server sends no stop when its client goes away, so a Nav2 goal already
+accepted keeps going. Keep your robot's own e-stop within reach.
+
 ### Check your limits first
 
 `apyrobo mcp selftest` takes the same policy flags as the server and prints

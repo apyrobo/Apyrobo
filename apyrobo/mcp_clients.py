@@ -5,6 +5,10 @@
 machine (GUI clients such as Claude Desktop and Cursor do not read your
 shell's PATH) and the config file location for this operating system.
 
+With ``--ssh user@host`` the client on your laptop starts ``apyrobo mcp`` on
+the robot over ssh instead, so MCP's stdio transport needs no new port or
+transport. The server, and so the safety policy, runs on the robot.
+
 It only prints. It never reads or writes the user's config files.
 """
 
@@ -12,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -26,6 +31,19 @@ GIT_SOURCE = "git+https://github.com/apyrobo/Apyrobo"
 
 CLIENTS = ("claude-desktop", "cursor", "claude-code")
 LAUNCHERS = ("auto", "uvx", "apyrobo")
+
+#: ssh options for an unattended stdio pipe. BatchMode makes a missing key fail
+#: at once: over stdio there is nobody to answer a password prompt.
+SSH_OPTIONS = (
+    "-T",
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=10",
+    "-o", "ServerAliveInterval=5",
+    "-o", "ServerAliveCountMax=3",
+)
+
+_SSH_TARGET = re.compile(r"[A-Za-z0-9_.\[\]:%-]+(@[A-Za-z0-9_.\[\]:%-]+)?(?<![:@])\Z")
+_HOST_WITH_PORT = re.compile(r"(.*@)?[^:]+:\d+\Z")
 
 Which = Callable[[str], str | None]
 
@@ -46,11 +64,14 @@ def server_args(
     max_speed: float | None = None,
     no_go: Sequence[str] | None = None,
     confirm_moves: bool = False,
+    remote: bool = False,
 ) -> list[str]:
     """The ``apyrobo mcp`` flags to pass through, in a stable order.
 
     ``policy_file`` is made absolute because a GUI client starts the server
-    from its own working directory, not yours.
+    from its own working directory, not yours. With ``remote`` the server runs
+    on another machine, so the path is the robot's: it cannot be checked here
+    and must already be absolute.
     """
     from apyrobo.mcp_server import parse_zone
 
@@ -59,7 +80,9 @@ def server_args(
         out += ["--robot", robot]
     if policy:
         out += ["--policy", policy]
-    if policy_file:
+    if policy_file and remote:
+        out += ["--policy-file", _remote_path(policy_file, "--policy-file")]
+    elif policy_file:
         path = Path(policy_file).expanduser().resolve()
         if not path.is_file():
             raise ValueError(f"policy file not found: {policy_file}")
@@ -115,6 +138,64 @@ def resolve_launch(
     ))
 
 
+def _remote_path(path: str, flag: str) -> str:
+    if not path.startswith("/"):
+        raise ValueError(f"with --ssh, {flag} is a path on the robot and must be "
+                         f"absolute, got {path!r}")
+    return path
+
+
+def check_ssh_target(target: str) -> str:
+    """Validate ``user@host``, so it can't be read as an ssh option."""
+    if target.startswith("-") or not _SSH_TARGET.match(target):
+        raise ValueError(f"--ssh expects user@host or a host name, got {target!r}")
+    if _HOST_WITH_PORT.match(target):
+        raise ValueError(f"--ssh takes no port ({target!r}): give the host a Port "
+                         "in ~/.ssh/config and use its name")
+    return target
+
+
+def remote_command(
+    flags: list[str], launcher: str = "auto", setup: str | None = None
+) -> str:
+    """The one string ssh hands to the robot's shell.
+
+    ssh joins its arguments with spaces and the remote shell parses the result,
+    so this is quoted here, once. ``setup`` is sourced in bash first, for what a
+    non-interactive ssh shell lacks: ROS 2 most of all.
+    """
+    if launcher == "uvx":
+        argv = ["uvx", "--from", GIT_SOURCE, "apyrobo", "mcp", *flags]
+    else:
+        argv = ["apyrobo", "mcp", *flags]
+    command = shlex.join(argv)
+    if setup is None:
+        return command
+    script = f". {shlex.quote(_remote_path(setup, '--ssh-setup'))} && exec {command}"
+    return shlex.join(["bash", "-c", script])
+
+
+def resolve_ssh_launch(
+    target: str,
+    flags: list[str],
+    launcher: str = "auto",
+    setup: str | None = None,
+    which: Which = shutil.which,
+) -> Launch:
+    """Start ``apyrobo mcp`` on another machine through this machine's ssh."""
+    if launcher not in LAUNCHERS:
+        raise ValueError(f"unknown launcher {launcher!r}; choose one of {', '.join(LAUNCHERS)}")
+    check_ssh_target(target)
+    args = [*SSH_OPTIONS, target, remote_command(flags, launcher, setup)]
+    ssh = which("ssh")
+    if ssh:
+        return Launch(str(Path(ssh).resolve()), args)
+    return Launch("ssh", args, note=(
+        "ssh was not found on PATH, so the config uses the bare name 'ssh'. "
+        "Install an OpenSSH client, then replace it with its absolute path."
+    ))
+
+
 def config_location(client: str, platform: str | None = None) -> str:
     """Where this client keeps its MCP config, in words, for this OS."""
     platform = platform or sys.platform
@@ -166,24 +247,50 @@ def hints(client: str, launch: Launch, platform: str | None = None) -> list[str]
     return lines
 
 
+def ssh_hints(target: str, robot: str | None) -> list[str]:
+    """What an ssh config needs that a local one does not."""
+    lines = [
+        f"Needs key-based login, with no passphrase prompt: 'ssh -o BatchMode=yes "
+        f"{target} true' must work from this machine.",
+        "The server runs on the robot, so apyrobo must be installed there and any "
+        "--policy-file path is the robot's.",
+    ]
+    if not robot:
+        lines.append("No --robot given, so the server on the robot uses its default, "
+                     "mock://turtlebot4.")
+    return lines
+
+
 def main(args: argparse.Namespace, stdout: TextIO | None = None,
          stderr: TextIO | None = None, which: Which = shutil.which) -> int:
     """Entry point for ``apyrobo mcp config``. Returns the exit code."""
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
+    ssh = getattr(args, "cfg_ssh", None)
+    setup = getattr(args, "cfg_ssh_setup", None)
+    robot = getattr(args, "cfg_robot", None)
     try:
+        if setup and not ssh:
+            raise ValueError("--ssh-setup needs --ssh")
         flags = server_args(
-            robot=getattr(args, "cfg_robot", None),
+            robot=robot,
             policy=getattr(args, "cfg_policy", None),
             policy_file=getattr(args, "cfg_policy_file", None),
             max_speed=getattr(args, "cfg_max_speed", None),
             no_go=getattr(args, "cfg_no_go", None),
             confirm_moves=bool(getattr(args, "cfg_confirm_moves", False)),
+            remote=bool(ssh),
         )
-        launch = resolve_launch(flags, getattr(args, "launcher", "auto") or "auto", which)
+        launcher = getattr(args, "launcher", "auto") or "auto"
+        if ssh:
+            launch = resolve_ssh_launch(ssh, flags, launcher, setup, which)
+        else:
+            launch = resolve_launch(flags, launcher, which)
         client = args.client
         text = render(client, launch, name=getattr(args, "name", None) or "apyrobo")
         notes = hints(client, launch)
+        if ssh:
+            notes += ssh_hints(ssh, robot)
     except ValueError as exc:
         print(f"Error: {exc}", file=stderr)
         return 1
@@ -194,6 +301,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
 
 
 __all__ = [
-    "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "config_location", "hints",
-    "main", "render", "resolve_launch", "server_args",
+    "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "SSH_OPTIONS", "check_ssh_target",
+    "config_location", "hints", "main", "remote_command", "render", "resolve_launch",
+    "resolve_ssh_launch", "server_args", "ssh_hints",
 ]
