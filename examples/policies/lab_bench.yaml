@@ -1,0 +1,38 @@
+# Example safety policy: a mobile robot sharing a lab with a robot arm.
+#
+# Use it with:   apyrobo mcp --policy-file examples/policies/lab_bench.yaml
+# Copy it first and replace the numbers with measurements from your own lab.
+#
+# How the checks work (read this before you rely on it):
+#   - Every zone is an axis-aligned rectangle in the robot's map frame, in metres.
+#     Circles, polygons and rotated rectangles are not supported.
+#   - A move is refused when its TARGET point is inside a zone. The path to the
+#     target is not checked, so add a margin around the arm's reach.
+#   - Speeds above max_speed are clamped down to it, not refused.
+#   - This file limits where the MOBILE robot is sent. It does not stop the arm.
+#   - Flags on the command line win: --max-speed replaces max_speed, and each
+#     --no-go adds a zone on top of the ones listed here.
+
+name: lab-bench
+
+# "strict" starts at 0.5 m/s and 1.0 rad/s and ramps speed up and down gently.
+base: strict
+
+# Slower than strict's 0.5 m/s: people work at the benches.
+max_speed: 0.3
+
+max_angular_speed: 0.8
+
+no_go_zones:
+  # The arm's full reach (0.85 m) plus a 0.4 m margin, around its base at (3.0, 1.5).
+  - name: arm-workcell
+    x_min: 1.75
+    y_min: 0.25
+    x_max: 4.25
+    y_max: 2.75
+  # Fume hood: keep the doorway clear.
+  - name: fume-hood
+    x_min: 7.0
+    y_min: 0.0
+    x_max: 8.5
+    y_max: 1.2

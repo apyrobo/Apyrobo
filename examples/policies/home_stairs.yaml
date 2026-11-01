@@ -1,0 +1,38 @@
+# Example safety policy: a home robot that must stay away from the stairs.
+#
+# Use it with:   apyrobo mcp --policy-file examples/policies/home_stairs.yaml
+# Copy it first and replace the numbers with measurements from your own map.
+#
+# How the checks work (read this before you rely on it):
+#   - Every zone is an axis-aligned rectangle in the robot's map frame, in metres.
+#     Circles, polygons and rotated rectangles are not supported.
+#   - A move is refused when its TARGET point is inside a zone. The path to the
+#     target is not checked, and nothing here detects a drop: keep the robot's
+#     own cliff sensors on. A no-go zone at the top of the stairs is a second
+#     line of defence, not the only one.
+#   - Speeds above max_speed are clamped down to it, not refused.
+#   - Flags on the command line win: --max-speed replaces max_speed, and each
+#     --no-go adds a zone on top of the ones listed here.
+
+name: home-stairs
+
+base: default
+
+# Slow enough for pets and small children to get out of the way.
+max_speed: 0.4
+
+max_angular_speed: 1.0
+
+no_go_zones:
+  # Top landing of the staircase, with a 0.5 m margin before the first step.
+  - name: stairs-top
+    x_min: 5.0
+    y_min: 2.0
+    x_max: 6.5
+    y_max: 4.0
+  # Bathroom: wet floor and cables.
+  - name: bathroom
+    x_min: -4.0
+    y_min: 3.0
+    x_max: -1.5
+    y_max: 6.0
