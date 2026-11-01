@@ -1,0 +1,47 @@
+# Example safety policy: a warehouse aisle with a loading dock.
+#
+# Use it with:   apyrobo mcp --policy-file examples/policies/warehouse_aisle.yaml
+# Copy it first and replace the numbers with measurements from your own map.
+#
+# How the checks work (read this before you rely on it):
+#   - Every zone is an axis-aligned rectangle in the robot's map frame, in metres.
+#     Circles, polygons and rotated rectangles are not supported; cover an odd
+#     shape with a few rectangles.
+#   - A move is refused when its TARGET point is inside a zone. The straight line
+#     or planned path to the target is not checked, so keep zones generous and
+#     let your navigation stack (e.g. Nav2 keepout filters) handle routing.
+#   - Speeds above max_speed are clamped down to it, not refused.
+#   - Flags on the command line win: --max-speed replaces max_speed, and each
+#     --no-go adds a zone on top of the ones listed here.
+
+# Shown in the server's startup line and in safety_report.
+name: warehouse-aisle
+
+# Policy to start from: "default" (1.5 m/s, 2.0 rad/s) or "strict"
+# (0.5 m/s, 1.0 rad/s, gentle speed ramps). Values below override it.
+base: default
+
+# Top linear speed in m/s. Faster requests are clamped to this.
+# Walking pace is about 1.4 m/s; people share this aisle, so stay well below it.
+max_speed: 0.8
+
+# Top turning speed in rad/s (about 57 degrees per second at 1.0).
+max_angular_speed: 1.0
+
+# Rectangles the robot must never be sent into.
+# Each one: an optional name (it appears in refusal messages) and its corners.
+no_go_zones:
+  # Forklifts load trucks here.
+  - name: loading-dock
+    x_min: 20.0
+    y_min: -3.0
+    x_max: 26.0
+    y_max: 3.0
+  # Battery charging bay for the forklifts.
+  - name: charging-bay
+    x_min: 0.0
+    y_min: 8.0
+    x_max: 4.0
+    y_max: 11.0
+  # The short string form works too: "x_min,y_min,x_max,y_max" (no name).
+  - "12.0,-6.0,14.0,-4.0"
