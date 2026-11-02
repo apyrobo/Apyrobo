@@ -269,6 +269,43 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
     )
 
 
+# Spans the whole world between the robot and GOAL, so every route to GOAL
+# crosses it while GOAL itself stays outside. The route check runs after the
+# MCP leg above has brought the robot back to START.
+ROUTE_NO_GO = (-1.7, -50.0, -1.5, 50.0)
+
+
+@pytest.mark.integration
+def test_mcp_refuses_a_goal_whose_nav2_route_crosses_a_zone(robot):
+    """Nav2's planned route is checked: the target is clear, the way there is not."""
+    adapter = robot._adapter
+    start = adapter.position
+    assert start[0] < ROUTE_NO_GO[0], f"robot is not behind the zone: {start}"
+    cmd = [
+        sys.executable, "-m", "apyrobo", "--verbose", "mcp",
+        "--robot", "ros2://burger",
+        "--no-go", ",".join(str(v) for v in ROUTE_NO_GO),
+    ]
+    with tempfile.TemporaryFile(mode="w+") as log:
+        client = _StdioMCPClient(cmd, stderr=log)
+        try:
+            client.request("initialize", {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "apyrobo-nav2-e2e", "version": "1.0"},
+            })
+            is_error, refused = client.call_tool("move_to", {"x": GOAL[0], "y": GOAL[1]})
+        finally:
+            client.close()
+        log.seek(0)
+        server_log = log.read()
+    assert is_error and "crosses collision zone" in refused["error"], (
+        f"a route through the zone was not refused: {refused}\n" + server_log[-2000:]
+    )
+    assert "Nav2: sending goal" not in server_log, "the goal reached Nav2 despite the refusal"
+    assert _dist(start, adapter.position) < 0.15, "robot moved after a refused command"
+
+
 @pytest.mark.integration
 def test_stop_after_nav_is_safe(robot):
     """stop() stays safe and the adapter queryable after Nav2 activity."""
