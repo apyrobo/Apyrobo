@@ -28,12 +28,14 @@ Exit code: 0 when every check passes, 1 otherwise.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -188,20 +190,36 @@ def drive_mcp(cmd: list[str], timeout: float = 60.0,
     ]
     stdin = "".join(json.dumps(m) + "\n" for m in messages)
     try:
-        proc = subprocess.run(
-            cmd, input=stdin, capture_output=True, text=True, timeout=timeout,
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except OSError as exc:
         return [Check("apyrobo mcp starts", False, str(exc))]
-
+    # The server refuses moves once stdin closes, so hold it open like a real
+    # client until the last reply is in.
+    watchdog = threading.Timer(timeout, proc.kill)
+    watchdog.start()
     replies: dict[Any, dict[str, Any]] = {}
-    for line in proc.stdout.splitlines():
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(msg, dict) and "id" in msg:
-            replies[msg["id"]] = msg
+    try:
+        with contextlib.suppress(OSError):
+            proc.stdin.write(stdin)
+            proc.stdin.flush()
+        for line in proc.stdout:
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(msg, dict) and "id" in msg:
+                replies[msg["id"]] = msg
+            if 3 in replies:
+                break
+    finally:
+        with contextlib.suppress(OSError):
+            proc.stdin.close()
+        stderr = proc.stderr.read()
+        proc.wait()
+        watchdog.cancel()
 
     checks: list[Check] = []
     init = replies.get(1, {}).get("result") or {}
@@ -215,7 +233,7 @@ def drive_mcp(cmd: list[str], timeout: float = 60.0,
             f", expected {expected_version}"
             if expected_version and reported != expected_version else ""))
         if server_info else
-        (proc.stderr.strip().splitlines() or ["no reply"])[-1],
+        (stderr.strip().splitlines() or ["no reply"])[-1],
     ))
 
     tools = [t.get("name") for t in (replies.get(2, {}).get("result") or {}).get("tools", [])]
