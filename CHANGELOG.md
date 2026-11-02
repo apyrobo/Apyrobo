@@ -11,6 +11,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- **Moves that cross a no-go zone are refused, not only moves that end in
+  one.** On adapters that drive straight (`mock://`, `gazebo_native://`,
+  `mujoco://`, `ros2://` without Nav2 and others without a planner) the
+  `SafetyEnforcer` checks the line from the current position to the target
+  against static and dynamic zones. `ros2://` with Nav2 is not route-checked,
+  since Nav2 picks the route; adapters declare this with `plans_own_path`.
+  A robot already inside a zone may leave it. With zones set, a position that
+  cannot be read refuses the move. `apyrobo mcp selftest` checks a crossing
+  move for each zone, and `--confirm-moves` no longer asks about such a move.
 - **`apyrobo mcp` — MCP server** (`apyrobo/mcp_server.py`, no extra
   dependencies): lets Claude, Cursor or any MCP client inspect, plan and
   drive a robot over stdio, with every motion command passed through the

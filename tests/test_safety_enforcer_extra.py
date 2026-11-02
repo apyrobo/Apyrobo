@@ -345,7 +345,7 @@ class TestCollisionZoneEnforcementExtra:
         zone = {"x_min": 0.0, "x_max": 5.0, "y_min": 0.0, "y_max": 5.0}
         policy = SafetyPolicy(name="zone_test", collision_zones=[zone])
         enforcer = SafetyEnforcer(mock_robot, policy=policy)
-        enforcer.move(x=10.0, y=10.0)  # should not raise
+        enforcer.move(x=-10.0, y=-10.0)  # should not raise
 
     def test_add_zone_creates_audit(self, mock_robot: Robot) -> None:
         # Use a fresh isolated policy so we don't mutate the shared DEFAULT_POLICY

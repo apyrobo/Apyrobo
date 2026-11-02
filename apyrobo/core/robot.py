@@ -108,6 +108,11 @@ class Robot:
     # State queries
     # ------------------------------------------------------------------
 
+    @property
+    def plans_own_path(self) -> bool:
+        """True when the adapter's planner picks the route, not a straight line."""
+        return getattr(self._adapter, "plans_own_path", False) is True
+
     def get_position(self) -> tuple[float, float]:
         """Return the robot's current (x, y) position."""
         return self._adapter.get_position()

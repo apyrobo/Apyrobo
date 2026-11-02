@@ -19,11 +19,12 @@ Features (SF-01 through SF-12):
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, NoReturn
 
 from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import SafetyPolicyRef, RobotCapability
@@ -218,6 +219,46 @@ POLICY_REGISTRY: dict[str, SafetyPolicy] = {
 # Safety Enforcer
 # ---------------------------------------------------------------------------
 
+def segment_enters_zone(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    zone: dict[str, Any],
+) -> bool:
+    """
+    True if the straight line from ``start`` to ``end`` enters ``zone``.
+
+    Liang-Barsky clipping against the rectangle, edges included as in
+    ``SafetyEnforcer._point_in_zone``. A start strictly inside the zone is
+    never "entering": a robot that is already in a zone may drive out of it.
+    A start on the edge may leave, but not drive in across the zone.
+    """
+    x0, y0 = start
+    dx, dy = end[0] - x0, end[1] - y0
+    x_min = zone.get("x_min", float("-inf"))
+    x_max = zone.get("x_max", float("inf"))
+    y_min = zone.get("y_min", float("-inf"))
+    y_max = zone.get("y_max", float("inf"))
+
+    if x_min < x0 < x_max and y_min < y0 < y_max:
+        return False
+
+    t_in, t_out = 0.0, 1.0
+    for p, q in (
+        (-dx, x0 - x_min), (dx, x_max - x0),
+        (-dy, y0 - y_min), (dy, y_max - y0),
+    ):
+        if p == 0:
+            if q < 0:
+                return False
+        elif p < 0:
+            t_in = max(t_in, q / p)
+        else:
+            t_out = min(t_out, q / p)
+        if t_in > t_out:
+            return False
+    return t_out > 0.0
+
+
 class SafetyEnforcer:
     """
     Wraps a Robot and enforces safety constraints on every command.
@@ -336,10 +377,12 @@ class SafetyEnforcer:
         Enforcements (in order):
             1. Battery check (SF-10)
             2. Speed clamping + speed profile (SF-06)
-            3. Static collision zone check
-            4. Dynamic collision zone check (SF-07)
-            5. Human proximity check (SF-02)
-            6. Move timeout (SF-01)
+            3. Static collision zone check (target)
+            4. Dynamic collision zone check (SF-07, target)
+            5. Path check: the straight line to the target must not enter a
+               zone, unless the adapter plans its own route
+            6. Human proximity check (SF-02)
+            7. Move timeout (SF-01)
         """
         self._reject_bad_numbers("move", x=x, y=y, speed=speed)
         if speed is not None and speed < 0:
@@ -433,6 +476,9 @@ class SafetyEnforcer:
                     raise SafetyViolation(
                         f"Position ({x}, {y}) blocked by dynamic obstacle zone: {zone}"
                     )
+
+        # --- Path check: a safe target does not make a safe route ---
+        self._check_path(x, y)
 
         # --- SF-02: Human proximity enforcement ---
         if self._world_state is not None:
@@ -835,6 +881,69 @@ class SafetyEnforcer:
     # SF-07: Dynamic collision zones from WorldState
     # ------------------------------------------------------------------
 
+    def crossed_zone(self, x: float, y: float) -> dict[str, Any] | None:
+        """
+        Return the first zone the straight line to (x, y) enters, or None.
+
+        Returns None when the adapter plans its own route, since the straight
+        line then says nothing about where the robot will drive. Raises
+        SafetyViolation when zones are set and the position cannot be read,
+        because the route cannot be checked from an unknown start.
+        """
+        if getattr(self._robot, "plans_own_path", False) is True:
+            return None
+        zones = list(self._policy.collision_zones)
+        if self._world_state is not None:
+            zones += self._get_dynamic_zones()
+        if not zones:
+            return None
+        start = self._read_position()
+        for zone in zones:
+            if segment_enters_zone(start, (x, y), zone):
+                return zone
+        return None
+
+    def _read_position(self) -> tuple[float, float]:
+        """Current position as two finite floats, or SafetyViolation."""
+        try:
+            px, py = self._robot.get_position()
+            start = (float(px), float(py))
+        except Exception as exc:
+            self._reject_path(f"Cannot check the route: position unavailable ({exc})")
+        if not all(math.isfinite(v) for v in start):
+            self._reject_path(f"Cannot check the route: position is {start}")
+        return start
+
+    def _reject_path(self, message: str) -> NoReturn:
+        violation = {"type": "path_unchecked", "reason": message}
+        self._violations.append(violation)
+        self._record_audit("violation", violation)
+        raise SafetyViolation(message)
+
+    def _check_path(self, x: float, y: float) -> None:
+        """Refuse a move whose straight line enters a collision zone."""
+        zone = self.crossed_zone(x, y)
+        if zone is None:
+            return
+        start = self._read_position()
+        violation = {
+            "type": "collision_zone_path",
+            "start": start,
+            "requested_position": (x, y),
+            "zone": zone,
+        }
+        self._violations.append(violation)
+        self._record_audit("violation", violation)
+        logger.error(
+            "SAFETY: Command REJECTED — path (%.2f, %.2f) -> (%.2f, %.2f) enters "
+            "collision zone %s (policy: %s)",
+            start[0], start[1], x, y, zone, self._policy.name,
+        )
+        raise SafetyViolation(
+            f"Path from ({start[0]:g}, {start[1]:g}) to ({x:g}, {y:g}) "
+            f"crosses collision zone: {zone}"
+        )
+
     def _get_dynamic_zones(self) -> list[dict[str, float]]:
         """
         Convert WorldState obstacles into rectangular collision zones.
@@ -858,8 +967,15 @@ class SafetyEnforcer:
             })
         return zones
 
+    def _own_policy(self) -> None:
+        """Copy a built-in policy before editing it, so no other robot sees the edit."""
+        if self._policy is POLICY_REGISTRY.get(self._policy.name):
+            self._policy = copy.copy(self._policy)
+            self._policy.collision_zones = list(self._policy.collision_zones)
+
     def add_collision_zone(self, zone: dict[str, float]) -> None:
         """Add a collision zone at runtime (SF-07)."""
+        self._own_policy()
         self._policy.collision_zones.append(zone)
         self._record_audit("zone_added", zone)
         logger.info("SAFETY: Added collision zone: %s", zone)
@@ -867,6 +983,7 @@ class SafetyEnforcer:
     def remove_collision_zone(self, index: int) -> dict[str, float] | None:
         """Remove a collision zone by index."""
         if 0 <= index < len(self._policy.collision_zones):
+            self._own_policy()
             removed = self._policy.collision_zones.pop(index)
             self._record_audit("zone_removed", removed)
             return removed

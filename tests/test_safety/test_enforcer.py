@@ -160,7 +160,7 @@ class TestCollisionZones:
             collision_zones=[{"x_min": 0, "x_max": 5, "y_min": 0, "y_max": 5}],
         )
         enforcer = SafetyEnforcer(mock_robot, policy=policy)
-        enforcer.move(x=10.0, y=10.0, speed=0.5)  # Should not raise
+        enforcer.move(x=-10.0, y=-10.0, speed=0.5)  # Should not raise
 
     def test_add_collision_zone_runtime(self, enforcer: SafetyEnforcer) -> None:
         """Zones can be added at runtime."""
