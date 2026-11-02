@@ -110,7 +110,9 @@ clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
 `--max-speed` and `--no-go` flags as `apyrobo mcp`, checks them, and makes a
 relative `--policy-file` path absolute. It only prints: merge the output
-into your config yourself. Without installing, run it as
+into your config yourself. The `uvx` command it prints installs from GitHub
+until `apyrobo mcp` is in a PyPI release, then `uvx apyrobo mcp`: the form
+follows your installed version. Without installing, run it as
 `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp config claude-desktop`.
 
 If the tools don't show up, see [Troubleshooting](#troubleshooting).
