@@ -156,3 +156,129 @@ def test_plain_mcp_command_still_serves(monkeypatch):
     assert seen["mcp_command"] is None
     assert seen["max_speed"] == 0.5
     assert seen["no_go"] == ["1,1,2,2"]
+
+
+# --ssh: the client on a laptop, the server on the robot
+
+
+def _ssh_argv(out):
+    entry = json.loads(out)["mcpServers"]["apyrobo"]
+    return [entry["command"], *entry["args"]]
+
+
+def test_ssh_config_starts_the_server_remotely(tmp_path):
+    ssh = tmp_path / "ssh"
+    ssh.write_text("")
+    code, out, err = _run(
+        _args("claude-desktop", cfg_ssh="ubuntu@robot.local", cfg_robot="ros2://",
+              cfg_max_speed=0.5, cfg_no_go=["2,2,4,4"]),
+        _which({"ssh": str(ssh), "uvx": "/local/uvx"}),
+    )
+    assert code == 0
+    argv = _ssh_argv(out)
+    assert argv[0] == str(ssh.resolve())
+    assert argv[1:-2] == list(mcp_clients.SSH_OPTIONS)
+    assert "-T" in argv and "BatchMode=yes" in argv
+    assert argv[-2] == "ubuntu@robot.local"
+    assert shlex.split(argv[-1]) == [
+        "apyrobo", "mcp", "--robot", "ros2://", "--max-speed", "0.5", "--no-go", "2,2,4,4",
+    ]
+    assert "/local/uvx" not in out  # this machine's paths mean nothing on the robot
+    assert "key-based login" in err
+
+
+def test_ssh_setup_is_sourced_before_the_server():
+    command = mcp_clients.remote_command(["--robot", "ros2://"], setup="/opt/ros/jazzy/setup.bash")
+    argv = shlex.split(command)
+    assert argv[:2] == ["bash", "-c"]
+    assert argv[2] == ". /opt/ros/jazzy/setup.bash && exec apyrobo mcp --robot ros2://"
+
+
+def test_ssh_uvx_launcher_runs_uvx_on_the_robot():
+    argv = shlex.split(mcp_clients.remote_command([], "uvx"))
+    assert argv == ["uvx", "--from", GIT_SOURCE, "apyrobo", "mcp"]
+
+
+def test_ssh_policy_file_is_the_robots_path_and_not_checked_here():
+    code, out, _ = _run(
+        _args("cursor", cfg_ssh="robot", cfg_policy_file="/etc/apyrobo/policy.yaml"),
+        _which({"ssh": "/usr/bin/ssh"}),
+    )
+    assert code == 0
+    assert "--policy-file /etc/apyrobo/policy.yaml" in _ssh_argv(out)[-1]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"cfg_ssh": "robot", "cfg_policy_file": "policy.yaml"},
+    {"cfg_ssh": "robot", "cfg_ssh_setup": "~/env.sh"},
+    {"cfg_ssh_setup": "/opt/ros/jazzy/setup.bash"},
+])
+def test_ssh_bad_paths_and_flags_are_readable_errors(kwargs):
+    code, out, err = _run(_args("cursor", **kwargs), _which({"ssh": "/usr/bin/ssh"}))
+    assert code == 1
+    assert out == ""
+    assert err.startswith("Error:")
+
+
+@pytest.mark.parametrize("target", [
+    "-oProxyCommand=touch /tmp/x", "user@", "@host", "a b", "host;id", "", "user@host:2222",
+])
+def test_ssh_target_that_is_not_a_host_is_refused(target):
+    with pytest.raises(ValueError, match="--ssh"):
+        mcp_clients.check_ssh_target(target)
+
+
+@pytest.mark.parametrize("target", ["robot", "ubuntu@robot.local", "pi@10.0.0.7", "me@fe80::1"])
+def test_ssh_target_accepts_hosts(target):
+    assert mcp_clients.check_ssh_target(target) == target
+
+
+def test_ssh_without_ssh_on_path_uses_bare_name_and_says_so():
+    code, out, err = _run(_args("cursor", cfg_ssh="robot"), _which({}))
+    assert code == 0
+    assert _ssh_argv(out)[0] == "ssh"
+    assert "ssh was not found" in err
+    assert "mock://turtlebot4" in err  # no --robot: say what the robot will run
+
+
+def test_ssh_claude_code_command_is_one_shell_line():
+    code, out, _ = _run(
+        _args("claude-code", cfg_ssh="robot", cfg_robot="mock://tb"),
+        _which({"ssh": "/usr/bin/ssh"}),
+    )
+    assert code == 0
+    argv = shlex.split(out)
+    assert argv[:5] == ["claude", "mcp", "add", "apyrobo", "--"]
+    assert argv[-1] == "apyrobo mcp --robot mock://tb"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX shell stand-in for ssh")
+def test_ssh_command_survives_the_remote_shell(tmp_path):
+    """ssh joins its arguments and a shell re-parses them: run exactly that."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    apyrobo = bin_dir / "apyrobo"
+    apyrobo.write_text(f'#!/bin/sh\nexec {sys.executable} -m apyrobo.cli "$@"\n')
+    apyrobo.chmod(0o755)
+    setup = tmp_path / "my setup.sh"
+    setup.write_text(f'export PATH="{bin_dir}:$PATH"\n')
+
+    flags = mcp_clients.server_args(
+        robot="mock://tb", no_go=["2,2,4,4"], policy_file=None, max_speed=0.5, remote=True,
+    )
+    remote = mcp_clients.remote_command(flags, setup=str(setup))
+    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    init = {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {},
+        "clientInfo": {"name": "test", "version": "0"},
+    }}
+    done = subprocess.run(
+        ["/bin/sh", "-c", remote],
+        input=json.dumps(init) + "\n" + json.dumps(request) + "\n",
+        capture_output=True, text=True, timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    replies = [json.loads(line) for line in done.stdout.splitlines()]
+    names = {tool["name"] for tool in replies[-1]["result"]["tools"]}
+    assert "move_to" in names
+    assert "robot=mock://tb" in done.stderr

@@ -113,7 +113,20 @@ class PlanValidator:
 
         for step in plan:
             skill_name = step.get("skill", "")
-            params = step.get("params", {})
+            params = step.get("params")
+            if params is None:
+                params = {}
+            elif not isinstance(params, dict):
+                issues.append(
+                    ValidationIssue(
+                        severity="error",
+                        skill_name=skill_name,
+                        message=f"params for skill '{skill_name}' must be an object, "
+                        f"got {type(params).__name__}.",
+                        suggestion="Pass params as a dict.",
+                    )
+                )
+                params = {}
 
             issues.extend(self._check_skill_exists(skill_name))
             if available_capabilities is not None:

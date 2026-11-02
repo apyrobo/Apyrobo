@@ -341,6 +341,10 @@ class SafetyEnforcer:
             5. Human proximity check (SF-02)
             6. Move timeout (SF-01)
         """
+        self._reject_bad_numbers("move", x=x, y=y, speed=speed)
+        if speed is not None and speed < 0:
+            self._reject_bad_value("move", f"speed must be 0 or more, got {speed!r}")
+
         # --- SF-10: Battery check ---
         if self._battery_monitor is not None:
             pos = self._robot.get_position()
@@ -486,6 +490,7 @@ class SafetyEnforcer:
 
     def rotate(self, angle_rad: float, speed: float | None = None) -> None:
         """Rotate command with angular speed enforcement."""
+        self._reject_bad_numbers("rotate", angle_rad=angle_rad, speed=speed)
         original_speed = speed
         if speed is not None and abs(speed) > self._policy.max_angular_speed:
             speed = math.copysign(self._policy.max_angular_speed, speed)
@@ -905,6 +910,26 @@ class SafetyEnforcer:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _reject_bad_numbers(self, command: str, **values: float | None) -> None:
+        """Refuse NaN/inf inputs: NaN slips past every ``>`` and zone check."""
+        for name, value in values.items():
+            if value is None:
+                continue
+            try:
+                ok = math.isfinite(value)
+            except (TypeError, OverflowError):
+                ok = False
+            if not ok:
+                self._reject_bad_value(command, f"{name} must be a finite number, got {value!r}")
+
+    def _reject_bad_value(self, command: str, detail: str) -> None:
+        violation = {"type": "invalid_command", "command": command, "detail": detail}
+        self._violations.append(violation)
+        self._record_audit("violation", violation)
+        logger.error("SAFETY: Command REJECTED — %s %s (policy: %s)",
+                     command, detail, self._policy.name)
+        raise SafetyViolation(f"Invalid {command} command: {detail}")
 
     @staticmethod
     def _point_in_zone(x: float, y: float, zone: dict[str, float]) -> bool:
