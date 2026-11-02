@@ -148,3 +148,67 @@ def test_cli_wires_the_subcommand(monkeypatch, capsys):
         cli.main()
     assert exc.value.code == 0
     assert "clamped to 0.5 m/s" in capsys.readouterr().out
+
+
+def _warnings(out):
+    return [line for line in out.splitlines() if line.startswith("warn  ")]
+
+
+def test_defaults_warn_about_everything_left_unset_without_failing():
+    code, out, _ = _run(_args())
+    assert code == 0
+    warnings = _warnings(out)
+    assert len(warnings) == 4
+    assert "no no-go zones set" in warnings[0]
+    assert "built-in 1.5 m/s" in warnings[1]
+    assert "built-in 2 rad/s" in warnings[2]
+    assert "--confirm-moves is off" in warnings[3]
+
+
+def test_a_full_policy_has_no_warnings_but_still_says_it_cannot_see_the_map(tmp_path):
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({
+        "max_speed": 0.5,
+        "max_angular_speed": 0.5,
+        "no_go_zones": [{"name": "dock", "x_min": 2, "y_min": 2, "x_max": 4, "y_max": 4}],
+    }))
+    code, out, _ = _run(_args(st_policy_file=str(policy), st_confirm_moves=True))
+    assert code == 0
+    assert _warnings(out) == []
+    assert "cannot know what is missing from your map" in out
+
+
+def test_each_warning_goes_away_on_its_own():
+    _, out, _ = _run(_args(st_no_go=["2,2,4,4"]))
+    assert not any("no no-go zones" in w for w in _warnings(out))
+    assert len(_warnings(out)) == 3
+
+    _, out, _ = _run(_args(st_max_speed=0.5))
+    assert not any("m/s" in w for w in _warnings(out))
+    assert len(_warnings(out)) == 3
+
+    _, out, _ = _run(_args(confirm_moves=True))
+    assert not any("--confirm-moves" in w for w in _warnings(out))
+    assert len(_warnings(out)) == 3
+
+
+def test_warnings_do_not_hide_a_failure(monkeypatch):
+    failing = [mcp_selftest.Check(False, "normal move", "broken")]
+    monkeypatch.setattr(mcp_selftest, "run_checks", lambda server: failing)
+    code, out, _ = _run(_args())
+    assert code == 1
+    assert "FAIL  normal move" in out
+    assert _warnings(out)
+
+
+def test_strict_base_policy_is_not_called_the_built_in_default():
+    _, out, _ = _run(_args(st_policy="strict"))
+    assert not any("built-in" in w for w in _warnings(out))
+
+
+def test_confirm_moves_flag_works_on_the_selftest_subcommand(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["apyrobo", "mcp", "selftest", "--confirm-moves"])
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert exit_info.value.code == 0
+    assert "--confirm-moves is off" not in capsys.readouterr().out
