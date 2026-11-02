@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -23,7 +25,8 @@ NAME = "io.github.example/demo"
 
 
 def _project(tmp_path: Path, *, version="1.2.0", server_version="1.2.0",
-             pkg_version="1.2.0", changelog="## [1.2.0] - 2026-11-01\n",
+             pkg_version="1.2.0",
+             changelog="## [1.2.0] - 2026-11-01\n\n### Added\n\n- A thing.\n",
              readme=f"# Demo\n<!-- mcp-name: {NAME} -->\n") -> Path:
     (tmp_path / "pyproject.toml").write_text(
         f'[build-system]\nrequires = []\n\n[project]\nname = "demo"\n'
@@ -154,3 +157,134 @@ def test_drive_mcp_checks_reported_version():
 def test_drive_mcp_bad_command():
     checks = rc.drive_mcp(["/nonexistent/apyrobo", "mcp"])
     assert not checks[0].ok
+
+
+# -- changelog section contents ----------------------------------------
+
+
+@pytest.mark.parametrize("section", [
+    "## [1.2.0] - 2026-11-01\n",
+    "## [1.2.0] - 2026-11-01\n\n### Added\n\n---\n\n## [1.1.0] - 2026-01-01\n\n- Old.\n",
+])
+def test_changelog_fails_on_an_empty_section(tmp_path, section):
+    root = _project(tmp_path, changelog=section)
+    check = rc.check_changelog(root, "1.2.0")
+    assert not check.ok
+    assert "empty" in check.detail
+
+
+def test_changelog_fails_on_placeholder_comments(tmp_path):
+    root = _project(tmp_path, changelog=(
+        "## [1.2.0] - 2026-11-01\n\n### Added\n- <!-- describe new features -->\n"
+    ))
+    check = rc.check_changelog(root, "1.2.0")
+    assert not check.ok
+    assert "placeholder" in check.detail
+
+
+def test_changelog_entries_of_another_version_do_not_count(tmp_path):
+    root = _project(tmp_path, changelog=(
+        "## [1.3.0] - 2026-11-02\n\n- New.\n\n"
+        "## [1.2.0] - 2026-11-01\n\n## [1.1.0] - 2026-01-01\n\n- Old.\n"
+    ))
+    assert not rc.check_changelog(root, "1.2.0").ok
+    assert rc.check_changelog(root, "1.3.0").ok
+
+
+# -- scripts/bump_version.sh -------------------------------------------
+
+CHANGELOG = """# Changelog
+
+Intro.
+
+---
+
+## [Unreleased]
+
+### Added
+
+- A thing users want.
+
+---
+
+## [1.2.0] - 2026-01-01
+
+- Older.
+"""
+
+
+@pytest.fixture
+def bump_project(tmp_path):
+    if shutil.which("bash") is None:
+        pytest.skip("needs bash")
+    root = _project(tmp_path)
+    (root / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+    (root / "scripts").mkdir()
+    shutil.copy(ROOT / "scripts" / "bump_version.sh", root / "scripts")
+    (root / "apyrobo").mkdir()
+    (root / "apyrobo" / "__version__.py").write_text(
+        '__version__ = "1.2.0"\n', encoding="utf-8")
+    return root
+
+
+def _bump(root: Path, version: str = "1.3.0") -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(root / "scripts" / "bump_version.sh"), version],
+        capture_output=True, text=True,
+    )
+
+
+def _snapshot(root: Path) -> dict[str, str]:
+    return {
+        str(p.relative_to(root)): p.read_text(encoding="utf-8")
+        for p in root.rglob("*") if p.is_file()
+    }
+
+
+def test_bump_passes_the_static_release_check(bump_project):
+    result = _bump(bump_project)
+    assert result.returncode == 0, result.stderr
+    assert rc.check_versions(bump_project).ok
+    assert rc.check_changelog(bump_project, "1.3.0").ok
+    assert '"1.3.0"' in (bump_project / "apyrobo" / "__version__.py").read_text()
+
+
+def test_bump_moves_the_entries_and_leaves_a_fresh_unreleased(bump_project):
+    _bump(bump_project)
+    text = (bump_project / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert text.index("## [Unreleased]") < text.index("## [1.3.0] - ")
+    assert text.index("## [1.3.0] - ") < text.index("A thing users want")
+    assert text.index("A thing users want") < text.index("## [1.2.0]")
+    assert rc.changelog_section(text, "Unreleased").strip() == "---"
+    assert "Intro." in text and "Older." in text
+
+
+def test_bump_keeps_the_rest_of_server_json(bump_project):
+    path = bump_project / "server.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["packages"].append({"registryType": "npm", "version": "0.1.0"})
+    data["description"] = "Sûr"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _bump(bump_project)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert after["description"] == "Sûr"
+    assert after["version"] == after["packages"][0]["version"] == "1.3.0"
+    assert after["packages"][1]["version"] == "0.1.0"
+
+
+def test_bump_refuses_an_empty_unreleased_and_changes_nothing(bump_project):
+    path = bump_project / "CHANGELOG.md"
+    path.write_text(CHANGELOG.replace("- A thing users want.\n", ""), encoding="utf-8")
+    before = _snapshot(bump_project)
+    result = _bump(bump_project)
+    assert result.returncode != 0
+    assert "empty" in result.stderr
+    assert _snapshot(bump_project) == before
+
+
+def test_bump_refuses_a_version_that_already_has_a_section(bump_project):
+    before = _snapshot(bump_project)
+    result = _bump(bump_project, "1.2.0")
+    assert result.returncode != 0
+    assert "already has" in result.stderr
+    assert _snapshot(bump_project) == before
