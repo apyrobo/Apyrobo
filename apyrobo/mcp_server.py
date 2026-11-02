@@ -186,7 +186,8 @@ class RobotToolbox:
         self._add(
             "move_to",
             "Drive to (x, y) in metres. Checked by the safety policy first: speed "
-            "may be clamped, and targets inside a no-go zone are refused.",
+            "may be clamped, and targets inside a no-go zone or outside the "
+            "allowed areas are refused.",
             {
                 "x": {"type": "number", "description": "Target x in metres."},
                 "y": {"type": "number", "description": "Target y in metres."},
@@ -259,7 +260,8 @@ class RobotToolbox:
 
         Shows the target and the speed the policy will actually allow.
         Returns None for a move the policy refuses anyway (target in a
-        no-go zone, or a route that crosses one), so the user is not asked
+        no-go zone or outside the allowed areas, or a route that crosses a
+        zone), so the user is not asked
         to approve a refused move.
         Raises ToolError for invalid arguments.
         """
@@ -270,6 +272,8 @@ class RobotToolbox:
             from apyrobo.safety.enforcer import SafetyEnforcer, SafetyViolation
 
             if any(SafetyEnforcer._point_in_zone(x, y, z) for z in p.collision_zones):
+                return None
+            if self.enforcer.outside_allowed_areas(x, y):
                 return None
             try:
                 if self.enforcer.crossed_zone(x, y) is not None:
@@ -305,12 +309,15 @@ class RobotToolbox:
 
     def _policy_summary(self) -> dict[str, Any]:
         p = self.enforcer.policy
-        return {
+        summary: dict[str, Any] = {
             "name": p.name,
             "max_speed_m_s": p.max_speed,
             "max_angular_speed_rad_s": p.max_angular_speed,
             "no_go_zones": [dict(z) for z in p.collision_zones],
         }
+        if p.allowed_areas:
+            summary["allowed_areas"] = [dict(a) for a in p.allowed_areas]
+        return summary
 
     def _position(self) -> dict[str, float]:
         x, y = self.enforcer.get_position()
@@ -879,18 +886,22 @@ def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
 
-def parse_zone(spec: str) -> dict[str, float]:
-    """Parse ``x_min,y_min,x_max,y_max`` into a collision-zone dict."""
+def parse_zone(spec: str, what: str = "no-go zone") -> dict[str, float]:
+    """Parse ``x_min,y_min,x_max,y_max`` into a rectangle dict."""
     parts = [p.strip() for p in spec.split(",")]
     if len(parts) != 4:
-        raise ValueError(f"no-go zone must be x_min,y_min,x_max,y_max — got {spec!r}")
+        raise ValueError(f"{what} must be x_min,y_min,x_max,y_max — got {spec!r}")
     x_min, y_min, x_max, y_max = (float(p) for p in parts)
+    if not all(math.isfinite(v) for v in (x_min, y_min, x_max, y_max)):
+        raise ValueError(f"{what} must use finite numbers: {spec!r}")
     if x_min > x_max or y_min > y_max:
-        raise ValueError(f"no-go zone has min > max: {spec!r}")
+        raise ValueError(f"{what} has min > max: {spec!r}")
     return {"x_min": x_min, "y_min": y_min, "x_max": x_max, "y_max": y_max}
 
 
-_POLICY_FILE_KEYS = {"name", "base", "max_speed", "max_angular_speed", "no_go_zones"}
+_POLICY_FILE_KEYS = {
+    "name", "base", "max_speed", "max_angular_speed", "no_go_zones", "allowed_areas",
+}
 _ZONE_KEYS = ("x_min", "y_min", "x_max", "y_max")
 
 
@@ -900,11 +911,13 @@ def _positive(value: Any, where: str) -> float:
     return float(value)
 
 
-def _file_zone(raw: Any, index: int, where: str) -> dict[str, Any]:
-    label = f"{where}: no_go_zones[{index}]"
+def _file_zone(
+    raw: Any, index: int, where: str, key: str = "no_go_zones"
+) -> dict[str, Any]:
+    label = f"{where}: {key}[{index}]"
     if isinstance(raw, str):
         try:
-            return parse_zone(raw)
+            return parse_zone(raw, "allowed area" if key == "allowed_areas" else "no-go zone")
         except ValueError as exc:
             raise ValueError(f"{label}: {exc}") from None
     if not isinstance(raw, dict):
@@ -919,11 +932,15 @@ def _file_zone(raw: Any, index: int, where: str) -> dict[str, Any]:
     if missing:
         raise ValueError(f"{label} is missing {missing}")
     zone: dict[str, Any] = {}
-    for key in _ZONE_KEYS:
-        value = raw[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"{label}.{key} must be a number, got {value!r}")
-        zone[key] = float(value)
+    for field in _ZONE_KEYS:
+        value = raw[field]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError(f"{label}.{field} must be a finite number, got {value!r}")
+        zone[field] = float(value)
     if zone["x_min"] > zone["x_max"] or zone["y_min"] > zone["y_max"]:
         raise ValueError(f"{label} has min > max")
     if "name" in raw:
@@ -938,8 +955,11 @@ def load_policy_file(path: str | Path) -> dict[str, Any]:
 
     Accepted keys (all optional): ``name``, ``base`` (``default`` or
     ``strict``), ``max_speed`` (m/s), ``max_angular_speed`` (rad/s) and
-    ``no_go_zones`` — a list of ``{name?, x_min, y_min, x_max, y_max}``
-    mappings or ``"x_min,y_min,x_max,y_max"`` strings, in metres.
+    ``no_go_zones`` and ``allowed_areas`` — lists of
+    ``{name?, x_min, y_min, x_max, y_max}`` mappings or
+    ``"x_min,y_min,x_max,y_max"`` strings, in metres. ``allowed_areas``, when
+    present, must list at least one area: an empty list would quietly mean
+    "anywhere".
 
     Any problem (missing file, bad syntax, unknown key, wrong type) raises
     ``ValueError`` with a readable message; nothing falls back silently.
@@ -984,6 +1004,16 @@ def load_policy_file(path: str | Path) -> dict[str, Any]:
     if not isinstance(zones, list):
         raise ValueError(f"{where}: no_go_zones must be a list")
     out["no_go_zones"] = [_file_zone(z, i, where) for i, z in enumerate(zones)]
+    if "allowed_areas" in data:
+        areas = data["allowed_areas"]
+        if not isinstance(areas, list) or not areas:
+            raise ValueError(
+                f"{where}: allowed_areas must list at least one area; "
+                "remove the key to allow anywhere outside the no-go zones"
+            )
+        out["allowed_areas"] = [
+            _file_zone(a, i, where, "allowed_areas") for i, a in enumerate(areas)
+        ]
     return out
 
 
@@ -996,11 +1026,13 @@ def build_server(
     agent: Any = None,
     policy_file: str | Path | None = None,
     confirm_moves: bool = False,
+    allowed_areas: list[dict[str, float]] | None = None,
 ) -> MCPServer:
     """Discover the robot, wrap it in a safety enforcer and return the server.
 
     Precedence: ``max_speed`` and ``policy`` given here override the policy
-    file; ``no_go_zones`` given here are added to the file's zones; the
+    file; ``no_go_zones`` and ``allowed_areas`` given here are added to the
+    file's; the
     file overrides the base policy (``policy`` or the file's ``base``,
     else ``default``).
     """
@@ -1013,7 +1045,7 @@ def build_server(
     if base is None:
         raise ValueError(f"unknown policy {base_name!r}; choose from {sorted(POLICY_REGISTRY)}")
     name = file_cfg.get("name", base.name)
-    if max_speed is not None or no_go_zones:
+    if max_speed is not None or no_go_zones or allowed_areas:
         name = f"{name}+cli"
     speed = max_speed if max_speed is not None else file_cfg.get("max_speed", base.max_speed)
     safety = SafetyPolicy(
@@ -1024,6 +1056,11 @@ def build_server(
             list(base.collision_zones)
             + list(file_cfg.get("no_go_zones", []))
             + list(no_go_zones or [])
+        ),
+        allowed_areas=(
+            list(base.allowed_areas)
+            + list(file_cfg.get("allowed_areas", []))
+            + list(allowed_areas or [])
         ),
         human_proximity_limit=base.human_proximity_limit,
         move_timeout=base.move_timeout,

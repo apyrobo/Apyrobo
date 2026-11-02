@@ -14,8 +14,8 @@ from apyrobo.mcp_server import build_server
 
 def _args(**kw):
     base = dict(robot="mock://turtlebot4", policy=None, policy_file=None, max_speed=None,
-                no_go=None, confirm_moves=False, st_robot=None, st_policy=None,
-                st_policy_file=None, st_max_speed=None, st_no_go=None)
+                no_go=None, allow_area=None, confirm_moves=False, st_robot=None, st_policy=None,
+                st_policy_file=None, st_max_speed=None, st_no_go=None, st_allow_area=None)
     base.update(kw)
     return Namespace(**base)
 
@@ -158,11 +158,12 @@ def test_defaults_warn_about_everything_left_unset_without_failing():
     code, out, _ = _run(_args())
     assert code == 0
     warnings = _warnings(out)
-    assert len(warnings) == 4
+    assert len(warnings) == 5
     assert "no no-go zones set" in warnings[0]
-    assert "built-in 1.5 m/s" in warnings[1]
-    assert "built-in 2 rad/s" in warnings[2]
-    assert "--confirm-moves is off" in warnings[3]
+    assert "no allowed area set" in warnings[1]
+    assert "built-in 1.5 m/s" in warnings[2]
+    assert "built-in 2 rad/s" in warnings[3]
+    assert "--confirm-moves is off" in warnings[4]
 
 
 def test_a_full_policy_has_no_warnings_but_still_says_it_cannot_see_the_map(tmp_path):
@@ -171,6 +172,7 @@ def test_a_full_policy_has_no_warnings_but_still_says_it_cannot_see_the_map(tmp_
         "max_speed": 0.5,
         "max_angular_speed": 0.5,
         "no_go_zones": [{"name": "dock", "x_min": 2, "y_min": 2, "x_max": 4, "y_max": 4}],
+        "allowed_areas": [{"x_min": -10, "y_min": -10, "x_max": 10, "y_max": 10}],
     }))
     code, out, _ = _run(_args(st_policy_file=str(policy), st_confirm_moves=True))
     assert code == 0
@@ -181,15 +183,19 @@ def test_a_full_policy_has_no_warnings_but_still_says_it_cannot_see_the_map(tmp_
 def test_each_warning_goes_away_on_its_own():
     _, out, _ = _run(_args(st_no_go=["2,2,4,4"]))
     assert not any("no no-go zones" in w for w in _warnings(out))
-    assert len(_warnings(out)) == 3
+    assert len(_warnings(out)) == 4
+
+    _, out, _ = _run(_args(st_allow_area=["-5,-5,5,5"]))
+    assert not any("allowed area" in w for w in _warnings(out))
+    assert len(_warnings(out)) == 4
 
     _, out, _ = _run(_args(st_max_speed=0.5))
     assert not any("m/s" in w for w in _warnings(out))
-    assert len(_warnings(out)) == 3
+    assert len(_warnings(out)) == 4
 
     _, out, _ = _run(_args(confirm_moves=True))
     assert not any("--confirm-moves" in w for w in _warnings(out))
-    assert len(_warnings(out)) == 3
+    assert len(_warnings(out)) == 4
 
 
 def test_warnings_do_not_hide_a_failure(monkeypatch):
@@ -212,3 +218,38 @@ def test_confirm_moves_flag_works_on_the_selftest_subcommand(monkeypatch, capsys
         cli.main()
     assert exit_info.value.code == 0
     assert "--confirm-moves is off" not in capsys.readouterr().out
+
+
+def test_allowed_area_is_exercised_and_targets_stay_inside_it():
+    code, out, _ = _run(_args(st_allow_area=["10,10,20,20"], st_no_go=["14,14,16,16"]))
+    assert code == 0, out
+    assert "PASS  move outside the allowed areas" in out
+    assert "PASS  normal move" in out
+    assert "PASS  move across no-go zone" in out
+
+
+def test_crossing_check_is_not_passed_by_the_area_refusing_the_target():
+    # The zone fills the far end of the area: nothing past it is allowed.
+    code, out, _ = _run(_args(st_allow_area=["0,-1,5,1"], st_no_go=["3,-1,5,1"]))
+    assert code == 0, out
+    assert "not tried: no target past it inside the allowed areas" in out
+
+
+def test_area_that_lets_the_move_through_fails(monkeypatch):
+    real = mcp_selftest._Client.tool
+
+    def lenient(self, name, **arguments):
+        if name == "move_to":
+            self._server.toolbox.enforcer.policy.allowed_areas = []
+        return real(self, name, **arguments)
+
+    monkeypatch.setattr(mcp_selftest._Client, "tool", lenient)
+    code, out, _ = _run(_args(st_allow_area=["-5,-5,5,5"]))
+    assert code == 1
+    assert "FAIL  move outside the allowed areas" in out
+
+
+def test_bad_allow_area_is_a_readable_error():
+    code, _, err = _run(_args(st_allow_area=["1,2,3"]))
+    assert code == 1
+    assert "allowed area must be x_min,y_min,x_max,y_max" in err

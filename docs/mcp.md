@@ -157,7 +157,8 @@ accepted keeps going. Keep your robot's own e-stop within reach.
 `apyrobo mcp selftest` takes the same policy flags as the server and prints
 what they do on `mock://`, before you touch a client config. It lists the
 tools, runs a normal move, shows an over-limit move clamped to your limit, and
-tries a move into each no-go zone. It exits 0 if all of that held, 1 if not.
+tries a move into each no-go zone. With allowed areas set, it also tries a
+target outside them. It exits 0 if all of that held, 1 if not.
 
 ```bash
 apyrobo mcp selftest --max-speed 0.5 --no-go 2,2,4,4
@@ -167,8 +168,8 @@ It refuses any robot other than `mock://`, so it cannot move hardware. It does
 not exercise `--confirm-moves`, which needs a client that can ask you.
 
 A pass only says the limits you wrote down hold. So the report also warns about
-what your policy leaves unset: no no-go zones, the built-in speed limits, and
-`--confirm-moves` off (pass that flag to `selftest` too if you run the server
+what your policy leaves unset: no no-go zones, no allowed area, the built-in
+speed limits, and `--confirm-moves` off (pass that flag to `selftest` too if you run the server
 with it). The warnings do not change the exit code. They cannot cover what is
 missing from your map: a zone you never wrote down looks like free space.
 
@@ -195,9 +196,10 @@ checks and executes.
 | --- | --- | --- |
 | `--robot URI` | `mock://turtlebot4` | Any APYROBO robot URI (`ros2://…`, `gazebo://…`, `mujoco://…`, `vda5050://…`) |
 | `--policy` | `default` | Base policy: `default` (1.5 m/s) or `strict` (0.5 m/s, speed ramp) |
-| `--policy-file PATH` | none | JSON or YAML policy (`name`, `base`, `max_speed`, `max_angular_speed`, `no_go_zones`); flags on the command line override it |
+| `--policy-file PATH` | none | JSON or YAML policy (`name`, `base`, `max_speed`, `max_angular_speed`, `no_go_zones`, `allowed_areas`); flags on the command line override it |
 | `--max-speed M_S` | from policy | Override the speed limit |
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
+| `--allow-area X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangle move targets may be in; with any set, a target outside all of them is refused; repeat for more |
 | `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
 
@@ -205,6 +207,20 @@ For a starting point, copy a commented policy from
 [`examples/policies/`](../examples/policies/) (warehouse aisle, lab bench, home
 with stairs), edit the zones for your map, and check it with
 `apyrobo mcp selftest --policy-file your_policy.yaml`.
+
+### Deny by default with allowed areas
+
+A no-go zone only covers the places you remembered. With at least one allowed
+area, set by `--allow-area` or `allowed_areas` in a policy file, the rule flips:
+a target outside every allowed area is refused, so a place you never wrote down
+is off limits too. Unset, targets outside the no-go zones are accepted as
+before. No-go zones still win inside an allowed area, and `--allow-area` adds
+to the file's areas. An `allowed_areas` key with an empty list is an error, not
+"anywhere".
+
+```bash
+apyrobo mcp --max-speed 0.5 --allow-area 0,0,10,6 --no-go 2,2,4,4
+```
 
 ### Confirm every move
 
@@ -357,6 +373,11 @@ zone may drive out. On `ros2://` with Nav2 the route is **not** checked, because
 Nav2 picks it: add a Nav2 keepout filter if the robot must never enter an area.
 The check assumes the adapter reports a true position and drives straight, so
 it is no substitute for a planner that knows your map.
+
+Allowed areas are checked at the target only, on every adapter. The route is
+not compared with them: a robot sent from one allowed area to another may pass
+through space outside both, and Nav2 may route outside an area to reach a target
+inside it.
 
 The server speaks MCP over stdio. Clients that open with `initialize`
 (protocol versions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05) get

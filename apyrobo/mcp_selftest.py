@@ -8,7 +8,8 @@ user can see their limits hold before touching any client config:
 * a move within the limits runs,
 * an over-limit move is clamped to the policy's speed limit,
 * a move into each no-go zone is refused and the robot stays put,
-* a move across each no-go zone, to a free target, is refused too.
+* a move across each no-go zone, to a free target, is refused too,
+* with allowed areas set, a move to a target outside them is refused.
 
 It then warns about what the policy leaves unset, without changing the exit
 code: a passing run only says the limits you wrote down hold.
@@ -23,6 +24,7 @@ import argparse
 import contextlib
 import json
 import logging
+import math
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -85,17 +87,33 @@ def _in_zone(x: float, y: float, zone: dict[str, Any]) -> bool:
     return zone["x_min"] <= x <= zone["x_max"] and zone["y_min"] <= y <= zone["y_max"]
 
 
-def _clear(
-    start: tuple[float, float], end: tuple[float, float], zones: Sequence[dict[str, Any]]
+def _allowed(
+    x: float, y: float, zones: Sequence[dict[str, Any]], areas: Sequence[dict[str, Any]]
 ) -> bool:
-    """True if ``end`` is free and the straight line to it enters no zone."""
+    """True if the policy accepts (x, y) as a target."""
+    if any(_in_zone(x, y, z) for z in zones):
+        return False
+    return not areas or any(_in_zone(x, y, a) for a in areas)
+
+
+def _clear(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    zones: Sequence[dict[str, Any]],
+    areas: Sequence[dict[str, Any]] = (),
+) -> bool:
+    """True if ``end`` is a free target and the straight line to it enters no zone."""
     from apyrobo.safety.enforcer import segment_enters_zone
 
-    return not any(_in_zone(*end, z) or segment_enters_zone(start, end, z) for z in zones)
+    return _allowed(*end, zones, areas) and not any(
+        segment_enters_zone(start, end, z) for z in zones
+    )
 
 
 def free_targets(
-    zones: Sequence[dict[str, Any]], start: tuple[float, float] = (0.0, 0.0)
+    zones: Sequence[dict[str, Any]],
+    start: tuple[float, float] = (0.0, 0.0),
+    areas: Sequence[dict[str, Any]] = (),
 ) -> list[tuple[float, float]]:
     """Two targets the robot can drive to in turn from ``start``, near it if possible."""
     near = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 1.0), (-1.0, -1.0)]
@@ -103,14 +121,22 @@ def free_targets(
     edge = max((float(z["x_max"]) for z in zones), default=0.0)
     points = [*near, (edge + 1.0, 0.0), (edge + 2.0, 0.0)]
     points += [(x * r, y * r) for r in (0.25, 0.5, 2.0, 4.0, 8.0) for x, y in near]
+    # Spots across each allowed area, which may be nowhere near the start.
+    for area in areas:
+        width = float(area["x_max"]) - float(area["x_min"])
+        height = float(area["y_max"]) - float(area["y_min"])
+        points += [
+            (float(area["x_min"]) + width * i / 4, float(area["y_min"]) + height * j / 4)
+            for i in range(5) for j in range(5)
+        ]
     for first in points:
-        if _clear(start, first, zones):
+        if _clear(start, first, zones, areas):
             for second in [*points, start]:
-                if second != first and _clear(first, second, zones):
+                if second != first and _clear(first, second, zones, areas):
                     return [first, second]
     # Walled in: return free targets anyway; the checks report the refusal.
-    free = [p for p in points if not any(_in_zone(*p, z) for z in zones)]
-    return free[:2]
+    free = [p for p in points if _allowed(*p, zones, areas)]
+    return free[:2] or points[:2]
 
 
 def _zone_label(zone: dict[str, Any], index: int) -> str:
@@ -174,19 +200,33 @@ def _check_zone(client: _Client, zone: dict[str, Any], index: int, speed: float)
 
 
 def _across(
-    start: tuple[float, float], zone: dict[str, Any], zones: Sequence[dict[str, Any]]
-) -> tuple[float, float]:
-    """A free target past ``zone``, on the line from ``start`` through its centre."""
+    start: tuple[float, float],
+    zone: dict[str, Any],
+    zones: Sequence[dict[str, Any]],
+    areas: Sequence[dict[str, Any]] = (),
+) -> tuple[float, float] | None:
+    """A free target past ``zone``, on the line from ``start`` through its centre.
+
+    None when allowed areas leave no target past the zone: a refusal there
+    would come from the area and prove nothing about the zone.
+    """
     cx = (float(zone["x_min"]) + float(zone["x_max"])) / 2
     cy = (float(zone["y_min"]) + float(zone["y_max"])) / 2
-    stretch = 1.0
-    target = (2 * cx - start[0], 2 * cy - start[1])
-    for _ in range(64):
-        if not any(_in_zone(*target, z) for z in zones):
-            break
-        stretch *= 2
-        target = (cx + (cx - start[0]) * stretch, cy + (cy - start[1]) * stretch)
-    return target
+    dx, dy = cx - start[0], cy - start[1]
+    stretches = [2.0 ** i for i in range(64)]
+    if areas:
+        # Stay as close as possible: the area may end soon after the zone.
+        half_w = (float(zone["x_max"]) - float(zone["x_min"])) / 2
+        half_h = (float(zone["y_max"]) - float(zone["y_min"])) / 2
+        edge = min(half_w / abs(dx) if dx else math.inf, half_h / abs(dy) if dy else math.inf)
+        if math.isfinite(edge):
+            stretches.insert(0, edge * 1.1)
+    target = start
+    for stretch in stretches:
+        target = (cx + dx * stretch, cy + dy * stretch)
+        if _allowed(*target, zones, areas):
+            return target
+    return None if areas else target
 
 
 def _check_crossing(
@@ -195,12 +235,16 @@ def _check_crossing(
     index: int,
     zones: Sequence[dict[str, Any]],
     speed: float,
+    areas: Sequence[dict[str, Any]] = (),
 ) -> Check:
     name = f"move across no-go zone {_zone_label(zone, index)}"
     before = client.position()
     if before is None:
         return Check(False, name, "could not read the robot's position")
-    x, y = _across(before, zone, zones)
+    across = _across(before, zone, zones, areas)
+    if across is None:
+        return Check(True, name, "not tried: no target past it inside the allowed areas")
+    x, y = across
     is_error, text = client.tool("move_to", x=x, y=y, speed=speed)
     after = client.position()
     if not is_error or "REFUSED" not in text:
@@ -210,10 +254,37 @@ def _check_crossing(
     return Check(True, name, f"move {before} to ({x:g}, {y:g}) refused, robot stayed put")
 
 
+def _outside(
+    zones: Sequence[dict[str, Any]], areas: Sequence[dict[str, Any]]
+) -> tuple[float, float]:
+    """A target in no allowed area and no zone, so only the area check can refuse it."""
+    edge = max(float(r["x_max"]) for r in [*zones, *areas])
+    return (edge + 1.0, float(areas[0]["y_min"]))
+
+
+def _check_outside(
+    client: _Client,
+    zones: Sequence[dict[str, Any]],
+    areas: Sequence[dict[str, Any]],
+    speed: float,
+) -> Check:
+    name = "move outside the allowed areas"
+    x, y = _outside(zones, areas)
+    before = client.position()
+    is_error, text = client.tool("move_to", x=x, y=y, speed=speed)
+    after = client.position()
+    if not is_error or "outside every allowed area" not in text:
+        return Check(False, name, f"move to ({x:g}, {y:g}) was not refused: {text}")
+    if before is None or before != after:
+        return Check(False, name, f"robot moved from {before} to {after}")
+    return Check(True, name, f"move to ({x:g}, {y:g}) refused, robot stayed at {after}")
+
+
 def run_checks(server: Any) -> list[Check]:
     """Run every check against a server built on ``mock://``."""
     policy = server.toolbox.enforcer.policy
     zones = list(policy.collision_zones)
+    areas = list(policy.allowed_areas)
     max_speed = float(policy.max_speed)
     speed = max_speed * NORMAL_SPEED_FRACTION
     client = _Client(server)
@@ -229,7 +300,7 @@ def run_checks(server: Any) -> list[Check]:
     if "result" not in response:
         return [Check(False, "initialize", str(response.get("error", response)))]
 
-    first, second = free_targets(zones)
+    first, second = free_targets(zones, areas=areas)
     checks = [
         _check_tools(client),
         _check_normal(client, first, speed),
@@ -237,7 +308,9 @@ def run_checks(server: Any) -> list[Check]:
     ]
     for i, zone in enumerate(zones):
         checks.append(_check_zone(client, zone, i, speed))
-        checks.append(_check_crossing(client, zone, i, zones, speed))
+        checks.append(_check_crossing(client, zone, i, zones, speed, areas))
+    if areas:
+        checks.append(_check_outside(client, zones, areas, speed))
     return checks
 
 
@@ -250,6 +323,11 @@ def policy_warnings(policy: Any, confirm_moves: bool) -> list[str]:
         warnings.append(
             "no no-go zones set, so no place is off limits; "
             "add --no-go or --policy-file to test yours"
+        )
+    if not policy.allowed_areas:
+        warnings.append(
+            "no allowed area set, so any target outside your zones is accepted; "
+            "add --allow-area or allowed_areas in a --policy-file"
         )
     if policy.max_speed == DEFAULT_POLICY.max_speed:
         warnings.append(
@@ -317,6 +395,10 @@ def main(
         )
         return 1
     no_go = list(getattr(args, "no_go", None) or []) + list(getattr(args, "st_no_go", None) or [])
+    allow = (
+        list(getattr(args, "allow_area", None) or [])
+        + list(getattr(args, "st_allow_area", None) or [])
+    )
     max_speed = getattr(args, "st_max_speed", None)
     if max_speed is None:
         max_speed = getattr(args, "max_speed", None)
@@ -327,6 +409,7 @@ def main(
             policy=getattr(args, "st_policy", None) or getattr(args, "policy", None),
             max_speed=max_speed,
             no_go_zones=[parse_zone(z) for z in no_go],
+            allowed_areas=[parse_zone(a, "allowed area") for a in allow],
             policy_file=(
                 getattr(args, "st_policy_file", None) or getattr(args, "policy_file", None)
             ),
