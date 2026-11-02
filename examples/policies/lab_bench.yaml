@@ -6,8 +6,11 @@
 # How the checks work (read this before you rely on it):
 #   - Every zone is an axis-aligned rectangle in the robot's map frame, in metres.
 #     Circles, polygons and rotated rectangles are not supported.
-#   - A move is refused when its TARGET point is inside a zone. The path to the
-#     target is not checked, so add a margin around the arm's reach.
+#   - A move is refused when its TARGET point is inside a zone. On adapters that
+#     drive straight (mock://, gazebo_native://, mujoco://, ros2:// without Nav2)
+#     it is also refused when the straight line to the target enters a zone. On
+#     ros2:// with Nav2 the route is not checked: add a Nav2 keepout filter.
+#     Either way, add a margin around the arm's reach.
 #   - Speeds above max_speed are clamped down to it, not refused.
 #   - This file limits where the MOBILE robot is sent. It does not stop the arm.
 #   - Flags on the command line win: --max-speed replaces max_speed, and each
