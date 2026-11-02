@@ -27,13 +27,25 @@ def _args(client, **kw):
     return SimpleNamespace(**base)
 
 
+@pytest.fixture
+def before_pypi(monkeypatch):
+    """A version whose PyPI release has no ``apyrobo mcp``."""
+    monkeypatch.setattr(mcp_clients, "__version__", "4.1.0")
+
+
+@pytest.fixture
+def on_pypi(monkeypatch):
+    """A version whose PyPI release has ``apyrobo mcp``."""
+    monkeypatch.setattr(mcp_clients, "__version__", "4.2.0")
+
+
 def _run(args, which):
     out, err = io.StringIO(), io.StringIO()
     code = mcp_clients.main(args, stdout=out, stderr=err, which=which)
     return code, out.getvalue(), err.getvalue()
 
 
-def test_claude_desktop_uses_absolute_uvx_and_passes_flags(tmp_path):
+def test_claude_desktop_uses_absolute_uvx_and_passes_flags(tmp_path, before_pypi):
     uvx = tmp_path / "uvx"
     uvx.write_text("")
     code, out, err = _run(
@@ -56,6 +68,39 @@ def test_falls_back_to_installed_apyrobo(tmp_path):
     assert code == 0
     server = json.loads(out)["mcpServers"]["apyrobo"]
     assert server == {"command": str(exe.resolve()), "args": ["mcp"]}
+
+
+@pytest.mark.parametrize("version, expected", [
+    ("4.2.0", []),
+    ("4.2.1", []),
+    ("4.10.0", []),
+    ("5.0.0", []),
+    ("4.2.0.dev1", []),
+    ("4.1.0", ["--from", GIT_SOURCE]),
+    ("4.1.9", ["--from", GIT_SOURCE]),
+    ("4.0.10", ["--from", GIT_SOURCE]),
+    ("3.9.0", ["--from", GIT_SOURCE]),
+    ("unknown", ["--from", GIT_SOURCE]),
+])
+def test_uvx_source_follows_the_version(version, expected):
+    assert mcp_clients._uvx_source(version) == expected
+
+
+def test_config_prints_the_pypi_form_once_released(on_pypi, tmp_path):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    launch = mcp_clients.resolve_launch(["--max-speed", "0.5"], "auto",
+                                        _which({"uvx": str(uvx)}))
+    assert launch.args == ["apyrobo", "mcp", "--max-speed", "0.5"]
+
+
+def test_bare_uvx_note_uses_the_pypi_form_once_released(on_pypi):
+    assert mcp_clients.resolve_launch([], "auto", _which({})).args == ["apyrobo", "mcp"]
+
+
+def test_ssh_prints_the_pypi_form_once_released(on_pypi):
+    argv = shlex.split(mcp_clients.remote_command(["--max-speed", "0.5"], "uvx"))
+    assert argv == ["uvx", "apyrobo", "mcp", "--max-speed", "0.5"]
 
 
 def test_launcher_apyrobo_beats_uvx(tmp_path):
@@ -194,7 +239,7 @@ def test_ssh_setup_is_sourced_before_the_server():
     assert argv[2] == ". /opt/ros/jazzy/setup.bash && exec apyrobo mcp --robot ros2://"
 
 
-def test_ssh_uvx_launcher_runs_uvx_on_the_robot():
+def test_ssh_uvx_launcher_runs_uvx_on_the_robot(before_pypi):
     argv = shlex.split(mcp_clients.remote_command([], "uvx"))
     assert argv == ["uvx", "--from", GIT_SOURCE, "apyrobo", "mcp"]
 
