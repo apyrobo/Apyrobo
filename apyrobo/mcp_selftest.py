@@ -7,7 +7,8 @@ user can see their limits hold before touching any client config:
 * the tools are listed,
 * a move within the limits runs,
 * an over-limit move is clamped to the policy's speed limit,
-* a move into each no-go zone is refused and the robot stays put.
+* a move into each no-go zone is refused and the robot stays put,
+* a move across each no-go zone, to a free target, is refused too.
 
 It only ever drives ``mock://``. Any other robot is refused before anything
 is built, so it cannot move hardware.
@@ -81,14 +82,32 @@ def _in_zone(x: float, y: float, zone: dict[str, Any]) -> bool:
     return zone["x_min"] <= x <= zone["x_max"] and zone["y_min"] <= y <= zone["y_max"]
 
 
-def free_targets(zones: Sequence[dict[str, Any]]) -> list[tuple[float, float]]:
-    """Two distinct targets outside every zone, close to the origin if possible."""
+def _clear(
+    start: tuple[float, float], end: tuple[float, float], zones: Sequence[dict[str, Any]]
+) -> bool:
+    """True if ``end`` is free and the straight line to it enters no zone."""
+    from apyrobo.safety.enforcer import segment_enters_zone
+
+    return not any(_in_zone(*end, z) or segment_enters_zone(start, end, z) for z in zones)
+
+
+def free_targets(
+    zones: Sequence[dict[str, Any]], start: tuple[float, float] = (0.0, 0.0)
+) -> list[tuple[float, float]]:
+    """Two targets the robot can drive to in turn from ``start``, near it if possible."""
     near = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 1.0), (-1.0, -1.0)]
-    points = [p for p in near if not any(_in_zone(*p, z) for z in zones)]
-    # Past the right edge of every zone is always free.
+    # Past the right edge of every zone is free, though zones may block the way.
     edge = max((float(z["x_max"]) for z in zones), default=0.0)
-    points += [(edge + 1.0, 0.0), (edge + 2.0, 0.0)]
-    return points[:2]
+    points = [*near, (edge + 1.0, 0.0), (edge + 2.0, 0.0)]
+    points += [(x * r, y * r) for r in (0.25, 0.5, 2.0, 4.0, 8.0) for x, y in near]
+    for first in points:
+        if _clear(start, first, zones):
+            for second in [*points, start]:
+                if second != first and _clear(first, second, zones):
+                    return [first, second]
+    # Walled in: return free targets anyway; the checks report the refusal.
+    free = [p for p in points if not any(_in_zone(*p, z) for z in zones)]
+    return free[:2]
 
 
 def _zone_label(zone: dict[str, Any], index: int) -> str:
@@ -151,6 +170,43 @@ def _check_zone(client: _Client, zone: dict[str, Any], index: int, speed: float)
     return Check(True, name, f"move to ({x:g}, {y:g}) refused, robot stayed at {after}")
 
 
+def _across(
+    start: tuple[float, float], zone: dict[str, Any], zones: Sequence[dict[str, Any]]
+) -> tuple[float, float]:
+    """A free target past ``zone``, on the line from ``start`` through its centre."""
+    cx = (float(zone["x_min"]) + float(zone["x_max"])) / 2
+    cy = (float(zone["y_min"]) + float(zone["y_max"])) / 2
+    stretch = 1.0
+    target = (2 * cx - start[0], 2 * cy - start[1])
+    for _ in range(64):
+        if not any(_in_zone(*target, z) for z in zones):
+            break
+        stretch *= 2
+        target = (cx + (cx - start[0]) * stretch, cy + (cy - start[1]) * stretch)
+    return target
+
+
+def _check_crossing(
+    client: _Client,
+    zone: dict[str, Any],
+    index: int,
+    zones: Sequence[dict[str, Any]],
+    speed: float,
+) -> Check:
+    name = f"move across no-go zone {_zone_label(zone, index)}"
+    before = client.position()
+    if before is None:
+        return Check(False, name, "could not read the robot's position")
+    x, y = _across(before, zone, zones)
+    is_error, text = client.tool("move_to", x=x, y=y, speed=speed)
+    after = client.position()
+    if not is_error or "REFUSED" not in text:
+        return Check(False, name, f"move {before} to ({x:g}, {y:g}) was not refused: {text}")
+    if before != after:
+        return Check(False, name, f"robot moved from {before} to {after}")
+    return Check(True, name, f"move {before} to ({x:g}, {y:g}) refused, robot stayed put")
+
+
 def run_checks(server: Any) -> list[Check]:
     """Run every check against a server built on ``mock://``."""
     policy = server.toolbox.enforcer.policy
@@ -176,7 +232,9 @@ def run_checks(server: Any) -> list[Check]:
         _check_normal(client, first, speed),
         _check_over_limit(client, second, max_speed),
     ]
-    checks += [_check_zone(client, zone, i, speed) for i, zone in enumerate(zones)]
+    for i, zone in enumerate(zones):
+        checks.append(_check_zone(client, zone, i, speed))
+        checks.append(_check_crossing(client, zone, i, zones, speed))
     return checks
 
 
@@ -195,8 +253,8 @@ def _write_report(
     if confirm_moves:
         print("note  --confirm-moves needs a client that can ask you; not tested here", file=out)
     print(
-        "note  zones are checked at the move target only, not along the path; "
-        "this ran on mock://, so no robot moved",
+        "note  this ran on mock://, so no robot moved; what is checked along the "
+        "route depends on the adapter, see docs/mcp.md",
         file=out,
     )
     failed = sum(not c.ok for c in checks)

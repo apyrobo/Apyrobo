@@ -259,16 +259,22 @@ class RobotToolbox:
 
         Shows the target and the speed the policy will actually allow.
         Returns None for a move the policy refuses anyway (target in a
-        no-go zone), so the user is not asked to approve a refused move.
+        no-go zone, or a route that crosses one), so the user is not asked
+        to approve a refused move.
         Raises ToolError for invalid arguments.
         """
         p = self.enforcer.policy
         if name == "move_to":
             x, y = _num(arguments, "x"), _num(arguments, "y")
             speed = _move_speed(arguments)
-            from apyrobo.safety.enforcer import SafetyEnforcer
+            from apyrobo.safety.enforcer import SafetyEnforcer, SafetyViolation
 
             if any(SafetyEnforcer._point_in_zone(x, y, z) for z in p.collision_zones):
+                return None
+            try:
+                if self.enforcer.crossed_zone(x, y) is not None:
+                    return None
+            except SafetyViolation:
                 return None
             if speed is None:
                 speed_text = f"default speed (policy limit {p.max_speed} m/s)"

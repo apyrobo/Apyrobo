@@ -144,6 +144,11 @@ class CapabilityAdapter(abc.ABC):
         connect, disconnect, is_connected
     """
 
+    #: True when something behind this adapter chooses the route (a planner
+    #: such as Nav2), so the robot does not drive the straight line to the
+    #: target. The SafetyEnforcer then cannot check the route by itself.
+    plans_own_path: bool = False
+
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         self.robot_name = robot_name
         self._state = AdapterState.DISCONNECTED

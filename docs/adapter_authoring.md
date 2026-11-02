@@ -119,6 +119,11 @@ def move(self, x: float, y: float, speed: float | None = None) -> None:
 Keep `_require_connected`: a queued `move` executing on reconnect is a
 safety hazard, and the suite checks for it (`FAIL-01`).
 
+If something behind the adapter picks the route (Nav2, a fleet manager), set
+the class attribute `plans_own_path = True`. Otherwise `SafetyEnforcer` assumes
+the robot drives the straight line to the target and refuses a move whose line
+crosses a no-go zone, which needs a truthful `get_position()`.
+
 ### 4. Optional operations
 
 The base class provides spec-correct defaults for everything else

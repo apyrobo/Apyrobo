@@ -341,6 +341,15 @@ for the full list). It is a software guard between a model and a robot, not a
 certified safety system: keep hardware e-stops and site safety measures in
 place, and try new setups on `mock://` or a simulator first.
 
+No-go zones are checked at the target on every adapter. The route is checked
+too where the robot drives a straight line: `mock://`, `gazebo_native://`,
+`mujoco://`, `ros2://` without Nav2 and the other adapters without a planner
+refuse a move whose straight line enters a zone, and a robot already inside a
+zone may drive out. On `ros2://` with Nav2 the route is **not** checked, because
+Nav2 picks it: add a Nav2 keepout filter if the robot must never enter an area.
+The check assumes the adapter reports a true position and drives straight, so
+it is no substitute for a planner that knows your map.
+
 The server speaks MCP over stdio. Clients that open with `initialize`
 (protocol versions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05) get
 `initialize`, `ping`, `tools/list` and `tools/call`; bad tool arguments come
