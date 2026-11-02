@@ -193,6 +193,11 @@ checks and executes.
 | `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
 
+For a starting point, copy a commented policy from
+[`examples/policies/`](../examples/policies/) (warehouse aisle, lab bench, home
+with stairs), edit the zones for your map, and check it with
+`apyrobo mcp selftest --policy-file your_policy.yaml`.
+
 ### Confirm every move
 
 With `--confirm-moves`, each motion command waits for a yes from the user.

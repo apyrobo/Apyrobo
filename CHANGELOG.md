@@ -71,6 +71,27 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   a LeRobot-shaped stand-in policy (no torch) run through `PolicyRunner`
   and `SafetyEnforcer` on `mock://`, showing a runaway action clamped and a
   no-go drift refused. Not a real checkpoint yet.
+- **`apyrobo mcp config … --ssh user@host`** prints a client config whose
+  command is `ssh`, running `apyrobo mcp` on the robot, so a client on a
+  laptop drives a robot elsewhere over stdio with the policy enforced on
+  the robot. Needs key-based auth. `--ssh-setup PATH` sources a script first
+  (a non-interactive ssh shell has not sourced ROS 2). `--policy-file`
+  becomes an absolute path on the robot. Losing the link does not stop the
+  robot; see docs/mcp.md.
+- **`apyrobo mcp selftest`** takes the same policy flags as the server and
+  shows what they do on `mock://`: a normal move, an over-limit move
+  clamped, a move into each no-go zone refused. Exits 0 or 1, and refuses
+  any robot other than `mock://`.
+- **Example safety policies** in `examples/policies/` (warehouse aisle, lab
+  bench, home with stairs), commented field by field, to copy for
+  `--policy-file`. A test loads each one and checks a clamped and a refused
+  move.
+- `scripts/release_check.py`: builds the sdist and wheel, runs `twine check`,
+  checks versions, the changelog section and the `mcp-name` marker, then
+  installs the wheel in a fresh venv and drives `apyrobo mcp` over stdio.
+  It never bumps, tags or uploads. See docs/RELEASING.md.
+- docs/mcp.md: a table comparing `apyrobo mcp` with ROS-MCP Server, Nav2 MCP
+  Server and armguard-mcp.
 - **`vda5050://` — VDA 5050 master-control adapter** (`apyrobo/core/vda5050_adapter.py`,
   `pip install 'apyrobo[vda5050]'`): drive any VDA 5050-compliant AMR over
   MQTT — publishes `order`/`instantActions`, consumes
@@ -108,6 +129,16 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **`apyrobo mcp` refuses NaN, infinite and negative-speed moves.** A client
+  sending `{"x": NaN}` moved the mock robot to `(nan, nan)`, because NaN
+  passes every limit and no-go-zone comparison; a NaN or infinite speed
+  skipped the clamp, and a negative speed bypassed it. Tool arguments must
+  now be finite and `move_to` speed not negative (a tool error, no motion),
+  and `SafetyEnforcer.move()`/`rotate()` refuse the same values for callers
+  outside MCP. An empty JSON-RPC batch now gets one Invalid Request error.
+- **`PlanValidator` reports bad step params instead of crashing.** A step with
+  `params: null` raised `AttributeError`; null now means no params and any
+  other non-object value is a validation error.
 - **`apyrobo mcp` prints a readable error when the robot adapter can't
   start.** For example `--robot ros2://…` in a shell without ROS 2 sourced
   now prints `Error: The ros2:// adapter is unavailable …` and exits 1
