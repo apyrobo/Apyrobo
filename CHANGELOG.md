@@ -87,6 +87,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   (a non-interactive ssh shell has not sourced ROS 2). `--policy-file`
   becomes an absolute path on the robot. Losing the link does not stop the
   robot; see docs/mcp.md.
+- **`apyrobo mcp config` follows the release.** From 4.2.0 on, the config
+  it prints starts `uvx apyrobo mcp` from PyPI (on the robot too, with
+  `--ssh`); older versions keep the `uvx --from git+https://…` form, since
+  PyPI has no `apyrobo mcp` for them.
 - **`apyrobo mcp selftest`** takes the same policy flags as the server and
   shows what they do on `mock://`: a normal move, an over-limit move
   clamped, a move into each no-go zone refused. Exits 0 or 1, and refuses

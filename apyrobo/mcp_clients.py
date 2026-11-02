@@ -26,8 +26,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-#: Source used with ``uvx --from`` until a PyPI release ships ``apyrobo mcp``.
+from apyrobo.__version__ import __version__
+
+#: Source used with ``uvx --from`` for versions PyPI has no ``apyrobo mcp`` in.
 GIT_SOURCE = "git+https://github.com/apyrobo/Apyrobo"
+#: First release that ships ``apyrobo mcp`` on PyPI.
+FIRST_PYPI_MCP_RELEASE = (4, 2, 0)
 
 CLIENTS = ("claude-desktop", "cursor", "claude-code")
 LAUNCHERS = ("auto", "uvx", "apyrobo")
@@ -99,6 +103,18 @@ def server_args(
     return out
 
 
+def _uvx_source(version: str | None = None) -> list[str]:
+    """``uvx`` arguments naming where the package comes from.
+
+    A version that contains ``apyrobo mcp`` on PyPI needs none. Older ones
+    install from GitHub, and so does anything unparsable: that form always works.
+    """
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)", __version__ if version is None else version)
+    if match and tuple(map(int, match.groups())) >= FIRST_PYPI_MCP_RELEASE:
+        return []
+    return ["--from", GIT_SOURCE]
+
+
 def resolve_launch(
     flags: list[str], launcher: str = "auto", which: Which = shutil.which
 ) -> Launch:
@@ -109,7 +125,7 @@ def resolve_launch(
     """
     if launcher not in LAUNCHERS:
         raise ValueError(f"unknown launcher {launcher!r}; choose one of {', '.join(LAUNCHERS)}")
-    uvx_args = ["--from", GIT_SOURCE, "apyrobo", "mcp", *flags]
+    uvx_args = [*_uvx_source(), "apyrobo", "mcp", *flags]
     apyrobo_args = ["mcp", *flags]
 
     if launcher in ("auto", "uvx"):
@@ -165,7 +181,7 @@ def remote_command(
     non-interactive ssh shell lacks: ROS 2 most of all.
     """
     if launcher == "uvx":
-        argv = ["uvx", "--from", GIT_SOURCE, "apyrobo", "mcp", *flags]
+        argv = ["uvx", *_uvx_source(), "apyrobo", "mcp", *flags]
     else:
         argv = ["apyrobo", "mcp", *flags]
     command = shlex.join(argv)
