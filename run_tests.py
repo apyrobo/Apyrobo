@@ -466,9 +466,9 @@ def test_safety_multiple_zones():
         assert False
     except SafetyViolation:
         pass
-    # Safe spot
-    enforcer.move(x=5.0, y=5.0)
-    assert robot._adapter.position == (5.0, 5.0)
+    # Safe spot (the robot starts on zone 1's corner, so go away from the zone)
+    enforcer.move(x=5.0, y=-5.0)
+    assert robot._adapter.position == (5.0, -5.0)
     assert len(enforcer.violations) == 2
 
 def test_safety_policy_from_ref():
