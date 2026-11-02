@@ -10,6 +10,9 @@ user can see their limits hold before touching any client config:
 * a move into each no-go zone is refused and the robot stays put,
 * a move across each no-go zone, to a free target, is refused too.
 
+It then warns about what the policy leaves unset, without changing the exit
+code: a passing run only says the limits you wrote down hold.
+
 It only ever drives ``mock://``. Any other robot is refused before anything
 is built, so it cannot move hardware.
 """
@@ -238,6 +241,33 @@ def run_checks(server: Any) -> list[Check]:
     return checks
 
 
+def policy_warnings(policy: Any, confirm_moves: bool) -> list[str]:
+    """What the policy leaves unset. These never change the exit code."""
+    from apyrobo.safety.enforcer import DEFAULT_POLICY
+
+    warnings = []
+    if not policy.collision_zones:
+        warnings.append(
+            "no no-go zones set, so no place is off limits; "
+            "add --no-go or --policy-file to test yours"
+        )
+    if policy.max_speed == DEFAULT_POLICY.max_speed:
+        warnings.append(
+            f"max speed is the built-in {policy.max_speed:g} m/s, not one chosen for "
+            "this robot; set it with --max-speed or --policy-file"
+        )
+    if policy.max_angular_speed == DEFAULT_POLICY.max_angular_speed:
+        warnings.append(
+            f"max angular speed is the built-in {policy.max_angular_speed:g} rad/s, not "
+            "one chosen for this robot; set max_angular_speed in a --policy-file"
+        )
+    if not confirm_moves:
+        warnings.append(
+            "--confirm-moves is off, so moves within the limits run without asking anyone"
+        )
+    return warnings
+
+
 def _write_report(
     checks: Sequence[Check], robot: str, policy: Any, confirm_moves: bool, out: TextIO
 ) -> None:
@@ -248,8 +278,13 @@ def _write_report(
     )
     for check in checks:
         print(f"{'PASS' if check.ok else 'FAIL'}  {check.name}: {check.detail}", file=out)
-    if not policy.collision_zones:
-        print("note  no no-go zones set; add --no-go or --policy-file to test yours", file=out)
+    for warning in policy_warnings(policy, confirm_moves):
+        print(f"warn  {warning}", file=out)
+    print(
+        "note  only the zones you set were tested; this cannot know what is missing "
+        "from your map",
+        file=out,
+    )
     if confirm_moves:
         print("note  --confirm-moves needs a client that can ask you; not tested here", file=out)
     print(
@@ -312,6 +347,8 @@ def main(
         with contextlib.suppress(Exception):
             enforcer.stop()
 
-    confirm_moves = bool(getattr(args, "confirm_moves", False))
+    confirm_moves = bool(
+        getattr(args, "confirm_moves", False) or getattr(args, "st_confirm_moves", False)
+    )
     _write_report(checks, robot, enforcer.policy, confirm_moves, out)
     return 0 if all(c.ok for c in checks) else 1

@@ -3022,6 +3022,9 @@ def main() -> None:
                                 metavar="M_S")
     p_mcp_selftest.add_argument("--no-go", dest="st_no_go", action="append", default=None,
                                 metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+    p_mcp_selftest.add_argument("--confirm-moves", dest="st_confirm_moves", action="store_true",
+                                help="Say you will run the server with --confirm-moves; "
+                                     "not exercised here, it needs a client that can ask you")
 
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")

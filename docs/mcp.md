@@ -166,6 +166,12 @@ apyrobo mcp selftest --max-speed 0.5 --no-go 2,2,4,4
 It refuses any robot other than `mock://`, so it cannot move hardware. It does
 not exercise `--confirm-moves`, which needs a client that can ask you.
 
+A pass only says the limits you wrote down hold. So the report also warns about
+what your policy leaves unset: no no-go zones, the built-in speed limits, and
+`--confirm-moves` off (pass that flag to `selftest` too if you run the server
+with it). The warnings do not change the exit code. They cannot cover what is
+missing from your map: a zone you never wrote down looks like free space.
+
 ## Tools
 
 | Tool | Moves the robot | What it does |
