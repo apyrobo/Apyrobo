@@ -146,6 +146,8 @@ class SafetyPolicy:
         - max_speed: Hard cap on movement speed (m/s)
         - max_angular_speed: Hard cap on rotation speed (rad/s)
         - collision_zones: List of rectangular zones the robot cannot enter
+        - allowed_areas: Rectangles a move target must fall in; empty means
+          anywhere outside the collision zones
         - human_proximity_limit: Minimum distance to maintain from humans (m)
         - move_timeout: Max seconds a move command can run before auto-stop
         - watchdog_tolerance: Max divergence (m) between odometry and command
@@ -166,11 +168,13 @@ class SafetyPolicy:
         speed_profile: SpeedProfile | None = None,
         escalation_timeout: float = 300.0,
         watchdog_interval: float = 2.0,
+        allowed_areas: list[dict[str, float]] | None = None,
     ) -> None:
         self.name = name
         self.max_speed = max_speed
         self.max_angular_speed = max_angular_speed
         self.collision_zones = list(collision_zones or [])
+        self.allowed_areas = list(allowed_areas or [])
         self.human_proximity_limit = human_proximity_limit
         self.move_timeout = move_timeout
         self.watchdog_tolerance = watchdog_tolerance
@@ -378,11 +382,12 @@ class SafetyEnforcer:
             1. Battery check (SF-10)
             2. Speed clamping + speed profile (SF-06)
             3. Static collision zone check (target)
-            4. Dynamic collision zone check (SF-07, target)
-            5. Path check: the straight line to the target must not enter a
+            4. Allowed area check (target), when any are set
+            5. Dynamic collision zone check (SF-07, target)
+            6. Path check: the straight line to the target must not enter a
                zone, unless the adapter plans its own route
-            6. Human proximity check (SF-02)
-            7. Move timeout (SF-01)
+            7. Human proximity check (SF-02)
+            8. Move timeout (SF-01)
         """
         self._reject_bad_numbers("move", x=x, y=y, speed=speed)
         if speed is not None and speed < 0:
@@ -460,6 +465,25 @@ class SafetyEnforcer:
                 raise SafetyViolation(
                     f"Position ({x}, {y}) is inside collision zone: {zone}"
                 )
+
+        # --- Allowed areas: deny by default once any are set ---
+        if self.outside_allowed_areas(x, y):
+            violation = {
+                "type": "outside_allowed_area",
+                "requested_position": (x, y),
+                "allowed_areas": list(self._policy.allowed_areas),
+            }
+            self._violations.append(violation)
+            self._record_audit("violation", violation)
+            logger.error(
+                "SAFETY: Command REJECTED — position (%.2f, %.2f) is outside every "
+                "allowed area (policy: %s)",
+                x, y, self._policy.name,
+            )
+            raise SafetyViolation(
+                f"Position ({x}, {y}) is outside every allowed area: "
+                f"{self._policy.allowed_areas}"
+            )
 
         # --- SF-07: Dynamic collision zones from WorldState ---
         if self._world_state is not None:
@@ -902,6 +926,11 @@ class SafetyEnforcer:
             if segment_enters_zone(start, (x, y), zone):
                 return zone
         return None
+
+    def outside_allowed_areas(self, x: float, y: float) -> bool:
+        """True if allowed areas are set and (x, y) is in none of them."""
+        areas = self._policy.allowed_areas
+        return bool(areas) and not any(self._point_in_zone(x, y, a) for a in areas)
 
     def _read_position(self) -> tuple[float, float]:
         """Current position as two finite floats, or SafetyViolation."""

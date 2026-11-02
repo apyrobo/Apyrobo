@@ -1609,11 +1609,15 @@ def cmd_mcp(args: argparse.Namespace) -> None:
 
     try:
         zones = [parse_zone(z) for z in (getattr(args, "no_go", None) or [])]
+        areas = [
+            parse_zone(a, "allowed area") for a in (getattr(args, "allow_area", None) or [])
+        ]
         server = build_server(
             robot_uri=args.robot,
             policy=args.policy,
             max_speed=args.max_speed,
             no_go_zones=zones,
+            allowed_areas=areas,
             provider=args.provider,
             policy_file=getattr(args, "policy_file", None),
             confirm_moves=getattr(args, "confirm_moves", False),
@@ -1627,6 +1631,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
     print(
         f"apyrobo mcp — robot={args.robot} policy={policy.name} "
         f"max_speed={policy.max_speed} no_go_zones={len(policy.collision_zones)} "
+        f"allowed_areas={len(policy.allowed_areas)} "
         f"confirm_moves={'on' if getattr(server, 'confirm_moves', False) else 'off'} "
         "(waiting for an MCP client on stdio)",
         file=sys.stderr, flush=True,
@@ -2971,12 +2976,17 @@ def main() -> None:
                        help="Base safety policy (default: the policy file's base, else default)")
     p_mcp.add_argument("--policy-file", dest="policy_file", default=None, metavar="PATH",
                        help="JSON or YAML safety policy (name, base, max_speed, "
-                            "max_angular_speed, no_go_zones); command-line flags override it")
+                            "max_angular_speed, no_go_zones, allowed_areas); "
+                            "command-line flags override it")
     p_mcp.add_argument("--max-speed", dest="max_speed", type=float, default=None,
                        metavar="M_S", help="Override the policy speed limit (m/s)")
     p_mcp.add_argument("--no-go", dest="no_go", action="append", default=None,
                        metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
                        help="Add a rectangular no-go zone in metres (repeatable)")
+    p_mcp.add_argument("--allow-area", dest="allow_area", action="append", default=None,
+                       metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                       help="Add a rectangle move targets may be in; with any set, targets "
+                            "outside all of them are refused (repeatable)")
     p_mcp.add_argument("--confirm-moves", dest="confirm_moves", action="store_true",
                        help="Ask the user to confirm every motion command (MCP elicitation); "
                             "clients without form elicitation get motion refused")
@@ -3001,6 +3011,8 @@ def main() -> None:
                               metavar="M_S")
     p_mcp_config.add_argument("--no-go", dest="cfg_no_go", action="append", default=None,
                               metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+    p_mcp_config.add_argument("--allow-area", dest="cfg_allow_area", action="append",
+                              default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
     p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true")
     p_mcp_config.add_argument("--ssh", dest="cfg_ssh", default=None, metavar="USER@HOST",
                               help="Start the server on this machine over ssh "
@@ -3022,6 +3034,8 @@ def main() -> None:
                                 metavar="M_S")
     p_mcp_selftest.add_argument("--no-go", dest="st_no_go", action="append", default=None,
                                 metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+    p_mcp_selftest.add_argument("--allow-area", dest="st_allow_area", action="append",
+                                default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
     p_mcp_selftest.add_argument("--confirm-moves", dest="st_confirm_moves", action="store_true",
                                 help="Say you will run the server with --confirm-moves; "
                                      "not exercised here, it needs a client that can ask you")

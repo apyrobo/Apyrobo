@@ -7,9 +7,13 @@
 #   - Every zone is an axis-aligned rectangle in the robot's map frame, in metres.
 #     Circles, polygons and rotated rectangles are not supported; cover an odd
 #     shape with a few rectangles.
-#   - A move is refused when its TARGET point is inside a zone. The straight line
-#     or planned path to the target is not checked, so keep zones generous and
-#     let your navigation stack (e.g. Nav2 keepout filters) handle routing.
+#   - A move is refused when its TARGET point is inside a zone. On adapters that
+#     drive straight (mock://, gazebo_native://, mujoco://, ros2:// without Nav2)
+#     it is also refused when the straight line to the target enters a zone. On
+#     ros2:// with Nav2 the route is not checked: add a Nav2 keepout filter.
+#   - With allowed_areas set, a TARGET outside all of them is refused too, so a
+#     zone you forgot cannot send the robot off the floor you meant. Only the
+#     target is compared with the areas, not the route to it.
 #   - Speeds above max_speed are clamped down to it, not refused.
 #   - Flags on the command line win: --max-speed replaces max_speed, and each
 #     --no-go adds a zone on top of the ones listed here.
@@ -45,3 +49,12 @@ no_go_zones:
     y_max: 11.0
   # The short string form works too: "x_min,y_min,x_max,y_max" (no name).
   - "12.0,-6.0,14.0,-4.0"
+
+# Rectangles a move target must fall in. Leave this key out to allow anywhere
+# outside the zones above. An empty list is an error, not "anywhere".
+allowed_areas:
+  - name: aisle-floor
+    x_min: -2.0
+    y_min: -8.0
+    x_max: 30.0
+    y_max: 12.0
