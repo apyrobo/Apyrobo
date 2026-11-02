@@ -233,8 +233,9 @@ class TestThroughputBenchmark:
 
     def test_regression_gate(self, mock_robot: Robot) -> None:
         """
-        Run the same 100-task workload twice back-to-back and verify the
-        second pass isn't more than 20% slower than the first.
+        Run the same 100-task workload six times back-to-back and verify
+        the last three passes aren't more than 20% slower than the first
+        three.
 
         Both measurements happen inside this one function, with nothing
         else running in between. This used to compare against
@@ -248,25 +249,35 @@ class TestThroughputBenchmark:
         specifically (a plain warm-up before timing did not fix it).
         Removing the intervening test from the comparison entirely
         removes the interference, whatever its exact cause.
+
+        Each half is scored by its fastest pass. Comparing one pass against
+        one pass failed now and then in CI (236 vs 1195 tasks/sec
+        on a shared runner), because a single stall anywhere in the second
+        pass decides the result. Noise on a runner only ever slows a pass
+        down, so the fastest pass is the best estimate of what the code can
+        do. A real slowdown still fails: it hits all three later passes,
+        and the 20% limit is unchanged.
         """
         agent = Agent(provider="rule")
 
         def measure() -> float:
-            start = time.time()
+            start = time.perf_counter()
             completed = 0
             for _ in range(100):
                 result = agent.execute("go to 1 1", mock_robot)
                 if result.status == TaskStatus.COMPLETED:
                     completed += 1
-            elapsed = time.time() - start
+            elapsed = time.perf_counter() - start
             return completed / elapsed
 
-        baseline_tps = measure()
-        current_tps = measure()
+        passes = [measure() for _ in range(6)]
+        baseline_tps = max(passes[:3])
+        current_tps = max(passes[3:])
 
         threshold = baseline_tps * 0.8  # 20% degradation limit
         print(
-            f"\nRegression gate: baseline={baseline_tps:.1f} tps, "
+            f"\nRegression gate: passes={[round(p, 1) for p in passes]}, "
+            f"baseline={baseline_tps:.1f} tps, "
             f"current={current_tps:.1f} tps, threshold={threshold:.1f} tps"
         )
         assert current_tps >= threshold, (
