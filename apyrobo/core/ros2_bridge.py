@@ -523,6 +523,11 @@ if _HAS_ROS2:
         # Navigation — Nav2 (preferred)
         # ==================================================================
 
+        @property
+        def plans_own_path(self) -> bool:
+            """Nav2 picks the route; the cmd_vel fallback drives straight."""
+            return self._has_nav2
+
         def move(self, x: float, y: float, speed: float | None = None) -> None:
             """
             Navigate to (x, y) using Nav2 if available, else cmd_vel.

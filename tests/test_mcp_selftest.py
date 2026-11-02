@@ -48,7 +48,9 @@ def test_each_zone_is_refused_and_a_zone_on_the_usual_target_is_avoided():
     assert code == 0
     assert "PASS  no-go zone #1: move to (3, 3) refused" in out
     assert "PASS  no-go zone #2: move to (1, 0) refused" in out
-    assert "5/5 checks passed" in out
+    assert "PASS  move across no-go zone #1" in out
+    assert "PASS  move across no-go zone #2" in out
+    assert "7/7 checks passed" in out
 
 
 def test_policy_file_zone_names_appear(tmp_path):
