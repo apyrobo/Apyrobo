@@ -20,6 +20,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   A robot already inside a zone may leave it. With zones set, a position that
   cannot be read refuses the move. `apyrobo mcp selftest` checks a crossing
   move for each zone, and `--confirm-moves` no longer asks about such a move.
+- **Deny by default with allowed areas.** `apyrobo mcp --allow-area
+  X_MIN,Y_MIN,X_MAX,Y_MAX` (repeatable) and `allowed_areas` in a policy file:
+  with at least one set, a move target outside all of them is refused. Unset
+  keeps today's behaviour. Only the target is checked, not the route.
+  `apyrobo mcp selftest` tests it, and `apyrobo mcp config` passes it through.
+  `SafetyPolicy` gains `allowed_areas`. Zones given as NaN or infinity are now
+  a readable error at start; a NaN zone used to refuse nothing.
 - **`apyrobo mcp selftest` warns about what the policy leaves unset**: no
   no-go zones, the built-in speed limits, `--confirm-moves` off. The warnings
   do not change the exit code, and the report says it cannot know what is

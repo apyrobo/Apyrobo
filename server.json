@@ -38,7 +38,7 @@
         {
           "type": "named",
           "name": "--policy-file",
-          "description": "JSON or YAML safety policy (max_speed, max_angular_speed, no_go_zones); command-line flags override it",
+          "description": "JSON or YAML safety policy (max_speed, max_angular_speed, no_go_zones, allowed_areas); command-line flags override it",
           "format": "filepath"
         },
         {
@@ -51,6 +51,12 @@
           "type": "named",
           "name": "--no-go",
           "description": "Rectangular no-go zone in metres as X_MIN,Y_MIN,X_MAX,Y_MAX; moves into it are refused",
+          "isRepeated": true
+        },
+        {
+          "type": "named",
+          "name": "--allow-area",
+          "description": "Rectangle in metres as X_MIN,Y_MIN,X_MAX,Y_MAX; with any set, move targets outside all of them are refused",
           "isRepeated": true
         }
       ]

@@ -68,3 +68,13 @@ def test_example_clamps_an_over_limit_move(path):
         "type": "speed_clamped", "requested": 5.0,
         "enforced": cfg["max_speed"], "max_allowed": cfg["max_speed"],
     }]
+
+
+def test_warehouse_example_refuses_a_target_off_the_allowed_floor():
+    path = POLICY_DIR / "warehouse_aisle.yaml"
+    cfg = load_policy_file(path)
+    assert [a["name"] for a in cfg["allowed_areas"]] == ["aisle-floor"]
+    srv = build_server(policy_file=path)
+    res = call(srv, "move_to", {"x": 100.0, "y": 0.0})
+    assert res["isError"] is True
+    assert "outside every allowed area" in res["content"][0]["text"]
