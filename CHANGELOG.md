@@ -20,6 +20,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   A robot already inside a zone may leave it. With zones set, a position that
   cannot be read refuses the move. `apyrobo mcp selftest` checks a crossing
   move for each zone, and `--confirm-moves` no longer asks about such a move.
+- **`apyrobo mcp selftest` warns about what the policy leaves unset**: no
+  no-go zones, the built-in speed limits, `--confirm-moves` off. The warnings
+  do not change the exit code, and the report says it cannot know what is
+  missing from your map.
 - **`apyrobo mcp` — MCP server** (`apyrobo/mcp_server.py`, no extra
   dependencies): lets Claude, Cursor or any MCP client inspect, plan and
   drive a robot over stdio, with every motion command passed through the
