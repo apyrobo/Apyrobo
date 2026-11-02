@@ -9,7 +9,8 @@ Run from the repo root before tagging a release:
 It checks, and prints PASS/FAIL for each:
 
   1. pyproject.toml, server.json and server.json's PyPI package agree on the version
-  2. CHANGELOG.md has a "## [<version>]" section
+  2. CHANGELOG.md has a "## [<version>]" section with real entries in it
+     (the release notes come from it, so an empty one ships blank notes)
   3. README.md carries the "mcp-name: <server.json name>" marker the MCP
      Registry uses to verify PyPI ownership
   4. sdist and wheel build (python -m build)
@@ -101,20 +102,41 @@ def check_versions(root: Path) -> Check:
     return Check(name, True, version)
 
 
+def changelog_section(text: str, version: str) -> str | None:
+    """The body of the ``## [version]`` section, or None if there is no heading."""
+    heading = re.search(rf"^## \[{re.escape(version)}\][^\n]*$", text, re.MULTILINE)
+    if heading is None:
+        return None
+    rest = text[heading.end():]
+    following = re.search(r"^## \[", rest, re.MULTILINE)
+    return rest[:following.start()] if following else rest
+
+
 def check_changelog(root: Path, version: str | None) -> Check:
-    name = "CHANGELOG.md has a section for this version"
+    name = "CHANGELOG.md has a section for this version, with entries"
     if version is None:
         return Check(name, False, "unknown version")
     path = root / "CHANGELOG.md"
     if not path.is_file():
         return Check(name, False, "CHANGELOG.md missing")
-    pattern = rf"^## \[{re.escape(version)}\]"
-    if re.search(pattern, path.read_text(encoding="utf-8"), re.MULTILINE):
-        return Check(name, True, f"## [{version}]")
-    return Check(
-        name, False,
-        f"no '## [{version}]' heading (move the [Unreleased] entries under it)",
-    )
+    section = changelog_section(path.read_text(encoding="utf-8"), version)
+    if section is None:
+        return Check(
+            name, False,
+            f"no '## [{version}]' heading (move the [Unreleased] entries under it)",
+        )
+    if "<!--" in section:
+        return Check(name, False, f"'## [{version}]' still holds placeholder comments")
+    entries = [
+        line for line in section.splitlines()
+        if line.strip() and line.strip() != "---" and not line.startswith("#")
+    ]
+    if not entries:
+        return Check(
+            name, False,
+            f"'## [{version}]' is empty (are the entries still under [Unreleased]?)",
+        )
+    return Check(name, True, f"## [{version}], {len(entries)} lines")
 
 
 def mcp_marker(root: Path) -> str | None:
