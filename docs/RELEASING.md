@@ -1,6 +1,6 @@
 # Releasing apyrobo
 
-A release is: bump the version, move the changelog entries, check, tag, upload.
+A release is: bump the version, check, tag, upload.
 `scripts/release_check.py` does the checking; it never bumps, tags or uploads.
 
 ## 1. Bump the version
@@ -9,10 +9,11 @@ A release is: bump the version, move the changelog entries, check, tag, upload.
 scripts/bump_version.sh X.Y.Z
 ```
 
-This updates `pyproject.toml`, `apyrobo/__version__.py` and adds a
-`## [X.Y.Z]` stub to `CHANGELOG.md`. It does **not** touch `server.json`:
-set both `"version"` fields there to `X.Y.Z` by hand (the MCP Registry reads
-them). Move the `[Unreleased]` entries under the new heading.
+This updates `pyproject.toml`, `apyrobo/__version__.py` and both `"version"`
+fields in `server.json` (the MCP Registry reads them). It also renames the
+`CHANGELOG.md` `[Unreleased]` section to `## [X.Y.Z] - <today>` and starts a new
+empty `[Unreleased]` above it. If `[Unreleased]` is empty, or `X.Y.Z` already
+has a section, it refuses and changes nothing. It never commits or tags.
 
 ## 2. Check
 
@@ -25,8 +26,8 @@ Every line must say `PASS`; the script exits 1 otherwise. It checks that:
 
 | Check | What a FAIL usually means |
 | --- | --- |
-| pyproject.toml and server.json versions match | `server.json` was not bumped |
-| CHANGELOG.md has a section for this version | `[Unreleased]` was not renamed |
+| pyproject.toml and server.json versions match | the version was edited by hand in one place only |
+| CHANGELOG.md has a section for this version, with entries | `[Unreleased]` was not renamed, or the section is empty or holds placeholder comments, so the release notes would ship blank |
 | mcp-name marker in README.md | the `<!-- mcp-name: … -->` line was removed |
 | sdist and wheel build | packaging error (`python -m build`) |
 | twine check | the README does not render on PyPI |
