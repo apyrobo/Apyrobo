@@ -224,6 +224,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
   and what APYROBO does not protect against.
+- The README shows the MCP safety demo as an animated terminal SVG, drawn by
+  `scripts/make_safety_demo_svg.py` from the demo's real output; a test fails
+  if the committed file no longer matches a fresh run.
 
 ### Changed
 
