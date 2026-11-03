@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import json
 import logging
+import signal
 import subprocess
 import sys
 import os
@@ -1636,13 +1637,34 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         "(waiting for an MCP client on stdio)",
         file=sys.stderr, flush=True,
     )
+    def on_signal(signum: int, _frame: Any) -> None:
+        server.client_lost(f"signal {signum}")
+        raise SystemExit(128 + signum)
+
+    watched = [getattr(signal, n) for n in ("SIGTERM", "SIGHUP") if hasattr(signal, n)]
+    with contextlib.suppress(ValueError):  # not the main thread: no handlers
+        for signum in watched:
+            signal.signal(signum, on_signal)
+    code: Any = 0
     try:
-        server.serve()
+        server.serve(watch_client=True)
     except KeyboardInterrupt:
         pass
+    except SystemExit as exc:
+        code = exc.code
     finally:
+        with contextlib.suppress(ValueError):
+            for signum in watched:
+                signal.signal(signum, signal.SIG_IGN)
         with contextlib.suppress(Exception):
             server.toolbox.enforcer.stop()
+    if server.reader_running():
+        # The stdin thread holds stdin's lock in a blocking read, and
+        # interpreter shutdown aborts on that lock. The robot is stopped.
+        sys.stderr.flush()
+        os._exit(code if isinstance(code, int) else 1)
+    if code:
+        sys.exit(code)
 
 
 # ---------------------------------------------------------------------------

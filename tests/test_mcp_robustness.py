@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import json
 import math
-import subprocess
 import sys
 
 import pytest
@@ -25,6 +24,7 @@ from apyrobo.mcp_server import (
     build_server,
 )
 from apyrobo.safety.enforcer import SafetyEnforcer, SafetyPolicy, SafetyViolation
+from tests.mcp_stdio import talk
 
 ZONE = {"x_min": 2.0, "y_min": 2.0, "x_max": 4.0, "y_max": 4.0}
 INIT = {
@@ -270,14 +270,9 @@ def test_real_stdio_survives_invalid_utf8_and_nan():
         + b"\n"
         + b'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"robot_status"}}\n'
     )
-    proc = subprocess.run(
-        [sys.executable, "-m", "apyrobo", "mcp"],
-        input=payload,
-        capture_output=True,
-        timeout=60,
-    )
-    assert proc.returncode == 0, proc.stderr.decode(errors="replace")
-    replies = [_strict(line) for line in proc.stdout.decode().splitlines() if line.strip()]
+    proc = talk([sys.executable, "-m", "apyrobo", "mcp"], payload.decode("latin-1"), last_id=9)
+    assert proc.returncode == 0, proc.stderr
+    replies = [_strict(line) for line in proc.stdout.splitlines() if line.strip()]
     assert replies[0]["error"]["code"] == PARSE_ERROR
     assert replies[2]["result"]["isError"] is True
     status = json.loads(replies[3]["result"]["content"][0]["text"])

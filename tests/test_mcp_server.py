@@ -20,6 +20,7 @@ from apyrobo.mcp_server import (
     build_server,
     parse_zone,
 )
+from tests.mcp_stdio import talk
 
 ZONE = {"x_min": 2.0, "y_min": 2.0, "x_max": 4.0, "y_max": 4.0}
 
@@ -354,15 +355,14 @@ def test_cli_stdio_round_trip():
             "params": {"name": "move_to", "arguments": {"x": 3, "y": 3}},
         },
     ]
-    proc = subprocess.run(
+    proc = talk(
         [sys.executable, "-m", "apyrobo", "mcp", "--no-go", "2,2,4,4"],
-        input="".join(json.dumps(r) + "\n" for r in requests),
-        capture_output=True,
-        text=True,
-        timeout=60,
+        "".join(json.dumps(r) + "\n" for r in requests),
+        last_id=2,
     )
     assert proc.returncode == 0, proc.stderr
     replies = [json.loads(line) for line in proc.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2]  # nothing else on stdout
     assert replies[1]["result"]["isError"] is True
+    assert "REFUSED by safety policy" in replies[1]["result"]["content"][0]["text"]
     assert "apyrobo mcp" in proc.stderr

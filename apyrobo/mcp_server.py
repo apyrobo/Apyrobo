@@ -20,8 +20,10 @@ import hmac
 import json
 import logging
 import math
+import queue
 import secrets
 import sys
+import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator
@@ -66,6 +68,10 @@ CONFIRM_INPUT_KEY = "confirm_move"
 CONFIRM_TTL_S = 600
 # End of the client's input stream (a JSON ``null`` line is a message).
 _EOF = object()
+# Tools that can make the robot move; refused once the client is gone.
+MOTION_TOOLS = frozenset({"move_to", "rotate", "execute_task"})
+# How often the stop is repeated while a motion call is still unwinding.
+HALT_REPEAT_S = 0.2
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -488,6 +494,11 @@ class MCPServer:
         self._out: IO[str] | None = None
         self._backlog: deque[Any] = deque()
         self._elicit_seq = 0
+        # Plain flags, not locks: client_lost() also runs in a signal handler.
+        self.client_gone = False
+        self._motion_running = False
+        self._halting = False
+        self._reader: threading.Thread | None = None
 
     # -- dispatch ------------------------------------------------------
 
@@ -802,6 +813,18 @@ class MCPServer:
             return _error(msg_id, INVALID_PARAMS, f"Unknown tool: {name!r}")
         if not isinstance(arguments, dict):
             return _error(msg_id, INVALID_PARAMS, "arguments must be an object")
+        moves = name in MOTION_TOOLS
+        # In this order: _halt() stops repeating only when no motion is
+        # running, and it starts after client_gone is set, so a move either
+        # sees client_gone here or is stopped by _halt().
+        self._motion_running = moves
+        if moves and self.client_gone:
+            self._motion_running = False
+            return _tool_result(
+                msg_id,
+                f"REFUSED: the MCP client disconnected, so {name} did not run.",
+                is_error=True,
+            )
         try:
             payload = self.toolbox.call(name, arguments)
             text = json.dumps(_jsonable(payload), indent=2)
@@ -811,6 +834,8 @@ class MCPServer:
         except Exception as exc:
             logger.warning("MCP: tool %s failed: %s", name, exc)
             text, is_error = f"{type(exc).__name__}: {exc}", True
+        finally:
+            self._motion_running = False
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
@@ -819,20 +844,76 @@ class MCPServer:
 
     # -- transport -----------------------------------------------------
 
-    def serve(self, stdin: IO[str] | None = None, stdout: IO[str] | None = None) -> None:
+    def serve(
+        self,
+        stdin: IO[str] | None = None,
+        stdout: IO[str] | None = None,
+        *,
+        watch_client: bool = False,
+    ) -> None:
         """Read messages from *stdin* until EOF, write responses to *stdout*.
 
         While a request is handled, ``sys.stdout`` points at stderr, so a stray
         ``print`` in an adapter can never corrupt the protocol stream.
+
+        With *watch_client*, stdin is read on a background thread, so the end
+        of input is seen during a blocking move: the robot is stopped at once
+        and any motion request not yet started is refused.
         """
         stdin = stdin or sys.stdin
         out = stdout or sys.stdout
         self._lines, self._out = iter(stdin), out
         self._backlog.clear()
+        if watch_client:
+            inbox: queue.SimpleQueue[Any] = queue.SimpleQueue()
+            self._lines = iter(inbox.get, _EOF)
+            self._reader = threading.Thread(
+                target=self._read_client, args=(stdin, inbox),
+                name="apyrobo-mcp-stdin", daemon=True,
+            )
+            self._reader.start()
         try:
             self._serve_loop(out)
+        except BrokenPipeError:
+            self.client_lost("stdout closed")
         finally:
             self._lines = self._out = None
+
+    def _read_client(self, stdin: IO[str], inbox: queue.SimpleQueue[Any]) -> None:
+        try:
+            for line in stdin:
+                inbox.put(line)
+        except Exception as exc:
+            logger.warning("MCP: reading stdin failed: %s", exc)
+        finally:
+            self.client_lost("stdin closed")
+            inbox.put(_EOF)
+
+    def reader_running(self) -> bool:
+        """True while the stdin thread is still blocked on a read."""
+        return self._reader is not None and self._reader.is_alive()
+
+    def client_lost(self, reason: str) -> None:
+        """Nobody is supervising any more: stop the robot from another thread.
+
+        Safe to call from a signal handler, and more than once.
+        """
+        self.client_gone = True
+        if self._halting:
+            return
+        self._halting = True
+        logger.warning("MCP: client lost (%s), stopping the robot", reason)
+        threading.Thread(target=self._halt, name="apyrobo-mcp-halt", daemon=True).start()
+
+    def _halt(self) -> None:
+        while True:
+            try:
+                self.toolbox.enforcer.stop()
+            except Exception as exc:
+                logger.error("MCP: stop after client loss failed: %s", exc)
+            if not self._motion_running:
+                return
+            time.sleep(HALT_REPEAT_S)
 
     def _serve_loop(self, out: IO[str]) -> None:
         while True:
