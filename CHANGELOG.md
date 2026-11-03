@@ -15,6 +15,8 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   even during a move, and on `SIGTERM` or `SIGHUP`. A motion request read but
   not started is refused, so moves in input piped in and closed are refused;
   clients must hold stdin open until they have their replies.
+  The check waits for pending input, so a stdin that had already closed
+  refuses the move every time.
 
 - **Moves that cross a no-go zone are refused, not only moves that end in
   one.** On adapters that drive straight (`mock://`, `gazebo_native://`,
