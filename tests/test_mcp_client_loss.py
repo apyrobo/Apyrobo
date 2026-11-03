@@ -1,6 +1,7 @@
 """The robot stops when the MCP client goes away, even during a move."""
 from __future__ import annotations
 
+import io
 import json
 import os
 import signal
@@ -11,6 +12,7 @@ import time
 
 import pytest
 
+from apyrobo import mcp_server
 from apyrobo.mcp_server import build_server
 
 INIT = {
@@ -214,3 +216,57 @@ def test_real_process_refuses_a_piped_move_and_exits_cleanly():
     replies = [json.loads(line) for line in proc.stdout.splitlines()]
     assert replies[1]["result"]["isError"] is True
     assert "client disconnected" in replies[1]["result"]["content"][0]["text"]
+
+
+class LaggingStdin:
+    """A real pipe whose reader thread is late to notice the end of input."""
+
+    def __init__(self, stream, lag):
+        self.stream, self.lag = stream, lag
+
+    def fileno(self):
+        return self.stream.fileno()
+
+    def __iter__(self):
+        yield from self.stream
+        time.sleep(self.lag)
+
+
+def test_a_move_after_stdin_closed_is_refused_however_late_the_reader_is(server):
+    robot = SlowRobot(server)
+    stdin, client_in, client_out, stdout = pipes()
+    send(client_in, INIT, move())
+    client_in.close()
+    thread = serve_in_thread(server, LaggingStdin(stdin, 0.1), stdout)
+    thread.join(10)
+    assert not thread.is_alive()
+    stdout.close()
+    replies = [json.loads(line) for line in client_out]
+    assert robot.moves == []
+    assert "client disconnected" in replies[1]["result"]["content"][0]["text"]
+
+
+def test_settling_does_not_wait_when_nothing_is_pending(server, monkeypatch):
+    monkeypatch.setattr(mcp_server, "STDIN_SETTLE_S", 60)
+    stdin, client_in, _, _ = pipes()
+    server._client_stdin = stdin
+    start = time.monotonic()
+    server._settle_client()
+    assert time.monotonic() - start < 30
+    client_in.close()
+
+
+def test_settling_gives_up_on_input_nobody_reads(server, monkeypatch):
+    monkeypatch.setattr(mcp_server, "STDIN_SETTLE_S", 0.01)
+    stdin, client_in, _, _ = pipes()
+    send(client_in, INIT)
+    server._client_stdin = stdin
+    server._settle_client()
+    assert not server.client_gone
+    client_in.close()
+
+
+def test_settling_skips_a_stdin_without_a_descriptor(server):
+    server._client_stdin = io.StringIO("")
+    server._settle_client()
+    assert not server.client_gone
