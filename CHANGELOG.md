@@ -164,6 +164,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `ros2://` without `rclpy` no longer says ROS 2 only runs inside the APYROBO
+  Docker container. The error now says to source ROS 2 first, with Docker as
+  the other option.
+
 - `ros2://`: the Nav2 route check sends its plan request again when no answer
   comes. The first request from a freshly started server could lose its answer,
   which refused the move with "Nav2 planner did not answer in time".
