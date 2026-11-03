@@ -148,9 +148,20 @@ different from a local config:
   prints text breaks the MCP stream.
 
 Run the printed `ssh` command in a terminal first: the server's start-up line
-appears, then it waits for a client. Losing the link does not stop the robot:
-the server sends no stop when its client goes away, so a Nav2 goal already
-accepted keeps going. Keep your robot's own e-stop within reach.
+appears, then it waits for a client.
+
+### When the client goes away
+
+`apyrobo mcp` stops the robot when its client goes away: when stdin closes,
+even during a move, and on `SIGTERM` or `SIGHUP`. A motion request already read
+but not started is refused. So input piped in and then closed
+(`printf ... | apyrobo mcp`) has its moves refused; a client must keep stdin open
+until it has its replies. This is tested on `mock://` and a slow test adapter,
+not yet on a real Nav2 goal.
+
+A dead network link is different. Until TCP gives up, the server sees no end of
+input, so set `ClientAliveInterval` and `ClientAliveCountMax` in the robot's
+`sshd_config` to bound the wait. Keep your robot's own e-stop within reach.
 
 ### Check your limits first
 
