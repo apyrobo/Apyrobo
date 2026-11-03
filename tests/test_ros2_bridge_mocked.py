@@ -1147,3 +1147,69 @@ class TestEnums:
         assert NavState.FAILED == "failed"
         assert NavState.CANCELLED == "cancelled"
         assert NavState.TIMED_OUT == "timed_out"
+
+
+def _pose(x, y):
+    pose = MagicMock()
+    pose.pose.position.x = x
+    pose.pose.position.y = y
+    return pose
+
+
+def _plan_client(points=((0.0, 0.0), (1.0, 2.0)), accepted=True, status=None):
+    """A mock ComputePathToPose client whose futures are already done."""
+    client = MagicMock()
+    client.wait_for_server.return_value = True
+    response = MagicMock()
+    response.status = _goal_status_mock.STATUS_SUCCEEDED if status is None else status
+    response.result.path.poses = [_pose(*p) for p in points]
+    handle = MagicMock()
+    handle.accepted = accepted
+    handle.get_result_async.return_value.done.return_value = True
+    handle.get_result_async.return_value.result.return_value = response
+    client.send_goal_async.return_value.done.return_value = True
+    client.send_goal_async.return_value.result.return_value = handle
+    return client
+
+
+class TestPlanPath:
+    def test_returns_nav2s_route_as_points(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_client = _plan_client()
+        assert adapter.plan_path(1.0, 2.0) == [(0.0, 0.0), (1.0, 2.0)]
+        goal = adapter._plan_client.send_goal_async.call_args[0][0]
+        assert goal.goal.header.frame_id == "map"
+        assert goal.goal.pose.position.x == 1.0
+        assert goal.use_start is False
+
+    def test_plans_from_a_client_only_when_nav2_is_there(self):
+        adapter, _ = _build_adapter(has_nav2=False, odom_wait_sec=0.0)
+        with pytest.raises(bridge_module.Ros2NavigationError, match="not available"):
+            adapter.plan_path(1.0, 2.0)
+
+    def test_planner_server_gone(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_client = _plan_client()
+        adapter._plan_client.wait_for_server.return_value = False
+        with pytest.raises(bridge_module.Ros2NavigationError, match="not available"):
+            adapter.plan_path(1.0, 2.0)
+
+    def test_goal_rejected(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_client = _plan_client(accepted=False)
+        with pytest.raises(bridge_module.Ros2NavigationError, match="rejected"):
+            adapter.plan_path(1.0, 2.0)
+
+    def test_no_route_found(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_client = _plan_client(status=_goal_status_mock.STATUS_ABORTED)
+        with pytest.raises(bridge_module.Ros2NavigationError, match="no route"):
+            adapter.plan_path(1.0, 2.0)
+
+    def test_planner_never_answers(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_timeout_sec = 0.05
+        adapter._plan_client = _plan_client()
+        adapter._plan_client.send_goal_async.return_value.done.return_value = False
+        with pytest.raises(bridge_module.Ros2NavigationError, match="in time"):
+            adapter.plan_path(1.0, 2.0)

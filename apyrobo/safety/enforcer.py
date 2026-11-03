@@ -384,8 +384,9 @@ class SafetyEnforcer:
             3. Static collision zone check (target)
             4. Allowed area check (target), when any are set
             5. Dynamic collision zone check (SF-07, target)
-            6. Path check: the straight line to the target must not enter a
-               zone, unless the adapter plans its own route
+            6. Path check: the route must not enter a zone. That is the
+               planner's route on adapters that plan their own, refused if
+               none comes back, and the straight line on the others
             7. Human proximity check (SF-02)
             8. Move timeout (SF-01)
         """
@@ -907,25 +908,39 @@ class SafetyEnforcer:
 
     def crossed_zone(self, x: float, y: float) -> dict[str, Any] | None:
         """
-        Return the first zone the straight line to (x, y) enters, or None.
+        Return the first zone the route to (x, y) enters, or None.
 
-        Returns None when the adapter plans its own route, since the straight
-        line then says nothing about where the robot will drive. Raises
-        SafetyViolation when zones are set and the position cannot be read,
-        because the route cannot be checked from an unknown start.
+        The route is the planner's when the adapter plans its own, otherwise
+        the straight line from the current position. With no zones set no
+        route is fetched. Raises SafetyViolation when zones are set and the
+        route cannot be known: no plan came back, or the position is unreadable.
         """
-        if getattr(self._robot, "plans_own_path", False) is True:
-            return None
         zones = list(self._policy.collision_zones)
         if self._world_state is not None:
             zones += self._get_dynamic_zones()
         if not zones:
             return None
-        start = self._read_position()
-        for zone in zones:
-            if segment_enters_zone(start, (x, y), zone):
-                return zone
+        if getattr(self._robot, "plans_own_path", False) is True:
+            route = self._planned_route(x, y)
+        else:
+            route = [self._read_position(), (x, y)]
+        for start, end in zip(route, route[1:], strict=False):
+            for zone in zones:
+                if segment_enters_zone(start, end, zone):
+                    return zone
         return None
+
+    def _planned_route(self, x: float, y: float) -> list[tuple[float, float]]:
+        """The adapter's planned route as finite points, or SafetyViolation."""
+        try:
+            route = [(float(px), float(py)) for px, py in self._robot.plan_path(x, y)]
+        except Exception as exc:
+            self._reject_path(f"Cannot check the route: no plan from the robot ({exc})")
+        if not route:
+            self._reject_path("Cannot check the route: the planner returned an empty path")
+        if not all(math.isfinite(v) for point in route for v in point):
+            self._reject_path("Cannot check the route: the plan has non-finite points")
+        return route
 
     def outside_allowed_areas(self, x: float, y: float) -> bool:
         """True if allowed areas are set and (x, y) is in none of them."""
@@ -950,7 +965,7 @@ class SafetyEnforcer:
         raise SafetyViolation(message)
 
     def _check_path(self, x: float, y: float) -> None:
-        """Refuse a move whose straight line enters a collision zone."""
+        """Refuse a move whose route enters a collision zone."""
         zone = self.crossed_zone(x, y)
         if zone is None:
             return
@@ -964,7 +979,7 @@ class SafetyEnforcer:
         self._violations.append(violation)
         self._record_audit("violation", violation)
         logger.error(
-            "SAFETY: Command REJECTED — path (%.2f, %.2f) -> (%.2f, %.2f) enters "
+            "SAFETY: Command REJECTED — route (%.2f, %.2f) -> (%.2f, %.2f) enters "
             "collision zone %s (policy: %s)",
             start[0], start[1], x, y, zone, self._policy.name,
         )

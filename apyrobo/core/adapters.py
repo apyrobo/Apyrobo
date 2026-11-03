@@ -146,7 +146,7 @@ class CapabilityAdapter(abc.ABC):
 
     #: True when something behind this adapter chooses the route (a planner
     #: such as Nav2), so the robot does not drive the straight line to the
-    #: target. The SafetyEnforcer then cannot check the route by itself.
+    #: target. The SafetyEnforcer then checks the route from plan_path().
     plans_own_path: bool = False
 
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
@@ -156,6 +156,10 @@ class CapabilityAdapter(abc.ABC):
         self._last_disconnect_time: float | None = None
         self._disconnect_handlers: list[Callable[[], None]] = []
         self._reconnect_handlers: list[Callable[[], None]] = []
+
+    def plan_path(self, x: float, y: float) -> list[tuple[float, float]]:
+        """Route to (x, y) as map points, for adapters that plan their own path."""
+        raise NotImplementedError(f"{type(self).__name__} has no route planner")
 
     # ------------------------------------------------------------------
     # Required — every adapter must implement these
