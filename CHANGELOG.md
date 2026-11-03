@@ -218,6 +218,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   FATAL error fails it on the first state that shows it. Tested against a
   simulated AGV, not hardware.
 
+- `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
+  and what APYROBO does not protect against.
+
 ### Changed
 
 - docs/mcp.md covers `apyrobo mcp` on `ros2://` robots (Nav2, the

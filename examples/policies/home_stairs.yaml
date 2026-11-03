@@ -9,7 +9,8 @@
 #   - A move is refused when its TARGET point is inside a zone. On adapters that
 #     drive straight (mock://, gazebo_native://, mujoco://, ros2:// without Nav2)
 #     it is also refused when the straight line to the target enters a zone. On
-#     ros2:// with Nav2 the route is not checked: add a Nav2 keepout filter.
+#     ros2:// with Nav2 the planned route is checked, but not the path driven:
+#     add a Nav2 keepout filter for anywhere the robot must never enter.
 #   - Nothing here detects a drop: keep the robot's own cliff sensors on. A no-go
 #     zone at the top of the stairs is a second line of defence, not the only one.
 #   - Speeds above max_speed are clamped down to it, not refused.
