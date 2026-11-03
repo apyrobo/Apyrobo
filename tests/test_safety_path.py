@@ -136,28 +136,98 @@ def test_a_runtime_zone_stays_with_its_robot():
 
 
 class Planner(MockAdapter):
+    """A planner adapter whose route is whatever the test sets."""
+
     plans_own_path = True
+
+    def __init__(self, name, route=None):
+        super().__init__(name)
+        self.route = route
+        self.plans = 0
+
+    def plan_path(self, x, y):
+        self.plans += 1
+        if isinstance(self.route, Exception):
+            raise self.route
+        return self.route
+
+
+AROUND = [(0, 0), (0, 5), (5, 5), (6, 6)]  # stays clear of ZONE (2..4)
+THROUGH = [(0, 0), (1, 1), (3, 3), (6, 6)]
+
+
+def planner_guard(route, zones=(ZONE,)):
+    adapter = Planner("p", route)
+    guard = SafetyEnforcer(
+        Robot(robot_id="p", adapter=adapter),
+        policy=SafetyPolicy(name="p", collision_zones=list(zones)),
+    )
+    return guard, adapter
 
 
 class TestPlanner:
-    def test_planner_adapter_is_not_route_checked(self):
-        guard = SafetyEnforcer(
-            Robot(robot_id="p", adapter=Planner("p")),
-            policy=SafetyPolicy(name="p", collision_zones=[ZONE]),
-        )
+    def test_a_planned_route_around_the_zone_runs(self):
+        guard, _ = planner_guard(AROUND)  # the straight line would cross
         guard.move(6, 6)
         assert guard.get_position() == (6.0, 6.0)
 
+    def test_a_planned_route_through_the_zone_is_refused(self):
+        guard, _ = planner_guard(THROUGH)
+        with pytest.raises(SafetyViolation, match="crosses collision zone"):
+            guard.move(6, 6)
+        assert guard.get_position() == (0.0, 0.0)
+        assert guard.violations[-1]["type"] == "collision_zone_path"
+
+    def test_a_route_is_caught_between_two_far_apart_points(self):
+        guard, _ = planner_guard([(0, 3), (6, 3)])  # no point lies in the zone
+        with pytest.raises(SafetyViolation, match="crosses collision zone"):
+            guard.move(6, 3)
+
+    @pytest.mark.parametrize(
+        "route, message",
+        [
+            (RuntimeError("Nav2 planner is not available"), "not available"),
+            (NotImplementedError("Planner has no route planner"), "no route planner"),
+            ([], "empty path"),
+            (None, "no plan"),
+            ([(0, 0), (float("nan"), 1)], "non-finite"),
+        ],
+    )
+    def test_no_usable_plan_fails_closed(self, route, message):
+        guard, _ = planner_guard(route)
+        with pytest.raises(SafetyViolation, match=message):
+            guard.move(6, 6)
+        assert guard.get_position() == (0.0, 0.0)
+        assert guard.violations[-1]["type"] == "path_unchecked"
+
+    def test_no_zones_means_no_plan_is_requested(self):
+        guard, adapter = planner_guard(RuntimeError("down"), zones=())
+        guard.move(6, 6)
+        assert adapter.plans == 0
+        assert guard.get_position() == (6.0, 6.0)
+
+    def test_a_robot_inside_a_zone_may_follow_a_route_out(self):
+        guard, _ = planner_guard([(3, 3), (3, 5), (6, 6)])
+        guard.move(6, 6)
+        assert guard.get_position() == (6.0, 6.0)
+
+    def test_a_route_out_of_a_zone_may_not_come_back_through_it(self):
+        guard, _ = planner_guard([(3, 3), (3, 5), (3, 3.5), (3, 0)])
+        with pytest.raises(SafetyViolation, match="crosses collision zone"):
+            guard.move(3, 0)
+
     def test_planner_adapter_still_refuses_a_target_in_a_zone(self):
-        guard = SafetyEnforcer(
-            Robot(robot_id="p", adapter=Planner("p")),
-            policy=SafetyPolicy(name="p", collision_zones=[ZONE]),
-        )
+        guard, adapter = planner_guard(AROUND)
         with pytest.raises(SafetyViolation, match="inside collision zone"):
             guard.move(3, 3)
+        assert adapter.plans == 0
 
     def test_default_adapters_drive_straight(self):
         assert Robot.discover("mock://path").plans_own_path is False
+
+    def test_an_adapter_without_a_planner_says_so(self):
+        with pytest.raises(NotImplementedError):
+            Robot.discover("mock://path").plan_path(1, 1)
 
 
 def call(server, name, **arguments):

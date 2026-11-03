@@ -113,6 +113,10 @@ class Robot:
         """True when the adapter's planner picks the route, not a straight line."""
         return getattr(self._adapter, "plans_own_path", False) is True
 
+    def plan_path(self, x: float, y: float) -> list[tuple[float, float]]:
+        """The route the adapter's planner would take to (x, y), without moving."""
+        return self._adapter.plan_path(x, y)
+
     def get_position(self) -> tuple[float, float]:
         """Return the robot's current (x, y) position."""
         return self._adapter.get_position()
