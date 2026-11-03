@@ -575,7 +575,7 @@ if _HAS_ROS2:
             goal_msg.use_start = False  # plan from the robot's current pose
 
             deadline = time.time() + self._plan_timeout_sec
-            handle = self._wait_for_plan(client.send_goal_async(goal_msg), deadline)
+            handle = self._send_plan_goal(client, goal_msg, deadline)
             if not handle.accepted:
                 raise Ros2NavigationError("Nav2 planner rejected the goal", NavState.FAILED)
             response = self._wait_for_plan(handle.get_result_async(), deadline)
@@ -588,6 +588,30 @@ if _HAS_ROS2:
                 (p.pose.position.x, p.pose.position.y)
                 for p in response.result.path.poses
             ]
+
+        def _send_plan_goal(self, client: Any, goal_msg: Any, deadline: float) -> Any:
+            """
+            Send the plan goal, resending it while no answer comes back.
+
+            The first goal from a fresh process can lose its answer (see
+            GOAL_RESEND_SEC). A plan moves nothing, so sending it again is
+            safe; whichever send is answered first gives the handle.
+            """
+            resend_sec = getattr(self, "_goal_resend_sec", self.GOAL_RESEND_SEC)
+            sent: list[Any] = []
+            while True:
+                sent.append(client.send_goal_async(goal_msg))
+                resend_at = time.time() + resend_sec if resend_sec > 0 else deadline
+                give_up_at = min(resend_at, deadline)
+                while time.time() <= give_up_at:
+                    for future in sent:
+                        if future.done():
+                            return future.result()
+                    time.sleep(0.02)
+                if give_up_at >= deadline:
+                    raise Ros2NavigationError(
+                        "Nav2 planner did not answer in time", NavState.TIMED_OUT
+                    )
 
         def _wait_for_plan(self, future: Any, deadline: float) -> Any:
             """Block on a planner future; the node's executor completes it."""
