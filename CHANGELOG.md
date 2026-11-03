@@ -20,8 +20,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   one.** On adapters that drive straight (`mock://`, `gazebo_native://`,
   `mujoco://`, `ros2://` without Nav2 and others without a planner) the
   `SafetyEnforcer` checks the line from the current position to the target
-  against static and dynamic zones. `ros2://` with Nav2 is not route-checked,
-  since Nav2 picks the route; adapters declare this with `plans_own_path`.
+  against static and dynamic zones. `ros2://` with Nav2 picks its own route
+  (adapters declare this with `plans_own_path`), so with zones set the adapter
+  asks Nav2 for the plan through `ComputePathToPose` before sending the goal,
+  and refuses the move if the plan enters a zone or no usable plan comes back.
+  This checks the plan, not the drive: the controller or a replan can differ
+  from it, so a Nav2 keepout filter stays the stronger layer.
   A robot already inside a zone may leave it. With zones set, a position that
   cannot be read refuses the move. `apyrobo mcp selftest` checks a crossing
   move for each zone, and `--confirm-moves` no longer asks about such a move.
