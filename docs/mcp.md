@@ -393,9 +393,9 @@ drive out. With no zones set, no plan is requested.
 
 This checks the plan, not the drive: Nav2's controller may stray from the plan
 and Nav2 may replan during the move, and those paths are not checked. If the
-robot must never enter an area, add a Nav2 keepout filter, which acts on the
-costmaps Nav2 plans and drives with; it is the stronger layer, and APYROBO does
-not set it up for you.
+robot must never enter an area, add a Nav2 keepout filter to both the global
+and the local costmap, so that planning and driving both respect it; it is the
+stronger layer, and APYROBO does not set it up for you.
 
 Allowed areas are checked at the target only, on every adapter. The route is
 not compared with them: a robot sent from one allowed area to another may pass
