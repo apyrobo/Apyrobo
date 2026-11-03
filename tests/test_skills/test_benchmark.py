@@ -8,6 +8,7 @@ Includes throughput benchmarks and regression gating via benchmark.json.
 from __future__ import annotations
 
 import json
+import statistics
 import time
 from pathlib import Path
 from typing import Any
@@ -250,13 +251,13 @@ class TestThroughputBenchmark:
         Removing the intervening test from the comparison entirely
         removes the interference, whatever its exact cause.
 
-        Each half is scored by its fastest pass. Comparing one pass against
-        one pass failed now and then in CI (236 vs 1195 tasks/sec
-        on a shared runner), because a single stall anywhere in the second
-        pass decides the result. Noise on a runner only ever slows a pass
-        down, so the fastest pass is the best estimate of what the code can
-        do. A real slowdown still fails: it hits all three later passes,
-        and the 20% limit is unchanged.
+        Each half is scored by its median pass. One pass against one pass
+        failed now and then in CI (236 vs 1195 tasks/sec on a shared runner),
+        because a single stall decides the result. Scoring by the fastest
+        pass failed too (passes 2108, 1664, 1400, then 1468, 1435, 1484),
+        because one lucky first pass sets the bar. The median ignores one
+        odd pass in either direction. A real slowdown still fails: it hits
+        all three later passes, and the 20% limit is unchanged.
         """
         agent = Agent(provider="rule")
 
@@ -271,8 +272,8 @@ class TestThroughputBenchmark:
             return completed / elapsed
 
         passes = [measure() for _ in range(6)]
-        baseline_tps = max(passes[:3])
-        current_tps = max(passes[3:])
+        baseline_tps = statistics.median(passes[:3])
+        current_tps = statistics.median(passes[3:])
 
         threshold = baseline_tps * 0.8  # 20% degradation limit
         print(
