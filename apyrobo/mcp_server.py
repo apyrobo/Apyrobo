@@ -24,6 +24,7 @@ import math
 import os
 import queue
 import secrets
+import select
 import sys
 import threading
 import time
@@ -77,6 +78,9 @@ MOTION_TOOLS = frozenset({"move_to", "rotate", "execute_task"})
 HALT_REPEAT_S = 0.2
 # --audit-log: longest "detail" kept on a line.
 AUDIT_DETAIL_CHARS = 500
+# How long a motion call may wait for the stdin thread to reach pending input.
+STDIN_SETTLE_S = 0.25
+STDIN_SETTLE_POLL_S = 0.001
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -549,6 +553,7 @@ class MCPServer:
         self._motion_running = False
         self._halting = False
         self._reader: threading.Thread | None = None
+        self._client_stdin: IO[str] | None = None
 
     # -- dispatch ------------------------------------------------------
 
@@ -937,6 +942,8 @@ class MCPServer:
         if not isinstance(arguments, dict):
             return _error(msg_id, INVALID_PARAMS, "arguments must be an object")
         moves = name in MOTION_TOOLS
+        if moves:
+            self._settle_client()
         # In this order: _halt() stops repeating only when no motion is
         # running, and it starts after client_gone is set, so a move either
         # sees client_gone here or is stopped by _halt().
@@ -1006,6 +1013,7 @@ class MCPServer:
         self._lines, self._out = iter(stdin), out
         self._backlog.clear()
         if watch_client:
+            self._client_stdin = stdin
             inbox: queue.SimpleQueue[Any] = queue.SimpleQueue()
             self._lines = iter(inbox.get, _EOF)
             self._reader = threading.Thread(
@@ -1029,6 +1037,29 @@ class MCPServer:
         finally:
             self.client_lost("stdin closed")
             inbox.put(_EOF)
+
+    def _settle_client(self) -> None:
+        """Let the stdin thread catch up before a motion call.
+
+        A stdin that has already closed must refuse every time, but the thread
+        may not have reached the end of input yet. While the descriptor is
+        readable it has work to do, so wait for it; a client closing after this
+        check is the real race, and client_lost() stops that move.
+        """
+        if self._client_stdin is None:
+            return
+        deadline = time.monotonic() + STDIN_SETTLE_S
+        try:
+            fd = self._client_stdin.fileno()
+            while (
+                not self.client_gone
+                and select.select([fd], [], [], 0)[0]
+                and time.monotonic() < deadline
+            ):
+                time.sleep(STDIN_SETTLE_POLL_S)
+        except (OSError, ValueError):
+            # No descriptor (StringIO), or one select cannot watch (Windows).
+            return
 
     def reader_running(self) -> bool:
         """True while the stdin thread is still blocked on a read."""
