@@ -109,12 +109,13 @@ if "ros2" not in _REG:
             raise RuntimeError(
                 "The ros2:// adapter is unavailable because a ROS 2 import "
                 f"failed: {_ros2_cause}\n\n"
-                "ROS 2 (rclpy and friends) is only available inside the "
-                "APYROBO Docker container.\n\n"
-                "Quick fix:\n"
+                "With ROS 2 installed, source it in this shell, then run the "
+                "command again:\n"
+                "  source /opt/ros/<distro>/setup.bash\n\n"
+                "Or use the APYROBO Docker container, which has ROS 2:\n"
                 "  docker compose -f docker/docker-compose.yml exec apyrobo bash\n\n"
-                "Without Docker, use mock:// for testing or gazebo:// for sim.\n"
-                "See docs/QUICKSTART.md for the full setup guide."
+                "Without ROS 2, use mock:// for testing or gazebo:// for sim.\n"
+                "See docs/mcp.md and docs/QUICKSTART.md for the full setup."
             )
 
         def get_capabilities(self):  # type: ignore[override]
