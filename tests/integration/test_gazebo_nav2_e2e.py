@@ -284,7 +284,7 @@ def test_mcp_refuses_a_goal_whose_nav2_route_crosses_a_zone(robot):
     cmd = [
         sys.executable, "-m", "apyrobo", "--verbose", "mcp",
         "--robot", "ros2://burger",
-        "--no-go", ",".join(str(v) for v in ROUTE_NO_GO),
+        "--no-go=" + ",".join(str(v) for v in ROUTE_NO_GO),
     ]
     with tempfile.TemporaryFile(mode="w+") as log:
         client = _StdioMCPClient(cmd, stderr=log)
