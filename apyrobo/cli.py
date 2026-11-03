@@ -20,6 +20,7 @@ import signal
 import subprocess
 import sys
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -2679,6 +2680,23 @@ def cmd_tutorial(args: argparse.Namespace) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+# Flags whose value is a comma-separated rectangle. A corner may be negative,
+# and argparse takes "-1.7,-50,..." for an unknown option, not a value.
+_RECTANGLE_FLAGS = ("--no-go", "--allow-area")
+_RECTANGLE_VALUE = re.compile(r"-[\d.][\d.,eE+-]*$")
+
+
+def _bind_rectangle_values(argv: list[str]) -> list[str]:
+    """Rewrite ``--no-go -1,-2,3,4`` as ``--no-go=-1,-2,3,4`` so argparse accepts it."""
+    bound: list[str] = []
+    for arg in argv:
+        if bound and bound[-1] in _RECTANGLE_FLAGS and _RECTANGLE_VALUE.match(arg):
+            bound[-1] = f"{bound[-1]}={arg}"
+        else:
+            bound.append(arg)
+    return bound
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="apyrobo",
@@ -3146,7 +3164,7 @@ def main() -> None:
     p_voice.add_argument("--max-turns", type=int, default=None,
                          help="Maximum conversation turns")
 
-    args = parser.parse_args()
+    args = parser.parse_args(_bind_rectangle_values(sys.argv[1:]))
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
