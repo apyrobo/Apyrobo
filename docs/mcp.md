@@ -267,7 +267,7 @@ subscribes to `/odom` for the pose that `robot_status`, `move_to` and the
 safety checks use, and sends each `move_to` to Nav2 as a `navigate_to_pose`
 goal. If no Nav2 action server is found it falls back to driving `/cmd_vel`
 directly, which has no obstacle avoidance. Clamps and no-go refusals happen
-in APYROBO before the goal reaches Nav2, so a refused target is never sent.
+in APYROBO before the goal reaches Nav2, so a refused move is never sent.
 If Nav2 rejects or aborts the goal, never answers it, navigation times out,
 or `stop` cancels it, `move_to` comes back as an error (`isError`) naming
 the reason and the robot's current position, not as a success.
@@ -279,6 +279,7 @@ TurtleBot3 with Nav2 and slam_toolbox (ROS 2 Humble, Gazebo Classic) and
 talks to it over stdio as an MCP client would: an over-limit `move_to` is
 clamped and reported, goes through Nav2 and gets the robot to the target
 region; a target in the no-go zone is refused and the robot does not move;
+a clear target whose Nav2 route crosses a zone is refused and no goal is sent;
 `stop` and `safety_report` answer. To run the same stack locally with
 Docker:
 
@@ -380,10 +381,21 @@ No-go zones are checked at the target on every adapter. The route is checked
 too where the robot drives a straight line: `mock://`, `gazebo_native://`,
 `mujoco://`, `ros2://` without Nav2 and the other adapters without a planner
 refuse a move whose straight line enters a zone, and a robot already inside a
-zone may drive out. On `ros2://` with Nav2 the route is **not** checked, because
-Nav2 picks it: add a Nav2 keepout filter if the robot must never enter an area.
-The check assumes the adapter reports a true position and drives straight, so
-it is no substitute for a planner that knows your map.
+zone may drive out. That check assumes the adapter reports a true position and
+drives straight, so it is no substitute for a planner that knows your map.
+
+On `ros2://` with Nav2, and with zones set, the server asks Nav2 for its route
+through the `ComputePathToPose` action before sending the goal, and refuses the
+move if any stretch of that route enters a zone. If no plan comes back
+(`plan_timeout_sec`, 10 seconds by default), the plan is empty, or it holds
+non-finite points, the move is refused rather than sent. A robot already inside a zone may
+drive out. With no zones set, no plan is requested.
+
+This checks the plan, not the drive: Nav2's controller may stray from the plan
+and Nav2 may replan during the move, and those paths are not checked. If the
+robot must never enter an area, add a Nav2 keepout filter to both the global
+and the local costmap, so that planning and driving both respect it; it is the
+stronger layer, and APYROBO does not set it up for you.
 
 Allowed areas are checked at the target only, on every adapter. The route is
 not compared with them: a robot sent from one allowed area to another may pass
