@@ -123,7 +123,7 @@ try:
     from geometry_msgs.msg import Twist, PoseStamped, Quaternion
     from nav_msgs.msg import Odometry
     from sensor_msgs.msg import LaserScan, Image, Imu
-    from nav2_msgs.action import NavigateToPose
+    from nav2_msgs.action import ComputePathToPose, NavigateToPose
     from action_msgs.msg import GoalStatus
     import tf_transformations  # euler/quaternion conversion
 
@@ -282,6 +282,7 @@ if _HAS_ROS2:
             "depth": "/oakd/stereo/image_raw",
             "imu": "/imu",
             "nav2_action": "navigate_to_pose",
+            "nav2_plan_action": "compute_path_to_pose",
         }
 
         # Navigation tuning
@@ -294,6 +295,7 @@ if _HAS_ROS2:
         # response (timeout)" when it has not yet discovered our response
         # reader, and the client never hears back.
         GOAL_RESEND_SEC = 2.0
+        PLAN_TIMEOUT_SEC = 10.0
         GOAL_TOLERANCE_M = 0.25
         CMD_VEL_HZ = 10.0
         PROPORTIONAL_GAIN_LINEAR = 0.8
@@ -312,7 +314,10 @@ if _HAS_ROS2:
             self._config = dict(self.DEFAULT_CONFIG)
             if isinstance(yaml_cfg, dict):
                 self._config.update(yaml_cfg.get("topics", {}))
-                for key in ("nav2_action", "cmd_vel", "odom", "scan", "camera", "depth", "imu"):
+                for key in (
+                    "nav2_action", "nav2_plan_action",
+                    "cmd_vel", "odom", "scan", "camera", "depth", "imu",
+                ):
                     if key in yaml_cfg:
                         self._config[key] = yaml_cfg[key]
             self._config.update(kwargs.get("config", {}))
@@ -324,6 +329,11 @@ if _HAS_ROS2:
             self._nav_timeout_sec = float(kwargs.get("nav_timeout_sec", yaml_cfg.get("nav_timeout_sec", self.NAV_TIMEOUT_SEC) if isinstance(yaml_cfg, dict) else self.NAV_TIMEOUT_SEC))
             self._nav2_server_wait_sec = float(kwargs.get("nav2_server_wait_sec", yaml_cfg.get("nav2_server_wait_sec", self.NAV2_SERVER_WAIT_SEC) if isinstance(yaml_cfg, dict) else self.NAV2_SERVER_WAIT_SEC))
             self._odom_wait_sec = float(kwargs.get("odom_wait_sec", yaml_cfg.get("odom_wait_sec", self.ODOM_WAIT_SEC) if isinstance(yaml_cfg, dict) else self.ODOM_WAIT_SEC))
+            plan_timeout_default = (
+                yaml_cfg.get("plan_timeout_sec", self.PLAN_TIMEOUT_SEC)
+                if isinstance(yaml_cfg, dict) else self.PLAN_TIMEOUT_SEC
+            )
+            self._plan_timeout_sec = float(kwargs.get("plan_timeout_sec", plan_timeout_default))
             self._goal_accept_timeout_sec = float(kwargs.get("goal_accept_timeout_sec", yaml_cfg.get("goal_accept_timeout_sec", self.GOAL_ACCEPT_TIMEOUT_SEC) if isinstance(yaml_cfg, dict) else self.GOAL_ACCEPT_TIMEOUT_SEC))
             resend_default = (
                 yaml_cfg.get("goal_resend_sec", self.GOAL_RESEND_SEC)
@@ -383,6 +393,19 @@ if _HAS_ROS2:
                 logger.warning("Could not create Nav2 action client: %s", e)
                 self._nav2_client = None
                 self._has_nav2 = False
+
+            # --- Nav2 planner client, used to check a route before driving it ---
+            self._plan_client: Any = None
+            if self._has_nav2:
+                try:
+                    self._plan_client = ActionClient(
+                        self._node,
+                        ComputePathToPose,
+                        self._config["nav2_plan_action"],
+                        callback_group=self._cb_group,
+                    )
+                except Exception as e:
+                    logger.warning("Could not create Nav2 planner client: %s", e)
 
             # Wait for first odometry message
             t0 = time.time()
@@ -527,6 +550,54 @@ if _HAS_ROS2:
         def plans_own_path(self) -> bool:
             """Nav2 picks the route; the cmd_vel fallback drives straight."""
             return self._has_nav2
+
+        def plan_path(self, x: float, y: float) -> list[tuple[float, float]]:
+            """
+            Ask Nav2 for its route to (x, y) without moving, as (x, y) map points.
+
+            Raises Ros2NavigationError when no route comes back: planner not
+            running, goal rejected, planning failed or timed out. Nav2 may
+            still drive a different path than this one (controller, replans).
+            """
+            client = getattr(self, "_plan_client", None)
+            if client is None or not client.wait_for_server(
+                timeout_sec=self._nav2_server_wait_sec
+            ):
+                raise Ros2NavigationError("Nav2 planner is not available", NavState.FAILED)
+
+            goal_msg = ComputePathToPose.Goal()
+            goal_msg.goal = PoseStamped()
+            goal_msg.goal.header.frame_id = "map"
+            goal_msg.goal.header.stamp = self._node.get_clock().now().to_msg()
+            goal_msg.goal.pose.position.x = x
+            goal_msg.goal.pose.position.y = y
+            goal_msg.goal.pose.orientation = self._yaw_to_quat(0.0)
+            goal_msg.use_start = False  # plan from the robot's current pose
+
+            deadline = time.time() + self._plan_timeout_sec
+            handle = self._wait_for_plan(client.send_goal_async(goal_msg), deadline)
+            if not handle.accepted:
+                raise Ros2NavigationError("Nav2 planner rejected the goal", NavState.FAILED)
+            response = self._wait_for_plan(handle.get_result_async(), deadline)
+            if response.status != GoalStatus.STATUS_SUCCEEDED:
+                raise Ros2NavigationError(
+                    f"Nav2 found no route to ({x:.2f}, {y:.2f}) (status={response.status})",
+                    NavState.FAILED,
+                )
+            return [
+                (p.pose.position.x, p.pose.position.y)
+                for p in response.result.path.poses
+            ]
+
+        def _wait_for_plan(self, future: Any, deadline: float) -> Any:
+            """Block on a planner future; the node's executor completes it."""
+            while not future.done():
+                if time.time() > deadline:
+                    raise Ros2NavigationError(
+                        "Nav2 planner did not answer in time", NavState.TIMED_OUT
+                    )
+                time.sleep(0.02)
+            return future.result()
 
         def move(self, x: float, y: float, speed: float | None = None) -> None:
             """
