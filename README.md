@@ -19,6 +19,12 @@
 
 **APYROBO is the safety layer between your AI agent and your robot.** Claude, Cursor or any [MCP](https://modelcontextprotocol.io) client — or your own LLM agent — plans and drives the robot through APYROBO, and motion commands pass the safety enforcer first: over-limit speeds are clamped, targets in a no-go zone are refused with a readable error, `stop` is always allowed. Built for mobile robots and fleets: it sits on top of [ROS 2](https://docs.ros.org/en/humble/) and Nav2 (and VDA 5050 AGVs over `vda5050://`), with capability discovery, a skill graph and swarm coordination underneath.
 
+<p align="center">
+  <img src="docs/mcp_safety_demo.svg" alt="Terminal animation of apyrobo mcp on a mock robot with a 0.5 m/s limit and a no-go zone: a move runs, a 5 m/s move is clamped to 0.5 m/s, a move into the zone is refused and the robot stays put, stop runs" width="820">
+  <br>
+  <em>Real replies from <code>apyrobo mcp</code> on <code>mock://</code>, drawn by <a href="scripts/make_safety_demo_svg.py">scripts/make_safety_demo_svg.py</a> from <a href="examples/05_mcp_safety_demo.py">the demo</a>; a test fails if this picture goes stale.</em>
+</p>
+
 ### Try it in 60 seconds (no robot, no ROS)
 
 ```bash
