@@ -1213,3 +1213,53 @@ class TestPlanPath:
         adapter._plan_client.send_goal_async.return_value.done.return_value = False
         with pytest.raises(bridge_module.Ros2NavigationError, match="in time"):
             adapter.plan_path(1.0, 2.0)
+
+    def test_planner_goal_with_a_lost_answer_is_sent_again(self):
+        """Nav2 can drop the answer to a fresh client's first goal."""
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_timeout_sec = 30.0
+        adapter._goal_resend_sec = 0.01
+        client = _plan_client()
+        answered = client.send_goal_async.return_value
+        lost = MagicMock()
+        lost.done.return_value = False
+        client.send_goal_async.side_effect = [lost, answered]
+        adapter._plan_client = client
+        assert adapter.plan_path(1.0, 2.0) == [(0.0, 0.0), (1.0, 2.0)]
+        assert client.send_goal_async.call_count == 2
+
+    def test_planner_late_answer_to_an_earlier_send_counts(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_timeout_sec = 30.0
+        adapter._goal_resend_sec = 0.01
+        client = _plan_client()
+        late = client.send_goal_async.return_value
+        result = late.result.return_value
+        checks = iter([False, False, False])
+        late.done.side_effect = lambda: next(checks, True)
+        silent = MagicMock()
+        silent.done.return_value = False
+        client.send_goal_async.side_effect = [late, silent, silent, silent]
+        adapter._plan_client = client
+        assert adapter.plan_path(1.0, 2.0) == [(0.0, 0.0), (1.0, 2.0)]
+        assert result.get_result_async.called
+
+    def test_planner_never_answers_sends_again_until_the_deadline(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_timeout_sec = 0.1
+        adapter._goal_resend_sec = 0.03
+        adapter._plan_client = _plan_client()
+        adapter._plan_client.send_goal_async.return_value.done.return_value = False
+        with pytest.raises(bridge_module.Ros2NavigationError, match="in time"):
+            adapter.plan_path(1.0, 2.0)
+        assert adapter._plan_client.send_goal_async.call_count >= 2
+
+    def test_planner_no_resend_when_it_is_turned_off(self):
+        adapter, _ = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+        adapter._plan_timeout_sec = 0.05
+        adapter._goal_resend_sec = 0.0
+        adapter._plan_client = _plan_client()
+        adapter._plan_client.send_goal_async.return_value.done.return_value = False
+        with pytest.raises(bridge_module.Ros2NavigationError, match="in time"):
+            adapter.plan_path(1.0, 2.0)
+        assert adapter._plan_client.send_goal_async.call_count == 1
