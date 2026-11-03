@@ -158,6 +158,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `--no-go` and `--allow-area` accept rectangles with a negative first corner.
+  `apyrobo mcp --no-go -3,-3,-1,-1` stopped with "expected one argument"
+  because the value was read as an option; `mcp selftest`, `mcp config` and
+  the server command a generated config runs are fixed too.
+
 - **`apyrobo mcp` refuses NaN, infinite and negative-speed moves.** A client
   sending `{"x": NaN}` moved the mock robot to `(nan, nan)`, because NaN
   passes every limit and no-go-zone comparison; a NaN or infinite speed
