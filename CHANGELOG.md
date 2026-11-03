@@ -11,6 +11,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- `apyrobo mcp` stops the robot when its client goes away: when stdin closes,
+  even during a move, and on `SIGTERM` or `SIGHUP`. A motion request read but
+  not started is refused, so moves in input piped in and closed are refused;
+  clients must hold stdin open until they have their replies.
+
 - **Moves that cross a no-go zone are refused, not only moves that end in
   one.** On adapters that drive straight (`mock://`, `gazebo_native://`,
   `mujoco://`, `ros2://` without Nav2 and others without a planner) the
