@@ -173,6 +173,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `execute_task` refusals are written as a sentence, not a Python dict, and match
+  `move_to`: `Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4)`, with
+  the zone's name when it has one. The structured detail is under `refusal` in
+  the JSON that follows; `safety_report` violations gain a `message` field.
+
 - Windows: `apyrobo mcp` treats a closed stdin or stdout as the client leaving.
   A failed write there raised `EINVAL`, not `BrokenPipeError`, and ended the
   server without stopping the robot; a move right after stdin closed could still
