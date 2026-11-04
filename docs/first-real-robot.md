@@ -19,9 +19,12 @@ robot, so CI does not run them.
 No-go zones and allowed areas are axis-aligned rectangles in metres, in the map
 frame: goals go to Nav2 in `map`, and Nav2's route comes back in it.
 
-Read coordinates from the map, not from `robot_status`. The `ros2://` adapter
-takes the position that `robot_status` reports from `/odom`, and odometry only
-matches the map if the robot started at the map's origin and has not drifted.
+Check `position_frame` in `robot_status`. On `ros2://` the position comes from
+the map-to-base transform when TF has a fresh one, and the field says `map`. If
+it says `odom`, localisation is not running or has stopped: the position is raw
+odometry, which only matches the map if the robot started at the map's origin
+and has not drifted, and the checks that use the robot's position are off by
+that difference. Fix localisation before you trust them.
 
 To read a point, open your map in RViz with the fixed frame set to `map`, use
 the Publish Point tool on the spot, and watch the result:

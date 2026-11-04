@@ -142,6 +142,16 @@ except ImportError as _exc:
     )
 
 
+# tf2_ros is separate: without it ros2:// still works, on /odom positions.
+try:
+    from rclpy.time import Time as _RosTime
+    from tf2_ros import Buffer as _TfBuffer
+    from tf2_ros import TransformListener as _TfListener
+    _HAS_TF2 = True
+except ImportError:
+    _HAS_TF2 = False
+
+
 # ---------------------------------------------------------------------------
 # Navigation state
 # ---------------------------------------------------------------------------
@@ -289,6 +299,11 @@ if _HAS_ROS2:
         NAV_TIMEOUT_SEC = 120.0
         NAV2_SERVER_WAIT_SEC = 5.0
         ODOM_WAIT_SEC = 5.0
+        MAP_TF_WAIT_SEC = 2.0
+        # A map transform older than this, against the odometry message that
+        # asked for it, means localisation stopped; /odom is then the honest
+        # answer. Compared with the message stamp so sim time works.
+        MAP_TF_MAX_AGE_SEC = 2.0
         GOAL_ACCEPT_TIMEOUT_SEC = 10.0
         # Resend an unanswered goal after this long. The first goal from a
         # freshly started node can be lost: Nav2 logs "Failed to send goal
@@ -365,6 +380,18 @@ if _HAS_ROS2:
             self._goal_handle: Any = None
             self._has_odom = False
             self._has_nav2 = False
+            self._position_frame = "odom"
+            self._map_frame_logged: bool | None = None
+            self._tf_buffer: Any = None
+            self._tf_listener: Any = None
+            self._map_tf_wait_sec = float(kwargs.get("map_tf_wait_sec", self.MAP_TF_WAIT_SEC))
+            if _HAS_TF2:
+                try:
+                    self._tf_buffer = _TfBuffer()
+                    self._tf_listener = _TfListener(self._tf_buffer, self._node)
+                except Exception as e:
+                    self._tf_buffer = None
+                    logger.warning("Could not listen to TF, positions stay on /odom: %s", e)
 
             # --- Odometry subscriber ---
             self._odom_sub = self._node.create_subscription(
@@ -416,6 +443,13 @@ if _HAS_ROS2:
             else:
                 logger.warning("No odometry received within %.1fs — position may be stale", self._odom_wait_sec)
 
+            # Goals and zones are in map, so give localisation a moment to
+            # answer before the first position is read.
+            if self._has_nav2 and self._has_odom and self._tf_buffer is not None:
+                t0 = time.time()
+                while self._position_frame != "map" and (time.time() - t0) < self._map_tf_wait_sec:
+                    time.sleep(0.1)
+
             logger.info(
                 "ROS2Adapter ready for %s [nav2=%s, odom=%s, pos=(%.1f, %.1f)]",
                 robot_name, self._has_nav2, self._has_odom, *self._position,
@@ -426,13 +460,58 @@ if _HAS_ROS2:
         # ==================================================================
 
         def _odom_callback(self, msg: Odometry) -> None:
-            """Update position and orientation from odometry."""
-            pos = msg.pose.pose.position
-            self._position = (pos.x, pos.y)
-            self._orientation = self._quat_to_yaw(msg.pose.pose.orientation)
+            """Update the pose: in map when TF can give it, else from odometry."""
+            map_pose = self._lookup_map_pose(msg)
+            if map_pose is not None:
+                self._position, self._orientation = map_pose
+                self._position_frame = "map"
+            else:
+                pos = msg.pose.pose.position
+                self._position = (pos.x, pos.y)
+                self._orientation = self._quat_to_yaw(msg.pose.pose.orientation)
+                self._position_frame = "odom"
+            self._log_position_frame()
             self._has_odom = True
             if self._health_monitor is not None:
                 self._health_monitor.record_odom()
+
+        def _lookup_map_pose(self, msg: Odometry) -> tuple[tuple[float, float], float] | None:
+            """The map-to-base transform, or None if there is no fresh one."""
+            if self._tf_buffer is None:
+                return None
+            base_frame = msg.child_frame_id
+            if not isinstance(base_frame, str) or not base_frame:
+                base_frame = "base_link"
+            try:
+                tf = self._tf_buffer.lookup_transform("map", base_frame, _RosTime())
+                tf_time = self._stamp_sec(tf.header.stamp)
+                odom_time = self._stamp_sec(msg.header.stamp)
+                # A stamp of 0 is a static transform, which never goes stale.
+                if tf_time and odom_time - tf_time > self.MAP_TF_MAX_AGE_SEC:
+                    return None
+                t = tf.transform.translation
+                return (float(t.x), float(t.y)), self._quat_to_yaw(tf.transform.rotation)
+            except Exception:
+                # tf2's lookup errors: no map frame yet, or never will be.
+                return None
+
+        @staticmethod
+        def _stamp_sec(stamp: Any) -> float:
+            return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+        def _log_position_frame(self) -> None:
+            """One line each time the source of the position changes."""
+            in_map = self._position_frame == "map"
+            if in_map == self._map_frame_logged:
+                return
+            if in_map:
+                logger.info("Position now comes from the map-to-base transform")
+            else:
+                logger.warning(
+                    "No map-to-base transform: position comes from /odom, which "
+                    "can differ from the map frame that goals and zones use"
+                )
+            self._map_frame_logged = in_map
 
         @staticmethod
         def _quat_to_yaw(q: Quaternion) -> float:
@@ -536,6 +615,7 @@ if _HAS_ROS2:
                     "nav2_available": self._has_nav2,
                     "topics_found": len(topic_names),
                     "odom_online": self._has_odom,
+                    "position_frame": self._position_frame,
                     "namespace": self._namespace,
                     "odom_reliability": self._odom_reliability,
                     "ros_compat": self._compat,
@@ -765,6 +845,10 @@ if _HAS_ROS2:
             pos = fb.current_pose.pose.position
             self._position = (pos.x, pos.y)
             self._orientation = self._quat_to_yaw(fb.current_pose.pose.orientation)
+            # Nav2 reports in its global frame, normally map.
+            frame = fb.current_pose.header.frame_id
+            if isinstance(frame, str) and frame:
+                self._position_frame = frame
             # distance_remaining is available in nav2_msgs Feedback
             dist = getattr(fb, "distance_remaining", None)
             if dist is not None:
@@ -967,6 +1051,11 @@ if _HAS_ROS2:
         @property
         def orientation(self) -> float:
             return self._orientation
+
+        @property
+        def position_frame(self) -> str:
+            """The frame position is in: "map", or "odom" as the fallback."""
+            return self._position_frame
 
         # Robot.get_position()/get_orientation() and the SafetyEnforcer read
         # these; without them the base class answers (0, 0) and 0 rad, so the
