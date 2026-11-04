@@ -1263,3 +1263,113 @@ class TestPlanPath:
         with pytest.raises(bridge_module.Ros2NavigationError, match="in time"):
             adapter.plan_path(1.0, 2.0)
         assert adapter._plan_client.send_goal_async.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Position frame: map when TF has it, /odom otherwise
+# ---------------------------------------------------------------------------
+
+
+def _odom_msg(x, y, stamp=100.0):
+    msg = MagicMock()
+    msg.child_frame_id = "base_footprint"
+    msg.pose.pose.position.x = x
+    msg.pose.pose.position.y = y
+    msg.pose.pose.orientation = _FakeQuaternion()
+    msg.header.stamp.sec = int(stamp)
+    msg.header.stamp.nanosec = 0
+    return msg
+
+
+def _tf_buffer(x, y, stamp=100.0, yaw_quat=None):
+    tf = MagicMock()
+    tf.transform.translation.x = x
+    tf.transform.translation.y = y
+    tf.transform.rotation = yaw_quat or _FakeQuaternion()
+    tf.header.stamp.sec = int(stamp)
+    tf.header.stamp.nanosec = 0
+    buffer = MagicMock()
+    buffer.lookup_transform.return_value = tf
+    return buffer
+
+
+class TestPositionFrame:
+    def _adapter(self, buffer=None):
+        adapter, _ = _build_adapter(odom_wait_sec=0)
+        adapter._tf_buffer = buffer
+        return adapter
+
+    def test_the_map_transform_wins_over_odometry(self):
+        adapter = self._adapter(_tf_buffer(10.0, -4.0))
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True):
+            adapter._odom_callback(_odom_msg(1.0, 2.0))
+        assert adapter.get_position() == (10.0, -4.0)
+        assert adapter.position_frame == "map"
+
+    def test_the_lookup_uses_the_base_frame_odometry_names(self):
+        buffer = _tf_buffer(0.0, 0.0)
+        adapter = self._adapter(buffer)
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True):
+            adapter._odom_callback(_odom_msg(0.0, 0.0))
+        target, source, _ = buffer.lookup_transform.call_args.args
+        assert (target, source) == ("map", "base_footprint")
+
+    def test_heading_comes_from_the_same_transform_as_position(self):
+        quarter_turn = _FakeQuaternion()
+        quarter_turn.w = math.cos(math.pi / 4)
+        quarter_turn.z = math.sin(math.pi / 4)
+        adapter = self._adapter(_tf_buffer(1.0, 1.0, yaw_quat=quarter_turn))
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True):
+            adapter._odom_callback(_odom_msg(0.0, 0.0))
+        assert adapter.get_orientation() == pytest.approx(math.pi / 2)
+
+    def test_no_tf_support_falls_back_to_odometry(self):
+        adapter = self._adapter(None)
+        adapter._odom_callback(_odom_msg(1.0, 2.0))
+        assert adapter.get_position() == (1.0, 2.0)
+        assert adapter.position_frame == "odom"
+
+    def test_a_failed_lookup_falls_back_to_odometry(self):
+        buffer = MagicMock()
+        buffer.lookup_transform.side_effect = RuntimeError("frame does not exist")
+        adapter = self._adapter(buffer)
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True):
+            adapter._odom_callback(_odom_msg(1.0, 2.0))
+        assert adapter.get_position() == (1.0, 2.0)
+        assert adapter.position_frame == "odom"
+
+    def test_a_stale_transform_falls_back_to_odometry(self):
+        adapter = self._adapter(_tf_buffer(10.0, -4.0, stamp=90.0))
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True):
+            adapter._odom_callback(_odom_msg(1.0, 2.0, stamp=100.0))
+        assert adapter.get_position() == (1.0, 2.0)
+        assert adapter.position_frame == "odom"
+
+    def test_a_static_transform_is_never_stale(self):
+        adapter = self._adapter(_tf_buffer(10.0, -4.0, stamp=0.0))
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True):
+            adapter._odom_callback(_odom_msg(1.0, 2.0, stamp=100.0))
+        assert adapter.position_frame == "map"
+
+    def test_the_fallback_logs_once_until_the_source_changes(self, caplog):
+        buffer = MagicMock()
+        buffer.lookup_transform.side_effect = RuntimeError("no map yet")
+        adapter = self._adapter(buffer)
+        with patch("apyrobo.core.ros2_bridge._RosTime", create=True), caplog.at_level(
+            "INFO", logger="apyrobo.core.ros2_bridge"
+        ):
+            adapter._odom_callback(_odom_msg(0.0, 0.0))
+            adapter._odom_callback(_odom_msg(0.0, 0.0))
+            assert caplog.text.count("No map-to-base transform") == 1
+            buffer.lookup_transform.side_effect = None
+            fresh = _tf_buffer(1.0, 1.0).lookup_transform.return_value
+            buffer.lookup_transform.return_value = fresh
+            adapter._odom_callback(_odom_msg(0.0, 0.0))
+            buffer.lookup_transform.side_effect = RuntimeError("lost it")
+            adapter._odom_callback(_odom_msg(0.0, 0.0))
+        assert caplog.text.count("Position now comes from the map-to-base transform") == 1
+        assert caplog.text.count("No map-to-base transform") == 2
+
+    def test_capabilities_report_the_frame(self):
+        adapter = self._adapter(None)
+        assert adapter.get_capabilities().metadata["position_frame"] == "odom"

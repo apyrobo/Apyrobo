@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
 
 import pytest
@@ -304,6 +305,18 @@ def test_mcp_refuses_a_goal_whose_nav2_route_crosses_a_zone(robot):
     )
     assert "Nav2: sending goal" not in server_log, "the goal reached Nav2 despite the refusal"
     assert _dist(start, adapter.position) < 0.15, "robot moved after a refused command"
+
+
+@pytest.mark.integration
+def test_position_comes_from_the_map_frame_under_nav2(robot):
+    """With localisation up, the adapter reads the map-to-base transform, not /odom."""
+    adapter = robot._adapter
+    deadline = time.time() + 15.0
+    while adapter.position_frame != "map" and time.time() < deadline:
+        time.sleep(0.1)
+    assert adapter.position_frame == "map", "no fresh map-to-base transform from TF"
+    time.sleep(1.0)  # past Nav2's feedback: odometry ticks must keep it in map
+    assert adapter.position_frame == "map"
 
 
 @pytest.mark.integration
