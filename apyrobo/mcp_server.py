@@ -571,10 +571,15 @@ class RobotToolbox:
         if status != "completed":
             reason = getattr(result, "error", None) or "execution failed"
             if refusals:
+                refusal = refusals[-1]
+                still = "The robot did not move. " if not result.steps_completed else ""
                 reason = (
                     f"REFUSED by safety policy '{self.enforcer.policy.name}' at step "
-                    f"{result.steps_completed + 1}: {refusals[-1]}"
+                    f"{result.steps_completed + 1}: "
+                    f"{refusal.get('message', refusal.get('type'))}. "
+                    f"{still}Choose a different target."
                 )
+                outcome["refusal"] = refusal
             outcome["error"] = reason
             raise ToolError(f"{reason}\n\n{json.dumps(_jsonable(outcome), indent=2)}")
         return outcome

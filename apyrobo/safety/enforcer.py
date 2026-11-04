@@ -223,6 +223,18 @@ POLICY_REGISTRY: dict[str, SafetyPolicy] = {
 # Safety Enforcer
 # ---------------------------------------------------------------------------
 
+def describe_area(area: dict[str, Any]) -> str:
+    """A zone or allowed area in words: ``'dock' (x 2 to 4, y 2 to 4)``."""
+    bounds = (
+        f"(x {area.get('x_min', float('-inf')):g} to "
+        f"{area.get('x_max', float('inf')):g}, "
+        f"y {area.get('y_min', float('-inf')):g} to "
+        f"{area.get('y_max', float('inf')):g})"
+    )
+    name = area.get("name")
+    return f"'{name}' {bounds}" if name else bounds
+
+
 def segment_enters_zone(
     start: tuple[float, float],
     end: tuple[float, float],
@@ -377,6 +389,19 @@ class SafetyEnforcer:
     # ------------------------------------------------------------------
 
     def move(self, x: float, y: float, speed: float | None = None) -> None:
+        """Run a move through the safety stack; a refusal keeps its reason.
+
+        The reason is stored on the violation because a caller going through
+        SkillExecutor gets no exception text back.
+        """
+        try:
+            self._enforced_move(x, y, speed)
+        except SafetyViolation as exc:
+            if self._violations:
+                self._violations[-1].setdefault("message", str(exc))
+            raise
+
+    def _enforced_move(self, x: float, y: float, speed: float | None = None) -> None:
         """
         Move command with full safety enforcement stack.
 
@@ -463,7 +488,8 @@ class SafetyEnforcer:
                     x, y, zone, self._policy.name,
                 )
                 raise SafetyViolation(
-                    f"Position ({x}, {y}) is inside collision zone: {zone}"
+                    f"Position ({x:g}, {y:g}) is inside collision zone "
+                    f"{describe_area(zone)}"
                 )
 
         # --- Allowed areas: deny by default once any are set ---
@@ -481,8 +507,8 @@ class SafetyEnforcer:
                 x, y, self._policy.name,
             )
             raise SafetyViolation(
-                f"Position ({x}, {y}) is outside every allowed area: "
-                f"{self._policy.allowed_areas}"
+                f"Position ({x:g}, {y:g}) is outside every allowed area: "
+                + ", ".join(describe_area(a) for a in self._policy.allowed_areas)
             )
 
         # --- SF-07: Dynamic collision zones from WorldState ---
@@ -498,7 +524,8 @@ class SafetyEnforcer:
                     self._violations.append(violation)
                     self._record_audit("violation", violation)
                     raise SafetyViolation(
-                        f"Position ({x}, {y}) blocked by dynamic obstacle zone: {zone}"
+                        f"Position ({x:g}, {y:g}) blocked by dynamic obstacle zone "
+                        f"{describe_area(zone)}"
                     )
 
         # --- Path check: a safe target does not make a safe route ---
@@ -986,7 +1013,7 @@ class SafetyEnforcer:
         )
         raise SafetyViolation(
             f"Path from ({start[0]:g}, {start[1]:g}) to ({x:g}, {y:g}) "
-            f"crosses collision zone: {zone}"
+            f"crosses collision zone {describe_area(zone)}"
         )
 
     def _get_dynamic_zones(self) -> list[dict[str, float]]:

@@ -97,7 +97,7 @@ Client calls `move_to` with `{"x": 2.0, "y": 0.0, "speed": 5.0}`. Server replies
 Client calls `move_to` with `{"x": 3.0, "y": 3.0}`. Server replies: error (isError: true).
 
 ```text
-REFUSED by safety policy 'default+cli': Position (3.0, 3.0) is inside collision zone: {'x_min': 2.0, 'y_min': 2.0, 'x_max': 4.0, 'y_max': 4.0}. The robot did not move. Choose a different target.
+REFUSED by safety policy 'default+cli': Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4). The robot did not move. Choose a different target.
 ```
 
 ## 5. Stop (always allowed)
@@ -153,7 +153,8 @@ Client calls `safety_report` with `{}`. Server replies: ok.
         "y_min": 2.0,
         "x_max": 4.0,
         "y_max": 4.0
-      }
+      },
+      "message": "Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4)"
     }
   ]
 }
