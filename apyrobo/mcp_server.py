@@ -1123,6 +1123,9 @@ class MCPServer:
         deadline = time.monotonic() + STDIN_SETTLE_S
         try:
             fd = self._client_stdin.fileno()
+        except (OSError, ValueError):
+            return  # No descriptor (StringIO): nothing to wait for.
+        try:
             while (
                 not self.client_gone
                 and select.select([fd], [], [], 0)[0]
@@ -1130,8 +1133,21 @@ class MCPServer:
             ):
                 time.sleep(STDIN_SETTLE_POLL_S)
         except (OSError, ValueError):
-            # No descriptor (StringIO), or one select cannot watch (Windows).
-            return
+            self._settle_without_select(deadline)
+
+    def _settle_without_select(self, deadline: float) -> None:
+        """Give the stdin thread its time when select cannot watch stdin.
+
+        Windows select takes only sockets, and asking about a pipe directly can
+        block while the stdin thread is reading it. So every motion call waits
+        out the settle time, a small cost for not moving after the client left.
+        """
+        while (
+            not self.client_gone
+            and self.reader_running()
+            and time.monotonic() < deadline
+        ):
+            time.sleep(STDIN_SETTLE_POLL_S)
 
     def reader_running(self) -> bool:
         """True while the stdin thread is still blocked on a read."""
@@ -1178,8 +1194,12 @@ class MCPServer:
 
     @staticmethod
     def _write(out: IO[str], response: Any) -> None:
-        out.write(json.dumps(response, separators=(",", ":")) + "\n")
-        out.flush()
+        try:
+            out.write(json.dumps(response, separators=(",", ":")) + "\n")
+            out.flush()
+        except OSError as exc:
+            # Windows reports a closed pipe as EINVAL, not BrokenPipeError.
+            raise BrokenPipeError(f"could not write to the client: {exc}") from exc
 
 
 def _declined(msg_id: Any, name: Any, action: Any) -> dict[str, Any]:

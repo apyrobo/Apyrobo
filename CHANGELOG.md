@@ -173,6 +173,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Windows: `apyrobo mcp` treats a closed stdin or stdout as the client leaving.
+  A failed write there raised `EINVAL`, not `BrokenPipeError`, and ended the
+  server without stopping the robot; a move right after stdin closed could still
+  run, because `select` cannot watch a pipe there. Each move now waits 0.25 s for
+  the stdin thread on Windows.
+
 - `--policy strict` moves run at the requested speed, up to its 0.5 m/s limit.
   They were all running at 0.05 m/s: the speed ramp was computed once with no
   elapsed time, so it always returned its minimum. A single move has nothing to
