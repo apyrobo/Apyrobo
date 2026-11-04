@@ -1,6 +1,7 @@
 """The robot stops when the MCP client goes away, even during a move."""
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -179,9 +180,24 @@ def test_broken_stdout_counts_as_client_loss(server):
     assert robot.stopped.wait(5)
 
 
-def test_serve_without_watching_keeps_in_memory_scripts_working(server):
-    import io
+class ClosedPipeOnWindows:
+    """Windows fails a flush to a closed pipe with EINVAL, not EPIPE."""
 
+    def write(self, text):
+        return len(text)
+
+    def flush(self):
+        raise OSError(errno.EINVAL, "Invalid argument")
+
+
+def test_a_stdout_failing_with_any_os_error_counts_as_client_loss(server):
+    robot = SlowRobot(server)
+    server.serve(io.StringIO(json.dumps(INIT) + "\n"), ClosedPipeOnWindows())
+    assert server.client_gone
+    assert robot.stopped.wait(5)
+
+
+def test_serve_without_watching_keeps_in_memory_scripts_working(server):
     out = io.StringIO()
     server.serve(io.StringIO(json.dumps(INIT) + "\n" + json.dumps(move()) + "\n"), out)
     replies = [json.loads(line) for line in out.getvalue().splitlines()]
@@ -263,6 +279,55 @@ def test_settling_gives_up_on_input_nobody_reads(server, monkeypatch):
     server._client_stdin = stdin
     server._settle_client()
     assert not server.client_gone
+    client_in.close()
+
+
+class ReaderStillRunning:
+    """Stands in for the stdin thread while select fails, as on Windows."""
+
+    def __init__(self, server, monkeypatch):
+        def no_select(*args):
+            raise OSError(errno.WSAENOTSOCK if sys.platform == "win32" else errno.EBADF, "no")
+
+        monkeypatch.setattr(mcp_server.select, "select", no_select)
+        self.done = threading.Event()
+        server._reader = threading.Thread(target=self.done.wait, daemon=True)
+        server._reader.start()
+
+
+def test_without_select_a_move_waits_for_the_reader_to_see_the_close(server, monkeypatch):
+    reader = ReaderStillRunning(server, monkeypatch)
+    stdin, client_in, _, _ = pipes()
+    server._client_stdin = stdin
+    timer = threading.Timer(0.05, setattr, (server, "client_gone", True))
+    timer.start()
+    server._settle_client()
+    assert server.client_gone
+    reader.done.set()
+    client_in.close()
+
+
+def test_without_select_a_live_client_only_costs_the_settle_time(server, monkeypatch):
+    monkeypatch.setattr(mcp_server, "STDIN_SETTLE_S", 0.01)
+    reader = ReaderStillRunning(server, monkeypatch)
+    stdin, client_in, _, _ = pipes()
+    server._client_stdin = stdin
+    server._settle_client()
+    assert not server.client_gone
+    reader.done.set()
+    client_in.close()
+
+
+def test_without_select_a_finished_reader_is_not_waited_for(server, monkeypatch):
+    monkeypatch.setattr(mcp_server, "STDIN_SETTLE_S", 60)
+    reader = ReaderStillRunning(server, monkeypatch)
+    reader.done.set()
+    server._reader.join(5)
+    stdin, client_in, _, _ = pipes()
+    server._client_stdin = stdin
+    start = time.monotonic()
+    server._settle_client()
+    assert time.monotonic() - start < 30
     client_in.close()
 
 
