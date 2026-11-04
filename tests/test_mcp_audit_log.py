@@ -74,11 +74,11 @@ def test_a_clamped_move_logs_the_speed_that_was_enforced(log):
 
 
 def test_the_logged_speed_is_the_one_the_robot_was_given(log):
-    server = make(log, policy="strict")  # its speed profile lowers the speed
+    server = make(log, policy="strict")  # its limit lowers the speed
     given = []
     server.toolbox.enforcer._robot.move = lambda **kw: given.append(kw["speed"])
-    server.handle(call("move_to", x=1.0, y=0.0, speed=0.1))
-    assert lines(log)[-1]["enforced_speed"] == given[0] != 0.1
+    server.handle(call("move_to", x=1.0, y=0.0, speed=9.0))
+    assert lines(log)[-1]["enforced_speed"] == given[0] == 0.5
 
 
 def test_no_speed_asked_for_logs_none(log):

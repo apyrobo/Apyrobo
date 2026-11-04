@@ -32,7 +32,7 @@ import math
 import threading
 import time
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -286,13 +286,27 @@ class TestSpeedEnforcementExtra:
         clamp_events = [i for i in enforcer.interventions if i["type"] == "speed_clamped"]
         assert len(clamp_events) == 0
 
-    def test_speed_with_profile_applied(self, mock_robot: Robot) -> None:
+    def test_a_move_runs_at_the_requested_speed_with_a_profile(self, mock_robot: Robot) -> None:
         profile = SpeedProfile(ramp_up_s=1.0, min_speed=0.05)
         policy = SafetyPolicy(name="profile_test", max_speed=2.0, speed_profile=profile)
         enforcer = SafetyEnforcer(mock_robot, policy=policy)
-        # Speed within limit, but profile should still be applied (elapsed=0 so min_speed)
-        enforcer.move(x=1.0, y=1.0, speed=1.0)
-        # Should not raise; profile computation runs
+        with patch.object(mock_robot, "move", wraps=mock_robot.move) as move:
+            enforcer.move(x=1.0, y=1.0, speed=1.0)
+        assert move.call_args.kwargs["speed"] == 1.0
+
+    @pytest.mark.parametrize("requested, expected", [(0.3, 0.3), (0.5, 0.5), (9.0, 0.5)])
+    def test_strict_moves_at_the_request_and_never_above_its_limit(
+        self, mock_robot: Robot, requested: float, expected: float
+    ) -> None:
+        enforcer = SafetyEnforcer(mock_robot, policy=STRICT_POLICY)
+        with patch.object(mock_robot, "move", wraps=mock_robot.move) as move:
+            enforcer.move(x=1.0, y=1.0, speed=requested)
+        assert move.call_args.kwargs["speed"] == expected
+
+    def test_the_constraints_say_no_ramp_ran(self, mock_robot: Robot) -> None:
+        constraints = FormalConstraintExporter(STRICT_POLICY).to_dict()
+        assert constraints["has_speed_profile"] is True
+        assert constraints["speed_profile_applied_to_moves"] is False
 
     def test_rotate_angular_speed_negative_clamped(self, enforcer: SafetyEnforcer) -> None:
         # Negative speed beyond limit

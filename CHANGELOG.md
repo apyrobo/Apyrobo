@@ -173,6 +173,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `--policy strict` moves run at the requested speed, up to its 0.5 m/s limit.
+  They were all running at 0.05 m/s: the speed ramp was computed once with no
+  elapsed time, so it always returned its minimum. A single move has nothing to
+  ramp over, so `SafetyEnforcer.move` no longer applies a `SpeedProfile`, and
+  `FormalConstraintExporter.to_dict()` adds `speed_profile_applied_to_moves: false`.
 - `apyrobo mcp` no longer exits silently on one invalid byte from the client.
   With a strict UTF-8 stdin, which macOS and UTF-8 locales use, the decode error
   counted as the client leaving: exit 0, no reply. Stdio is now UTF-8 in any

@@ -152,7 +152,7 @@ class SafetyPolicy:
         - move_timeout: Max seconds a move command can run before auto-stop
         - watchdog_tolerance: Max divergence (m) between odometry and command
         - min_battery_pct: Minimum battery percentage to accept new tasks
-        - speed_profile: Ramp-up/ramp-down speed envelope
+        - speed_profile: Ramp-up/ramp-down speed envelope, not applied to moves
     """
 
     def __init__(
@@ -428,7 +428,9 @@ class SafetyEnforcer:
                     f"below minimum ({self._policy.min_battery_pct:.0f}%)"
                 )
 
-        # --- Speed enforcement + SF-06: Speed profile ---
+        # --- Speed enforcement ---
+        # A SpeedProfile is not applied here: a single move has no elapsed time
+        # to ramp over, and elapsed=0 would pin every move at min_speed.
         original_speed = speed
         if speed is not None and speed > self._policy.max_speed:
             speed = self._policy.max_speed
@@ -443,11 +445,6 @@ class SafetyEnforcer:
             logger.warning(
                 "SAFETY: Speed clamped from %.2f to %.2f m/s (policy: %s)",
                 original_speed, speed, self._policy.name,
-            )
-
-        if self._policy.speed_profile is not None and speed is not None:
-            speed = self._policy.speed_profile.compute(
-                requested=speed, elapsed=0.0,
             )
 
         # --- Static collision zone enforcement ---
@@ -1366,5 +1363,6 @@ bool move_active;
                 "collision_zones": p.collision_zones,
             },
             "has_speed_profile": p.speed_profile is not None,
+            "speed_profile_applied_to_moves": False,
             "escalation_timeout_s": p.escalation_timeout,
         }
