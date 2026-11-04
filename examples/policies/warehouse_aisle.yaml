@@ -10,7 +10,8 @@
 #   - A move is refused when its TARGET point is inside a zone. On adapters that
 #     drive straight (mock://, gazebo_native://, mujoco://, ros2:// without Nav2)
 #     it is also refused when the straight line to the target enters a zone. On
-#     ros2:// with Nav2 the route is not checked: add a Nav2 keepout filter.
+#     ros2:// with Nav2 the planned route is checked, but not the path driven:
+#     add a Nav2 keepout filter for anywhere the robot must never enter.
 #   - With allowed_areas set, a TARGET outside all of them is refused too, so a
 #     zone you forgot cannot send the robot off the floor you meant. Only the
 #     target is compared with the areas, not the route to it.

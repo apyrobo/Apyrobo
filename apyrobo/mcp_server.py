@@ -23,6 +23,7 @@ import logging
 import math
 import os
 import queue
+import re
 import secrets
 import select
 import sys
@@ -74,6 +75,24 @@ CONFIRM_TTL_S = 600
 _EOF = object()
 # Tools that can make the robot move; refused once the client is gone.
 MOTION_TOOLS = frozenset({"move_to", "rotate", "execute_task"})
+# Task wording the rule planner's coordinate parser does not read.
+_NUMBER = r"-?\d+(?:\.\d+)?"
+_SPEED_IN_TASK = re.compile(
+    rf"\b(?:at\s+)?(?:a\s+)?speed\s*(?:of\s+|[:=]\s*)?{_NUMBER}(?:\s*m/s)?"
+    rf"|\bat\s+{_NUMBER}\s*m/s",
+    re.IGNORECASE,
+)
+_XY_IN_TASK = re.compile(
+    rf"\bx\s*=\s*({_NUMBER})\s*,?\s*y\s*=\s*({_NUMBER})", re.IGNORECASE
+)
+_BARE_PAIR_IN_TASK = re.compile(
+    rf"\b(to|at)\s+({_NUMBER})\s+({_NUMBER})(?![\w.])", re.IGNORECASE
+)
+_NO_TARGET = (
+    "No target: this task gives no coordinates for where to drive, and the robot "
+    "will not guess one. Give them, like 'go to (3, 3)' or 'deliver from (1, 1) "
+    "to (5, 1)'."
+)
 # How often the stop is repeated while a motion call is still unwinding.
 HALT_REPEAT_S = 0.2
 # --audit-log: longest "detail" kept on a line.
@@ -170,6 +189,18 @@ def _str(args: dict[str, Any], key: str) -> str:
 def _jsonable(value: Any) -> Any:
     """Best-effort conversion of enums, tuples and models to plain JSON."""
     return json.loads(json.dumps(value, default=lambda o: getattr(o, "value", str(o))))
+
+
+def _rule_coordinates_text(task: str) -> str:
+    """Spell a task's coordinates the way the rule planner parses them.
+
+    "move to 3 3 at speed 2" becomes "move to (3, 3)": a bare pair after
+    to/at and x=3 y=3 turn into (3, 3), and a speed is dropped so that it is
+    not read as a coordinate.
+    """
+    text = _SPEED_IN_TASK.sub(" ", task)
+    text = _XY_IN_TASK.sub(r"(\1, \2)", text)
+    return _BARE_PAIR_IN_TASK.sub(r"\1 (\2, \3)", text)
 
 
 class RobotToolbox:
@@ -451,10 +482,28 @@ class RobotToolbox:
         self.enforcer.stop()
         return {"status": "stopped", "position": self._position()}
 
+    def _rule_planner_text(self, task: str) -> str:
+        """Rewrite a task so the rule planner reads the coordinates it holds."""
+        from apyrobo.skills.agent import RuleBasedProvider
+
+        text = _rule_coordinates_text(task)
+        # "deliver to (5, 1)" names one place: the pickup is where the robot is.
+        delivery_words = RuleBasedProvider.TASK_PATTERNS[0][0]
+        if len(RuleBasedProvider._extract_coordinates(text)) == 1 and any(
+            word in text.lower() for word in delivery_words
+        ):
+            here = self._position()
+            text = f"from ({here['x']:.6f}, {here['y']:.6f}) {text}"
+        return text
+
     def _plan(self, task: str) -> tuple[Any, dict[str, Any]]:
         from apyrobo.safety.confidence import ConfidenceEstimator
+        from apyrobo.skills.agent import RuleBasedProvider
 
-        graph = self.agent.plan(task, self.robot)
+        text = task
+        if isinstance(getattr(self.agent, "provider", None), RuleBasedProvider):
+            text = self._rule_planner_text(task)
+        graph = self.agent.plan(text, self.robot)
         steps = [
             {
                 "skill_id": s.skill_id,
@@ -471,6 +520,21 @@ class RobotToolbox:
             "risk_level": getattr(report.risk_level, "value", str(report.risk_level)),
             "can_proceed": bool(report.can_proceed),
         }
+        if isinstance(getattr(self.agent, "planned_by", None), RuleBasedProvider):
+            # A plan from the rule planner: its templates hold placeholder
+            # targets, so every drive must go to a point the task named.
+            named = RuleBasedProvider._extract_coordinates(_rule_coordinates_text(text))
+            for step in steps:
+                if step["skill_id"].startswith("navigate_to"):
+                    target = {
+                        "x": float(step["parameters"].get("x", 0.0)),
+                        "y": float(step["parameters"].get("y", 0.0)),
+                    }
+                    if target not in named:
+                        plan.update(
+                            steps=[], confidence=0.0, can_proceed=False, reason=_NO_TARGET
+                        )
+                        break
         return graph, plan
 
     def _plan_task(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -481,6 +545,8 @@ class RobotToolbox:
         from apyrobo.skills.executor import SkillExecutor
 
         graph, plan = self._plan(_str(args, "task"))
+        if plan.get("reason"):
+            raise ToolError(plan["reason"])
         if not plan["steps"]:
             raise ToolError("The planner produced no steps for this task.")
         v_before = len(self.enforcer.violations)
