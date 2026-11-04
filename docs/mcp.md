@@ -403,6 +403,9 @@ not compared with them: a robot sent from one allowed area to another may pass
 through space outside both, and Nav2 may route outside an area to reach a target
 inside it.
 
+Moving from `mock://` to hardware? [Your first real robot](first-real-robot.md)
+goes through these checks in order, and lists what they do not cover.
+
 The server speaks MCP over stdio. Clients that open with `initialize`
 (protocol versions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05) get
 `initialize`, `ping`, `tools/list` and `tools/call`; bad tool arguments come

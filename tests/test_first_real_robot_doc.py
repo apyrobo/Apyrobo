@@ -84,3 +84,9 @@ def test_ssh_config_command_keeps_the_policy_on_the_robot(policy, monkeypatch, c
 def test_doc_says_it_is_not_a_certified_system_and_keeps_the_e_stop():
     assert "not a certified safety system" in TEXT
     assert "does not replace a hardware e-stop" in TEXT
+
+
+def test_the_mcp_safety_section_points_to_the_guide():
+    mcp = (ROOT / "docs" / "mcp.md").read_text(encoding="utf-8")
+    section = mcp[mcp.index("## What this does and doesn't guarantee") :]
+    assert "(first-real-robot.md)" in section

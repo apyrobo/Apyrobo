@@ -164,6 +164,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `ros2://` without `rclpy` no longer says ROS 2 only runs inside the APYROBO
+  Docker container. The error now says to source ROS 2 first, with Docker as
+  the other option.
+
 - `ros2://`: the Nav2 route check sends its plan request again when no answer
   comes. The first request from a freshly started server could lose its answer,
   which refused the move with "Nav2 planner did not answer in time".
@@ -220,6 +224,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
   and what APYROBO does not protect against.
+- The README shows the MCP safety demo as an animated terminal SVG, drawn by
+  `scripts/make_safety_demo_svg.py` from the demo's real output; a test fails
+  if the committed file no longer matches a fresh run.
 
 ### Changed
 
