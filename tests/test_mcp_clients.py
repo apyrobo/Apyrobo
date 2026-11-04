@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -182,8 +183,10 @@ def test_cli_prints_config_and_writes_nothing(tmp_path):
         [sys.executable, "-m", "apyrobo.cli", "mcp", "config", "cursor", "--launcher", "apyrobo",
          "--max-speed", "0.3"],
         capture_output=True, text=True, timeout=60,
-        env={"HOME": str(env_home), "PATH": "",
-             "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+        env={"HOME": str(env_home), "USERPROFILE": str(env_home), "PATH": "",
+             "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+             # Windows can't load its socket provider, so can't import asyncio, without this.
+             **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if "SYSTEMROOT" in os.environ else {})},
     )
     assert proc.returncode == 0, proc.stderr
     server = json.loads(proc.stdout)["mcpServers"]["apyrobo"]
