@@ -42,3 +42,15 @@ def test_relative_links_point_at_existing_files():
         if not (DOC.parent / target).exists():
             broken.append(target)
     assert not broken, f"docs/mcp.md links to missing files: {broken}"
+
+
+def test_the_uvx_ros2_pin_is_documented():
+    """51b: the isolated-environment trap and the verified pin, not just sourcing."""
+    text = _doc()
+    for needed in (
+        "--no-managed-python --python 3.12",
+        "--with 'numpy<2' --with transforms3d",
+        "/usr/lib/python3/dist-packages",
+        "ros-$ROS_DISTRO-nav2-msgs",
+    ):
+        assert needed in text, f"docs/mcp.md no longer documents {needed!r}"
