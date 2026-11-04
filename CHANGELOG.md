@@ -173,6 +173,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `ros2://` reports position in the map frame when TF has the map-to-base
+  transform. Goals, Nav2 plans and policy zones are in `map`, but the position
+  came from `/odom`, so the straight-line and already-inside-a-zone checks and
+  `robot_status` could be off by the map-to-odom offset on a robot not started
+  at the map's origin. Without a usable transform it falls back to `/odom` with
+  one log line, and `robot_status` says which through `position_frame`.
+
 - `apyrobo mcp`: a task with no coordinates no longer drives to a made-up place
   and reports success. With the rule planner, "go to the kitchen" used to drive
   to (0, 0), and a delivery to the template's (0, 0) and (5, 5). `execute_task`
