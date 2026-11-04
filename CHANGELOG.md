@@ -173,6 +173,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `apyrobo mcp` no longer exits silently on one invalid byte from the client.
+  With a strict UTF-8 stdin, which macOS and UTF-8 locales use, the decode error
+  counted as the client leaving: exit 0, no reply. Stdio is now UTF-8 in any
+  locale and an undecodable line gets a JSON-RPC parse error.
 - `ros2://` reports position in the map frame when TF has the map-to-base
   transform. Goals, Nav2 plans and policy zones are in `map`, but the position
   came from `/odom`, so the straight-line and already-inside-a-zone checks and
