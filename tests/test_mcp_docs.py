@@ -54,3 +54,20 @@ def test_the_uvx_ros2_pin_is_documented():
         "ros-$ROS_DISTRO-nav2-msgs",
     ):
         assert needed in text, f"docs/mcp.md no longer documents {needed!r}"
+
+
+def test_the_tools_table_is_the_whole_tool_list():
+    server = mcp_server.build_server(robot_uri="mock://docs-tools")
+    served = {tool["name"] for tool in server.toolbox.list_tools()}
+    section = _doc().split("## Tools")[1].split("\n## ")[0]
+    documented = set(re.findall(r"^\| `(\w+)", section, flags=re.MULTILINE))
+    assert documented == served
+    assert not any("topic" in name or "service" in name for name in served)
+
+
+def test_the_enforcer_reads_no_live_sensors_as_the_docs_say():
+    server = mcp_server.build_server(robot_uri="mock://docs-sensors")
+    assert server.toolbox.enforcer._world_state is None
+    text = " ".join(_doc().split())
+    assert "It checks policy, not live sensors." in text
+    assert "human-proximity check does not run" in text
