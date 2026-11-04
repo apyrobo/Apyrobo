@@ -427,7 +427,7 @@ class RobotToolbox:
     # -- tools ---------------------------------------------------------
 
     def _robot_status(self, args: dict[str, Any]) -> dict[str, Any]:
-        return {
+        status = {
             "robot_uri": self.robot_uri,
             "robot_id": getattr(self.robot, "robot_id", None),
             "position": self._position(),
@@ -435,6 +435,12 @@ class RobotToolbox:
             "health": self.enforcer.get_health(),
             "safety_policy": self._policy_summary(),
         }
+        # ros2:// falls back to /odom when there is no map-to-base transform;
+        # a caller reading zones in map needs to know which one this is.
+        frame = getattr(getattr(self.robot, "_adapter", None), "position_frame", None)
+        if isinstance(frame, str):
+            status["position_frame"] = frame
+        return status
 
     def _list_capabilities(self, args: dict[str, Any]) -> dict[str, Any]:
         caps = self.robot.capabilities()
