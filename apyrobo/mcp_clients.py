@@ -281,6 +281,39 @@ def ssh_hints(target: str, robot: str | None) -> list[str]:
     return lines
 
 
+def launches_uvx(launch: Launch) -> bool:
+    """Whether this launch starts the server through ``uvx``.
+
+    Local configs name ``uvx`` as the command; an ssh config carries the remote
+    command as its last argument, with ``uvx`` at the front of it.
+    """
+    if Path(launch.command).stem == "uvx":
+        return True
+    return bool(launch.args) and shlex.split(launch.args[-1])[:1] == ["uvx"]
+
+
+def ros2_hints(robot: str | None, launch: Launch) -> list[str]:
+    """What a ``ros2://`` config needs beyond the flags, for stderr."""
+    if not robot or not robot.startswith("ros2://"):
+        return []
+    lines = [
+        "ros2:// needs a sourced ROS 2 environment, and a client starts the "
+        "server with its own, not your shell's: wrap the command as "
+        "\"command\": \"bash\" with \"args\": [\"-c\", \"source "
+        "/opt/ros/<distro>/setup.bash && exec <the command above>\"].",
+    ]
+    if launches_uvx(launch):
+        lines.append(
+            "uvx runs in an isolated environment, which rclpy reaches through "
+            "PYTHONPATH but the apt-installed numpy and transforms3d do not, "
+            "and uv may pick a Python rclpy was not built for. Add "
+            "--no-managed-python --python 3.12 (3.10 on Humble) "
+            "--with 'numpy<2' --with transforms3d."
+        )
+    lines.append("The ros2:// section and troubleshooting in docs/mcp.md have the detail.")
+    return lines
+
+
 def main(args: argparse.Namespace, stdout: TextIO | None = None,
          stderr: TextIO | None = None, which: Which = shutil.which) -> int:
     """Entry point for ``apyrobo mcp config``. Returns the exit code."""
@@ -312,6 +345,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
         notes = hints(client, launch)
         if ssh:
             notes += ssh_hints(ssh, robot)
+        notes += ros2_hints(robot, launch)
     except ValueError as exc:
         print(f"Error: {exc}", file=stderr)
         return 1
@@ -323,6 +357,6 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
 
 __all__ = [
     "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "SSH_OPTIONS", "check_ssh_target",
-    "config_location", "hints", "main", "remote_command", "render", "resolve_launch",
-    "resolve_ssh_launch", "server_args", "ssh_hints",
+    "config_location", "hints", "launches_uvx", "main", "remote_command", "render",
+    "resolve_launch", "resolve_ssh_launch", "ros2_hints", "server_args", "ssh_hints",
 ]

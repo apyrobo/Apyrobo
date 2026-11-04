@@ -328,12 +328,43 @@ server's stderr in `~/Library/Logs/Claude/` (macOS) or
 the server connected, and `/mcp` in a session shows its status.
 
 **`ros2://`: "a ROS 2 import failed".** The server could not import `rclpy`,
-so it exits at start. A client starts the server with its own environment,
-not your terminal's, so a ROS 2 setup you sourced in a shell doesn't apply.
-Wrap the command so it sources ROS 2 first, for example `"command": "bash"`
-with
+so it exits at start. Two causes, often together.
+
+*The environment isn't sourced.* A client starts the server with its own
+environment, not your terminal's, so a ROS 2 setup you sourced in a shell
+doesn't apply. Wrap the command so it sources ROS 2 first, for example
+`"command": "bash"` with
 `"args": ["-c", "source /opt/ros/humble/setup.bash && exec apyrobo mcp --robot ros2://burger"]`
 (use your distro's `setup.bash` and the full path to `apyrobo` if needed).
+
+*`uvx` runs in an isolated environment.* Sourcing `setup.bash` puts `rclpy`
+and the ROS message packages on `PYTHONPATH`, which `uvx` passes through, but
+the Python packages apt installs next to them — `numpy` and `transforms3d` —
+live in `/usr/lib/python3/dist-packages`, which it does not. `uvx` may also
+pick a different Python from the one `rclpy` was built for, and then the
+import fails on `rclpy._rclpy_pybind11` or hangs. Pin the interpreter to your
+distro's (3.12 on Jazzy, 3.10 on Humble) and add the two packages:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+uvx --no-managed-python --python 3.12 --with 'numpy<2' --with transforms3d \
+  --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --robot ros2://burger
+```
+
+Putting the apt packages on the path instead of the two `--with` flags works
+as well (`export PYTHONPATH="$PYTHONPATH:/usr/lib/python3/dist-packages"`).
+In a client config, both forms go inside the wrapped `bash -c` command above;
+`UV_PYTHON=3.12` and `UV_PYTHON_PREFERENCE=only-system` in an `env` block are
+the same pin. Checked 4 November 2026 in the `osrf/ros:jazzy-desktop` image
+on uv 0.11.32; without the pin, an installed `uvx`-managed Python was used
+instead of the distro's.
+
+`ros2://` also needs the `nav2_msgs` and `tf_transformations` packages, which
+that image does not carry:
+`sudo apt install ros-$ROS_DISTRO-nav2-msgs ros-$ROS_DISTRO-tf-transformations`.
+Installing APYROBO into the ROS 2 Python instead of running it through `uvx`
+(`pip install` in a `--system-site-packages` virtualenv, then `apyrobo mcp`)
+avoids the pin and the `--with` flags.
 
 **`ros2://`: the robot never moves, or its position doesn't change.** The
 server is most likely on a different `ROS_DOMAIN_ID` from the robot, so it

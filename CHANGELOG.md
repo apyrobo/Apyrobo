@@ -11,6 +11,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- `ros2://` through `uvx`: docs/mcp.md's troubleshooting now explains why a
+  sourced ROS 2 environment is not enough on its own — `uvx` runs in an
+  isolated environment that `rclpy` reaches through `PYTHONPATH` while the
+  apt-installed `numpy` and `transforms3d` do not, and `uv` may pick a Python
+  `rclpy` was not built for — and gives the pin that works
+  (`uvx --no-managed-python --python 3.12 --with 'numpy<2' --with transforms3d`,
+  3.10 on Humble), checked in the `osrf/ros:jazzy-desktop` image.
+  `apyrobo mcp config --robot ros2://…` prints the same advice.
+
 - `apyrobo mcp` stops the robot when its client goes away: when stdin closes,
   even during a move, and on `SIGTERM` or `SIGHUP`. A motion request read but
   not started is refused, so moves in input piped in and closed are refused;
