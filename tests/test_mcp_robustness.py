@@ -279,6 +279,36 @@ def test_real_stdio_survives_invalid_utf8_and_nan():
     assert status["position"] == {"x": 0.0, "y": 0.0}
 
 
+def test_a_strict_utf8_stdin_answers_invalid_bytes_and_keeps_serving(monkeypatch):
+    # macOS and any UTF-8 locale use strict decoding; C and POSIX locales hide
+    # this with surrogateescape, so force it.
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8:strict")
+    payload = (
+        b"\xff\xfe not utf-8\n"
+        + json.dumps(INIT).encode()
+        + b'\n{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"robot_status"}}\n'
+    )
+    proc = talk([sys.executable, "-m", "apyrobo", "mcp"], payload.decode("latin-1"), last_id=9)
+    assert proc.returncode == 0, proc.stderr
+    replies = [_strict(line) for line in proc.stdout.splitlines() if line.strip()]
+    assert replies[0]["error"]["code"] == PARSE_ERROR
+    assert replies[-1]["id"] == 9
+    assert not replies[-1]["result"].get("isError")
+
+
+def test_stdio_is_utf8_whatever_the_locale(monkeypatch):
+    # "é" in latin-1 is one invalid byte, in UTF-8 two valid ones.
+    monkeypatch.setenv("PYTHONIOENCODING", "latin-1")
+    line = '{"jsonrpc":"2.0","id":"é","method":"ping"}\n'
+    proc = talk(
+        [sys.executable, "-m", "apyrobo", "mcp"],
+        line.encode("utf-8").decode("latin-1"),
+        last_id="é",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout.splitlines()[0])["id"] == "é"
+
+
 # -- the enforcer itself --------------------------------------------------------
 
 

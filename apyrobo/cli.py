@@ -1596,6 +1596,19 @@ def cmd_serve(args: argparse.Namespace) -> None:
 # MCP server command
 # ---------------------------------------------------------------------------
 
+def _utf8_stdio() -> None:
+    """Make stdio fit MCP: UTF-8 both ways, and bad input bytes never fatal.
+
+    The default depends on the locale, and a strict decoder raises on one
+    invalid byte, which the server would take for the client going away. With
+    replacement that line reaches the parser and gets a JSON-RPC parse error.
+    """
+    for stream, errors in ((sys.stdin, "replace"), (sys.stdout, "strict")):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=errors)
+
+
 def cmd_mcp(args: argparse.Namespace) -> None:
     """Serve the robot to an MCP client (Claude, Cursor, …) over stdio."""
     if getattr(args, "mcp_command", None) == "config":
@@ -1649,6 +1662,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         for signum in watched:
             signal.signal(signum, on_signal)
     code: Any = 0
+    _utf8_stdio()
     try:
         server.serve(watch_client=True)
     except KeyboardInterrupt:
