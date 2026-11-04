@@ -182,7 +182,7 @@ def test_cli_prints_config_and_writes_nothing(tmp_path):
         [sys.executable, "-m", "apyrobo.cli", "mcp", "config", "cursor", "--launcher", "apyrobo",
          "--max-speed", "0.3"],
         capture_output=True, text=True, timeout=60,
-        env={"HOME": str(env_home), "PATH": "",
+        env={"HOME": str(env_home), "USERPROFILE": str(env_home), "PATH": "",
              "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
     )
     assert proc.returncode == 0, proc.stderr
