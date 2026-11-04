@@ -11,6 +11,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- `apyrobo mcp --audit-log PATH` appends one JSON line for each motion decision
+  (time, tool, arguments, decision, enforced speed, policy), synced before the
+  server goes on. A move whose `started` line cannot be written is refused, and
+  `stop` always runs. A stop after the client went away is logged as
+  `client_lost`. `apyrobo mcp config <client> --audit-log PATH` passes the flag
+  through; docs/mcp.md describes the format.
+
 - `ros2://` through `uvx`: docs/mcp.md's troubleshooting now explains why a
   sourced ROS 2 environment is not enough on its own — `uvx` runs in an
   isolated environment that `rclpy` reaches through `PYTHONPATH` while the

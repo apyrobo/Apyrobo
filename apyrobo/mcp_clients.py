@@ -70,13 +70,14 @@ def server_args(
     confirm_moves: bool = False,
     remote: bool = False,
     allow_area: Sequence[str] | None = None,
+    audit_log: str | None = None,
 ) -> list[str]:
     """The ``apyrobo mcp`` flags to pass through, in a stable order.
 
-    ``policy_file`` is made absolute because a GUI client starts the server
-    from its own working directory, not yours. With ``remote`` the server runs
-    on another machine, so the path is the robot's: it cannot be checked here
-    and must already be absolute.
+    ``policy_file`` and ``audit_log`` are made absolute because a GUI client
+    starts the server from its own working directory, not yours. With
+    ``remote`` the server runs on another machine, so the paths are the
+    robot's: they cannot be checked here and must already be absolute.
     """
     from apyrobo.mcp_server import parse_zone
 
@@ -104,6 +105,14 @@ def server_args(
         out += ["--allow-area", area.replace(" ", "")]
     if confirm_moves:
         out.append("--confirm-moves")
+    if audit_log and remote:
+        out += ["--audit-log", _remote_path(audit_log, "--audit-log")]
+    elif audit_log:
+        path = Path(audit_log).expanduser().resolve()
+        if path.is_dir() or not path.parent.is_dir():
+            raise ValueError(f"cannot write an audit log at {audit_log}: "
+                             "give a file in a folder that exists")
+        out += ["--audit-log", str(path)]
     return out
 
 
@@ -333,6 +342,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
             no_go=getattr(args, "cfg_no_go", None),
             allow_area=getattr(args, "cfg_allow_area", None),
             confirm_moves=bool(getattr(args, "cfg_confirm_moves", False)),
+            audit_log=getattr(args, "cfg_audit_log", None),
             remote=bool(ssh),
         )
         launcher = getattr(args, "launcher", "auto") or "auto"

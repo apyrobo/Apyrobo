@@ -148,6 +148,46 @@ def test_cli_parses_config_confirm_moves(monkeypatch):
     assert seen["cfg_confirm_moves"] is True
 
 
+def test_audit_log_passes_through_as_an_absolute_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    args = mcp_clients.server_args(audit_log="audit.jsonl")
+    assert args == ["--audit-log", str(tmp_path.resolve() / "audit.jsonl")]
+
+
+def test_audit_log_reaches_the_printed_config(tmp_path):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    log = tmp_path / "audit.jsonl"
+    code, out, _ = _run(_args("cursor", cfg_audit_log=str(log)), _which({"uvx": str(uvx)}))
+    assert code == 0
+    assert json.loads(out)["mcpServers"]["apyrobo"]["args"][-2:] == ["--audit-log", str(log)]
+
+
+def test_cli_parses_config_audit_log(monkeypatch):
+    import apyrobo.cli as cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_mcp", lambda args: seen.update(vars(args)))
+    monkeypatch.setattr(sys, "argv", ["apyrobo", "mcp", "config", "cursor", "--audit-log", "a.log"])
+    cli.main()
+    assert seen["cfg_audit_log"] == "a.log"
+
+
+@pytest.mark.parametrize("path", ["missing/audit.jsonl", "."])
+def test_audit_log_that_could_not_be_written_is_a_readable_error(path, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="cannot write an audit log"):
+        mcp_clients.server_args(audit_log=path)
+
+
+def test_ssh_audit_log_is_the_robots_path_and_not_checked_here():
+    assert mcp_clients.server_args(audit_log="/var/log/a.jsonl", remote=True) == [
+        "--audit-log", "/var/log/a.jsonl",
+    ]
+    with pytest.raises(ValueError, match="--audit-log is a path on the robot"):
+        mcp_clients.server_args(audit_log="a.jsonl", remote=True)
+
+
 def test_policy_file_is_made_absolute(tmp_path, monkeypatch):
     policy = tmp_path / "lab.json"
     policy.write_text("{}")

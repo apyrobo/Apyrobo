@@ -100,6 +100,8 @@ AUDIT_DETAIL_CHARS = 500
 # How long a motion call may wait for the stdin thread to reach pending input.
 STDIN_SETTLE_S = 0.25
 STDIN_SETTLE_POLL_S = 0.001
+# How long exit waits for the stop after a client loss to be logged.
+HALT_JOIN_S = 1.0
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -629,6 +631,7 @@ class MCPServer:
         self.client_gone = False
         self._motion_running = False
         self._halting = False
+        self._halter: threading.Thread | None = None
         self._reader: threading.Thread | None = None
         self._client_stdin: IO[str] | None = None
 
@@ -1168,17 +1171,32 @@ class MCPServer:
             return
         self._halting = True
         logger.warning("MCP: client lost (%s), stopping the robot", reason)
-        threading.Thread(target=self._halt, name="apyrobo-mcp-halt", daemon=True).start()
+        self._halter = threading.Thread(
+            target=self._halt, args=(reason,), name="apyrobo-mcp-halt", daemon=True
+        )
+        self._halter.start()
 
-    def _halt(self) -> None:
+    def _halt(self, reason: str) -> None:
+        logged = False
         while True:
+            detail = reason
             try:
                 self.toolbox.enforcer.stop()
             except Exception as exc:
                 logger.error("MCP: stop after client loss failed: %s", exc)
+                detail = f"{reason}; stop failed: {exc}"
+            if not logged:
+                # Here, not in client_lost(): that also runs in a signal handler.
+                self._audit_after("stop", {}, "client_lost", detail=detail)
+                logged = True
             if not self._motion_running:
                 return
             time.sleep(HALT_REPEAT_S)
+
+    def join_halt(self, timeout: float = HALT_JOIN_S) -> None:
+        """Give the stop after a client loss time to finish and be logged."""
+        if self._halter is not None:
+            self._halter.join(timeout)
 
     def _serve_loop(self, out: IO[str]) -> None:
         while True:

@@ -1675,6 +1675,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
                 signal.signal(signum, signal.SIG_IGN)
         with contextlib.suppress(Exception):
             server.toolbox.enforcer.stop()
+        server.join_halt()
     if server.reader_running():
         # The stdin thread holds stdin's lock in a blocking read, and
         # interpreter shutdown aborts on that lock. The robot is stopped.
@@ -3073,6 +3074,7 @@ def main() -> None:
     p_mcp_config.add_argument("--allow-area", dest="cfg_allow_area", action="append",
                               default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
     p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true")
+    p_mcp_config.add_argument("--audit-log", dest="cfg_audit_log", default=None, metavar="PATH")
     p_mcp_config.add_argument("--ssh", dest="cfg_ssh", default=None, metavar="USER@HOST",
                               help="Start the server on this machine over ssh "
                                    "(key-based login required)")
