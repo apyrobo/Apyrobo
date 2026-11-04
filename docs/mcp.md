@@ -51,7 +51,7 @@ Then add it to your client (below) and ask something like:
 The model sees the first move's speed clamped to 0.5 m/s, and the move to
 (3, 3) refused because that point is inside the no-go zone from (2, 2) to
 (4, 4). Ask for "deliver the package to (5, 1)" and it plans and runs a
-four-step task.
+four-step task from where the robot stands.
 
 To see what a client gets back before installing anything, read the
 [safety demo transcript](mcp_demo_transcript.md): a scripted session against
@@ -200,6 +200,13 @@ missing from your map: a zone you never wrote down looks like free space.
 `plan_task` and `execute_task` use the built-in rule planner by default, so no
 API key is needed. The MCP client's own model does the reasoning; APYROBO
 checks and executes.
+
+The rule planner has no map, so a drive needs coordinates in the task: `(3, 3)`,
+`3 3` after "to" or "at", or `x=3 y=3`. A task without them, such as "go to the
+kitchen", moves nothing: `execute_task` returns an error saying what to give,
+and `plan_task` returns `can_proceed: false` with the same reason. A delivery
+with one point starts from where the robot is; "deliver from (1, 1) to (5, 1)"
+names both. A speed in the task is not read, so use `move_to` to set one.
 
 ## Options
 

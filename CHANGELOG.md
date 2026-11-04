@@ -173,6 +173,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `apyrobo mcp`: a task with no coordinates no longer drives to a made-up place
+  and reports success. With the rule planner, "go to the kitchen" used to drive
+  to (0, 0), and a delivery to the template's (0, 0) and (5, 5). `execute_task`
+  now moves nothing and says what to give, and `plan_task` returns
+  `can_proceed: false` with that reason. A delivery to one point now picks up
+  where the robot stands instead of driving to (0, 0) first. `3 3` after "to" or
+  "at" and `x=3 y=3` count as coordinates, and a speed in the task is no longer
+  read as one.
+
 - `ros2://` without `rclpy` no longer says ROS 2 only runs inside the APYROBO
   Docker container. The error now says to source ROS 2 first, with Docker as
   the other option.
