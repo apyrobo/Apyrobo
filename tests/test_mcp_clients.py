@@ -182,7 +182,7 @@ def test_cli_prints_config_and_writes_nothing(tmp_path):
         [sys.executable, "-m", "apyrobo.cli", "mcp", "config", "cursor", "--launcher", "apyrobo",
          "--max-speed", "0.3"],
         capture_output=True, text=True, timeout=60,
-        env={"HOME": str(env_home), "PATH": "",
+        env={"HOME": str(env_home), "USERPROFILE": str(env_home), "PATH": "",
              "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
     )
     assert proc.returncode == 0, proc.stderr
@@ -327,3 +327,56 @@ def test_ssh_command_survives_the_remote_shell(tmp_path):
     names = {tool["name"] for tool in replies[-1]["result"]["tools"]}
     assert "move_to" in names
     assert "robot=mock://tb" in done.stderr
+
+
+def test_ros2_config_says_to_source_ros_and_pin_uvxs_python(tmp_path, before_pypi):
+    """`apyrobo mcp config --robot ros2://…` warns about the two uvx traps."""
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, out, err = _run(
+        _args("claude-desktop", cfg_robot="ros2://burger"), _which({"uvx": str(uvx)}),
+    )
+    assert code == 0
+    assert "setup.bash" in err
+    assert "--no-managed-python --python 3.12" in err
+    assert "transforms3d" in err
+    assert "docs/mcp.md" in err
+
+
+def test_the_uvx_pin_note_is_left_out_without_uvx(tmp_path, before_pypi):
+    """The installed executable sees the system packages, so it needs no pin."""
+    apyrobo = tmp_path / "apyrobo"
+    apyrobo.write_text("")
+    code, out, err = _run(
+        _args("claude-desktop", cfg_robot="ros2://burger", launcher="apyrobo"),
+        _which({"apyrobo": str(apyrobo)}),
+    )
+    assert code == 0
+    assert "setup.bash" in err
+    assert "transforms3d" not in err
+
+
+def test_mock_configs_say_nothing_about_ros(tmp_path, before_pypi):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, out, err = _run(
+        _args("claude-desktop", cfg_robot="mock://tb"), _which({"uvx": str(uvx)}),
+    )
+    assert code == 0
+    assert "setup.bash" not in err
+    assert "transforms3d" not in err
+
+
+def test_ssh_uvx_config_also_gets_the_pin_note(tmp_path, before_pypi):
+    ssh = tmp_path / "ssh"
+    ssh.write_text("")
+    code, out, err = _run(
+        _args("claude-desktop", cfg_ssh="ubuntu@robot.local", cfg_robot="ros2://burger",
+              launcher="uvx"),
+        _which({"ssh": str(ssh)}),
+    )
+    assert code == 0
+    assert mcp_clients.launches_uvx(
+        Launch("ssh", [*mcp_clients.SSH_OPTIONS, "host", "uvx --from x apyrobo mcp"])
+    )
+    assert "--with 'numpy<2'" in err

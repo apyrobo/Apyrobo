@@ -851,10 +851,19 @@ class Agent:
         else:
             self._provider = get_provider(provider, **kwargs)
 
+        # The provider that made the latest plan: self._provider, or the rule
+        # planner when an LLM failed and plan() fell back to it.
+        self.planned_by: AgentProvider = self._provider
+
         self._last_events: list[ExecutionEvent] = []
         self._last_state: ExecutionState | None = None
         self._correction_learner: Any = None
         self._last_task: str = ""
+
+    @property
+    def provider(self) -> AgentProvider:
+        """The provider this agent plans with."""
+        return self._provider
 
     def _get_skill_catalog(self) -> dict[str, Skill]:
         """
@@ -923,6 +932,7 @@ class Agent:
         if urgency is not None:
             plan_kwargs["urgency"] = urgency
 
+        self.planned_by = self._provider
         try:
             steps = self._provider.plan(task, available_skills, capability_names, **plan_kwargs)
         except TypeError:
@@ -944,6 +954,7 @@ class Agent:
                     task=task,
                 )
                 fallback = RuleBasedProvider(patterns=self._rule_patterns)
+                self.planned_by = fallback
                 try:
                     steps = fallback.plan(task, available_skills, capability_names)
                 except Exception:

@@ -11,6 +11,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- `ros2://` through `uvx`: docs/mcp.md's troubleshooting now explains why a
+  sourced ROS 2 environment is not enough on its own — `uvx` runs in an
+  isolated environment that `rclpy` reaches through `PYTHONPATH` while the
+  apt-installed `numpy` and `transforms3d` do not, and `uv` may pick a Python
+  `rclpy` was not built for — and gives the pin that works
+  (`uvx --no-managed-python --python 3.12 --with 'numpy<2' --with transforms3d`,
+  3.10 on Humble), checked in the `osrf/ros:jazzy-desktop` image.
+  `apyrobo mcp config --robot ros2://…` prints the same advice.
+
 - `apyrobo mcp` stops the robot when its client goes away: when stdin closes,
   even during a move, and on `SIGTERM` or `SIGHUP`. A motion request read but
   not started is refused, so moves in input piped in and closed are refused;
@@ -164,6 +173,19 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `apyrobo mcp`: a task with no coordinates no longer drives to a made-up place
+  and reports success. With the rule planner, "go to the kitchen" used to drive
+  to (0, 0), and a delivery to the template's (0, 0) and (5, 5). `execute_task`
+  now moves nothing and says what to give, and `plan_task` returns
+  `can_proceed: false` with that reason. A delivery to one point now picks up
+  where the robot stands instead of driving to (0, 0) first. `3 3` after "to" or
+  "at" and `x=3 y=3` count as coordinates, and a speed in the task is no longer
+  read as one.
+
+- `ros2://` without `rclpy` no longer says ROS 2 only runs inside the APYROBO
+  Docker container. The error now says to source ROS 2 first, with Docker as
+  the other option.
+
 - `ros2://`: the Nav2 route check sends its plan request again when no answer
   comes. The first request from a freshly started server could lose its answer,
   which refused the move with "Nav2 planner did not answer in time".
@@ -217,6 +239,16 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   fails the blocked `move()`, and an AGV that rejects the order or reports a
   FATAL error fails it on the first state that shows it. Tested against a
   simulated AGV, not hardware.
+
+- `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
+  and what APYROBO does not protect against.
+- docs/mcp.md says plainly that `apyrobo mcp` checks policy, not live sensors:
+  no move is refused because of what a scanner or camera sees now, and the
+  human-proximity check does not run. It also says the tool list is fixed, with
+  no raw ROS topic, service or action call.
+- The README shows the MCP safety demo as an animated terminal SVG, drawn by
+  `scripts/make_safety_demo_svg.py` from the demo's real output; a test fails
+  if the committed file no longer matches a fresh run.
 
 ### Changed
 

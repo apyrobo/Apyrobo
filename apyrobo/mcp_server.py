@@ -15,12 +15,15 @@ so it can be tried on a laptop with no ROS install.
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import hmac
 import json
 import logging
 import math
+import os
 import queue
+import re
 import secrets
 import select
 import sys
@@ -28,6 +31,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any
 
@@ -71,8 +75,28 @@ CONFIRM_TTL_S = 600
 _EOF = object()
 # Tools that can make the robot move; refused once the client is gone.
 MOTION_TOOLS = frozenset({"move_to", "rotate", "execute_task"})
+# Task wording the rule planner's coordinate parser does not read.
+_NUMBER = r"-?\d+(?:\.\d+)?"
+_SPEED_IN_TASK = re.compile(
+    rf"\b(?:at\s+)?(?:a\s+)?speed\s*(?:of\s+|[:=]\s*)?{_NUMBER}(?:\s*m/s)?"
+    rf"|\bat\s+{_NUMBER}\s*m/s",
+    re.IGNORECASE,
+)
+_XY_IN_TASK = re.compile(
+    rf"\bx\s*=\s*({_NUMBER})\s*,?\s*y\s*=\s*({_NUMBER})", re.IGNORECASE
+)
+_BARE_PAIR_IN_TASK = re.compile(
+    rf"\b(to|at)\s+({_NUMBER})\s+({_NUMBER})(?![\w.])", re.IGNORECASE
+)
+_NO_TARGET = (
+    "No target: this task gives no coordinates for where to drive, and the robot "
+    "will not guess one. Give them, like 'go to (3, 3)' or 'deliver from (1, 1) "
+    "to (5, 1)'."
+)
 # How often the stop is repeated while a motion call is still unwinding.
 HALT_REPEAT_S = 0.2
+# --audit-log: longest "detail" kept on a line.
+AUDIT_DETAIL_CHARS = 500
 # How long a motion call may wait for the stdin thread to reach pending input.
 STDIN_SETTLE_S = 0.25
 STDIN_SETTLE_POLL_S = 0.001
@@ -88,6 +112,44 @@ INSTRUCTIONS = (
 
 class ToolError(Exception):
     """A tool ran but could not do what was asked (reported as isError)."""
+
+
+class AuditLog:
+    """``--audit-log``: one JSON line per motion decision, on disk at once.
+
+    Each line is synced before :meth:`record` returns, so what was written
+    survives a crash, and the file is opened for each line, so it can be
+    rotated while the server runs. :meth:`record` raises ``OSError`` when the
+    line could not be written.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = path
+        with open(path, "ab"):  # Fail at start, not at the first move.
+            pass
+
+    def record(self, entry: dict[str, Any]) -> None:
+        data = (json.dumps(_finite(entry), separators=(",", ":")) + "\n").encode()
+        with open(self.path, "ab", buffering=0) as log:
+            if log.write(data) != len(data):
+                raise OSError(errno.EIO, "short write")
+            try:
+                os.fsync(log.fileno())
+            except OSError as exc:
+                # Pipes and character devices have nothing to sync.
+                if exc.errno not in (errno.EINVAL, errno.ENOTSUP):
+                    raise
+
+
+def _finite(value: Any) -> Any:
+    """*value* with NaN and infinities as strings: the log stays strict JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _finite(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_finite(v) for v in value]
+    return value
 
 
 def _num(args: dict[str, Any], key: str, *, required: bool = True) -> float | None:
@@ -127,6 +189,18 @@ def _str(args: dict[str, Any], key: str) -> str:
 def _jsonable(value: Any) -> Any:
     """Best-effort conversion of enums, tuples and models to plain JSON."""
     return json.loads(json.dumps(value, default=lambda o: getattr(o, "value", str(o))))
+
+
+def _rule_coordinates_text(task: str) -> str:
+    """Spell a task's coordinates the way the rule planner parses them.
+
+    "move to 3 3 at speed 2" becomes "move to (3, 3)": a bare pair after
+    to/at and x=3 y=3 turn into (3, 3), and a speed is dropped so that it is
+    not read as a coordinate.
+    """
+    text = _SPEED_IN_TASK.sub(" ", task)
+    text = _XY_IN_TASK.sub(r"(\1, \2)", text)
+    return _BARE_PAIR_IN_TASK.sub(r"\1 (\2, \3)", text)
 
 
 class RobotToolbox:
@@ -408,10 +482,28 @@ class RobotToolbox:
         self.enforcer.stop()
         return {"status": "stopped", "position": self._position()}
 
+    def _rule_planner_text(self, task: str) -> str:
+        """Rewrite a task so the rule planner reads the coordinates it holds."""
+        from apyrobo.skills.agent import RuleBasedProvider
+
+        text = _rule_coordinates_text(task)
+        # "deliver to (5, 1)" names one place: the pickup is where the robot is.
+        delivery_words = RuleBasedProvider.TASK_PATTERNS[0][0]
+        if len(RuleBasedProvider._extract_coordinates(text)) == 1 and any(
+            word in text.lower() for word in delivery_words
+        ):
+            here = self._position()
+            text = f"from ({here['x']:.6f}, {here['y']:.6f}) {text}"
+        return text
+
     def _plan(self, task: str) -> tuple[Any, dict[str, Any]]:
         from apyrobo.safety.confidence import ConfidenceEstimator
+        from apyrobo.skills.agent import RuleBasedProvider
 
-        graph = self.agent.plan(task, self.robot)
+        text = task
+        if isinstance(getattr(self.agent, "provider", None), RuleBasedProvider):
+            text = self._rule_planner_text(task)
+        graph = self.agent.plan(text, self.robot)
         steps = [
             {
                 "skill_id": s.skill_id,
@@ -428,6 +520,21 @@ class RobotToolbox:
             "risk_level": getattr(report.risk_level, "value", str(report.risk_level)),
             "can_proceed": bool(report.can_proceed),
         }
+        if isinstance(getattr(self.agent, "planned_by", None), RuleBasedProvider):
+            # A plan from the rule planner: its templates hold placeholder
+            # targets, so every drive must go to a point the task named.
+            named = RuleBasedProvider._extract_coordinates(_rule_coordinates_text(text))
+            for step in steps:
+                if step["skill_id"].startswith("navigate_to"):
+                    target = {
+                        "x": float(step["parameters"].get("x", 0.0)),
+                        "y": float(step["parameters"].get("y", 0.0)),
+                    }
+                    if target not in named:
+                        plan.update(
+                            steps=[], confidence=0.0, can_proceed=False, reason=_NO_TARGET
+                        )
+                        break
         return graph, plan
 
     def _plan_task(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +545,8 @@ class RobotToolbox:
         from apyrobo.skills.executor import SkillExecutor
 
         graph, plan = self._plan(_str(args, "task"))
+        if plan.get("reason"):
+            raise ToolError(plan["reason"])
         if not plan["steps"]:
             raise ToolError("The planner produced no steps for this task.")
         v_before = len(self.enforcer.violations)
@@ -483,8 +592,15 @@ class MCPServer:
     ``tools/call`` statelessly.
     """
 
-    def __init__(self, toolbox: RobotToolbox, *, confirm_moves: bool = False) -> None:
+    def __init__(
+        self,
+        toolbox: RobotToolbox,
+        *,
+        confirm_moves: bool = False,
+        audit_log: AuditLog | None = None,
+    ) -> None:
         self.toolbox = toolbox
+        self.audit_log = audit_log
         self.protocol_version = SUPPORTED_PROTOCOL_VERSIONS[0]
         self.confirm_moves = confirm_moves
         # Seals the requestState of a confirmation round trip, so a client
@@ -550,6 +666,7 @@ class MCPServer:
             elif method == "tools/call":
                 gate = self._legacy_confirm(msg_id, params)
                 if gate is not None:
+                    self._audit_gate(params, gate)
                     return gate
                 return self._tools_call(msg_id, params)
             else:
@@ -595,6 +712,8 @@ class MCPServer:
                 }
             elif method == "tools/call":
                 gate = self._confirm_gate(msg_id, params, meta[META_CLIENT_CAPABILITIES])
+                if gate is not None:
+                    self._audit_gate(params, gate)
                 if gate is not None and "error" in gate:
                     return gate
                 if gate is not None:
@@ -615,6 +734,76 @@ class MCPServer:
         result["resultType"] = "complete"
         result["_meta"] = {META_SERVER_INFO: _server_info()}
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+    # -- --audit-log -------------------------------------------------------
+
+    def _audit(
+        self,
+        name: Any,
+        arguments: dict[str, Any],
+        decision: str,
+        *,
+        enforced_speed: float | None = None,
+        detail: str | None = None,
+    ) -> None:
+        """Write one audit line; raises when it cannot be written."""
+        if self.audit_log is None:
+            return
+        entry: dict[str, Any] = {
+            "time": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "tool": name,
+            "arguments": arguments,
+            "decision": decision,
+            "enforced_speed": enforced_speed,
+            "policy": self.toolbox.enforcer.policy.name,
+        }
+        if detail:
+            entry["detail"] = detail[:AUDIT_DETAIL_CHARS]
+        self.audit_log.record(entry)
+
+    def _audit_after(self, *args: Any, **kwargs: Any) -> None:
+        """Write an audit line when nothing is left to refuse.
+
+        The call has already run or never will, so a failure can only be
+        reported. The next motion command fails to write too, and is refused.
+        """
+        try:
+            self._audit(*args, **kwargs)
+        except OSError as exc:
+            logger.error("MCP: could not write the audit log: %s", exc)
+
+    def _audit_gate(self, params: dict[str, Any], gate: dict[str, Any]) -> None:
+        """Log a motion command that --confirm-moves stopped from running."""
+        result = gate.get("result") or {}
+        if self.audit_log is None or result.get("resultType") == "input_required":
+            return
+        arguments = params.get("arguments")
+        self._audit_after(
+            params.get("name"),
+            arguments if isinstance(arguments, dict) else {},
+            "declined" if result.get("isError") is False else "refused",
+        )
+
+    def _audit_result(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        text: str,
+        is_error: bool,
+        before: tuple[int, int],
+    ) -> None:
+        """Log how a tool call ended. *before*: violations, interventions at its start."""
+        enforcer = self.toolbox.enforcer
+        clamped = any("enforced" in i for i in enforcer.interventions[before[1]:])
+        if text.startswith("REFUSED") or len(enforcer.violations) > before[0]:
+            self._audit_after(name, arguments, "refused", detail=text)
+        elif is_error:
+            self._audit_after(name, arguments, "failed", detail=text)
+        else:
+            self._audit_after(
+                name, arguments, "clamped" if clamped else "ran",
+                enforced_speed=enforcer.last_speed,
+            )
 
     # -- --confirm-moves ---------------------------------------------------
 
@@ -827,11 +1016,27 @@ class MCPServer:
         self._motion_running = moves
         if moves and self.client_gone:
             self._motion_running = False
-            return _tool_result(
-                msg_id,
-                f"REFUSED: the MCP client disconnected, so {name} did not run.",
-                is_error=True,
-            )
+            text = f"REFUSED: the MCP client disconnected, so {name} did not run."
+            self._audit_after(name, arguments, "refused", detail=text)
+            return _tool_result(msg_id, text, is_error=True)
+        audited = self.audit_log is not None and (moves or name == "stop")
+        if audited:
+            enforcer = self.toolbox.enforcer
+            enforcer.last_speed = None
+            before = (len(enforcer.violations), len(enforcer.interventions))
+        if audited and moves:
+            # Before the robot moves: no record, no motion, and a crash
+            # during the move leaves a "started" line with no outcome.
+            try:
+                self._audit(name, arguments, "started")
+            except OSError as exc:
+                self._motion_running = False
+                logger.error("MCP: could not write the audit log: %s", exc)
+                return _tool_result(
+                    msg_id,
+                    f"REFUSED: could not write the audit log, so {name} did not run: {exc}",
+                    is_error=True,
+                )
         try:
             payload = self.toolbox.call(name, arguments)
             text = json.dumps(_jsonable(payload), indent=2)
@@ -843,6 +1048,8 @@ class MCPServer:
             text, is_error = f"{type(exc).__name__}: {exc}", True
         finally:
             self._motion_running = False
+        if audited:
+            self._audit_result(name, arguments, text, is_error, before)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
@@ -1139,6 +1346,7 @@ def build_server(
     policy_file: str | Path | None = None,
     confirm_moves: bool = False,
     allowed_areas: list[dict[str, float]] | None = None,
+    audit_log: str | Path | None = None,
 ) -> MCPServer:
     """Discover the robot, wrap it in a safety enforcer and return the server.
 
@@ -1146,11 +1354,13 @@ def build_server(
     file; ``no_go_zones`` and ``allowed_areas`` given here are added to the
     file's; the
     file overrides the base policy (``policy`` or the file's ``base``,
-    else ``default``).
+    else ``default``). ``audit_log`` is the path of the ``--audit-log`` file,
+    opened here so that a path that cannot be written stops the start.
     """
     from apyrobo.core.robot import Robot
     from apyrobo.safety.enforcer import POLICY_REGISTRY, SafetyEnforcer, SafetyPolicy
 
+    log = AuditLog(audit_log) if audit_log is not None else None
     file_cfg = load_policy_file(policy_file) if policy_file is not None else {}
     base_name = policy or file_cfg.get("base") or "default"
     base = POLICY_REGISTRY.get(base_name)
@@ -1186,5 +1396,7 @@ def build_server(
             agent = Agent(provider=provider)
     enforcer = SafetyEnforcer(robot, policy=safety)
     return MCPServer(
-        RobotToolbox(robot, enforcer, agent, robot_uri), confirm_moves=confirm_moves
+        RobotToolbox(robot, enforcer, agent, robot_uri),
+        confirm_moves=confirm_moves,
+        audit_log=log,
     )

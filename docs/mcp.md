@@ -51,7 +51,7 @@ Then add it to your client (below) and ask something like:
 The model sees the first move's speed clamped to 0.5 m/s, and the move to
 (3, 3) refused because that point is inside the no-go zone from (2, 2) to
 (4, 4). Ask for "deliver the package to (5, 1)" and it plans and runs a
-four-step task.
+four-step task from where the robot stands.
 
 To see what a client gets back before installing anything, read the
 [safety demo transcript](mcp_demo_transcript.md): a scripted session against
@@ -201,6 +201,13 @@ missing from your map: a zone you never wrote down looks like free space.
 API key is needed. The MCP client's own model does the reasoning; APYROBO
 checks and executes.
 
+The rule planner has no map, so a drive needs coordinates in the task: `(3, 3)`,
+`3 3` after "to" or "at", or `x=3 y=3`. A task without them, such as "go to the
+kitchen", moves nothing: `execute_task` returns an error saying what to give,
+and `plan_task` returns `can_proceed: false` with the same reason. A delivery
+with one point starts from where the robot is; "deliver from (1, 1) to (5, 1)"
+names both. A speed in the task is not read, so use `move_to` to set one.
+
 ## Options
 
 | Flag | Default | Meaning |
@@ -328,12 +335,43 @@ server's stderr in `~/Library/Logs/Claude/` (macOS) or
 the server connected, and `/mcp` in a session shows its status.
 
 **`ros2://`: "a ROS 2 import failed".** The server could not import `rclpy`,
-so it exits at start. A client starts the server with its own environment,
-not your terminal's, so a ROS 2 setup you sourced in a shell doesn't apply.
-Wrap the command so it sources ROS 2 first, for example `"command": "bash"`
-with
+so it exits at start. Two causes, often together.
+
+*The environment isn't sourced.* A client starts the server with its own
+environment, not your terminal's, so a ROS 2 setup you sourced in a shell
+doesn't apply. Wrap the command so it sources ROS 2 first, for example
+`"command": "bash"` with
 `"args": ["-c", "source /opt/ros/humble/setup.bash && exec apyrobo mcp --robot ros2://burger"]`
 (use your distro's `setup.bash` and the full path to `apyrobo` if needed).
+
+*`uvx` runs in an isolated environment.* Sourcing `setup.bash` puts `rclpy`
+and the ROS message packages on `PYTHONPATH`, which `uvx` passes through, but
+the Python packages apt installs next to them — `numpy` and `transforms3d` —
+live in `/usr/lib/python3/dist-packages`, which it does not. `uvx` may also
+pick a different Python from the one `rclpy` was built for, and then the
+import fails on `rclpy._rclpy_pybind11` or hangs. Pin the interpreter to your
+distro's (3.12 on Jazzy, 3.10 on Humble) and add the two packages:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+uvx --no-managed-python --python 3.12 --with 'numpy<2' --with transforms3d \
+  --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --robot ros2://burger
+```
+
+Putting the apt packages on the path instead of the two `--with` flags works
+as well (`export PYTHONPATH="$PYTHONPATH:/usr/lib/python3/dist-packages"`).
+In a client config, both forms go inside the wrapped `bash -c` command above;
+`UV_PYTHON=3.12` and `UV_PYTHON_PREFERENCE=only-system` in an `env` block are
+the same pin. Checked 4 November 2026 in the `osrf/ros:jazzy-desktop` image
+on uv 0.11.32; without the pin, an installed `uvx`-managed Python was used
+instead of the distro's.
+
+`ros2://` also needs the `nav2_msgs` and `tf_transformations` packages, which
+that image does not carry:
+`sudo apt install ros-$ROS_DISTRO-nav2-msgs ros-$ROS_DISTRO-tf-transformations`.
+Installing APYROBO into the ROS 2 Python instead of running it through `uvx`
+(`pip install` in a `--system-site-packages` virtualenv, then `apyrobo mcp`)
+avoids the pin and the `--with` flags.
 
 **`ros2://`: the robot never moves, or its position doesn't change.** The
 server is most likely on a different `ROS_DOMAIN_ID` from the robot, so it
@@ -378,6 +416,17 @@ for the full list). It is a software guard between a model and a robot, not a
 certified safety system: keep hardware e-stops and site safety measures in
 place, and try new setups on `mock://` or a simulator first.
 
+It checks policy, not live sensors. A move is judged against the numbers and
+zones you wrote, the robot's reported position and, with Nav2, the planned
+route. Nothing refuses a move because of what a scanner or camera sees now, and
+the enforcer's human-proximity check does not run under `apyrobo mcp`, because
+the server gives it no detections to read. Stopping for a person or an obstacle
+stays with Nav2's costmaps and the robot's own protection.
+
+The tool list is the fixed one under [Tools](#tools). The server exposes no raw
+ROS topic, service or action call, so a model cannot publish to a topic through
+it.
+
 No-go zones are checked at the target on every adapter. The route is checked
 too where the robot drives a straight line: `mock://`, `gazebo_native://`,
 `mujoco://`, `ros2://` without Nav2 and the other adapters without a planner
@@ -402,6 +451,9 @@ Allowed areas are checked at the target only, on every adapter. The route is
 not compared with them: a robot sent from one allowed area to another may pass
 through space outside both, and Nav2 may route outside an area to reach a target
 inside it.
+
+Moving from `mock://` to hardware? [Your first real robot](first-real-robot.md)
+goes through these checks in order, and lists what they do not cover.
 
 The server speaks MCP over stdio. Clients that open with `initialize`
 (protocol versions 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05) get
