@@ -1623,6 +1623,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
             provider=args.provider,
             policy_file=getattr(args, "policy_file", None),
             confirm_moves=getattr(args, "confirm_moves", False),
+            audit_log=getattr(args, "audit_log", None),
         )
     except (ValueError, ImportError, RuntimeError, OSError) as exc:
         # Adapters report a missing ROS 2 install or an unreachable robot as
@@ -1635,6 +1636,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         f"max_speed={policy.max_speed} no_go_zones={len(policy.collision_zones)} "
         f"allowed_areas={len(policy.allowed_areas)} "
         f"confirm_moves={'on' if getattr(server, 'confirm_moves', False) else 'off'} "
+        f"audit_log={getattr(args, 'audit_log', None) or 'off'} "
         "(waiting for an MCP client on stdio)",
         file=sys.stderr, flush=True,
     )
@@ -3030,6 +3032,9 @@ def main() -> None:
     p_mcp.add_argument("--confirm-moves", dest="confirm_moves", action="store_true",
                        help="Ask the user to confirm every motion command (MCP elicitation); "
                             "clients without form elicitation get motion refused")
+    p_mcp.add_argument("--audit-log", dest="audit_log", default=None, metavar="PATH",
+                       help="Append one JSON line per motion decision to PATH; if a line "
+                            "cannot be written, motion is refused")
     p_mcp.add_argument("--provider", default="rule",
                        help="Planner for plan_task/execute_task (default: rule, no API key)")
     mcp_sub = p_mcp.add_subparsers(dest="mcp_command")

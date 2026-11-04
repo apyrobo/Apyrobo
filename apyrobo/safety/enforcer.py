@@ -292,6 +292,8 @@ class SafetyEnforcer:
         self._violations: list[dict[str, Any]] = []
         self._interventions: list[dict[str, Any]] = []
         self._audit_log: list[SafetyAuditEntry] = []
+        # The speed of the last command handed to the robot, after all limits.
+        self.last_speed: float | None = None
 
         # SF-02/SF-07: WorldState integration
         self._world_state = world_state
@@ -525,6 +527,7 @@ class SafetyEnforcer:
         self._start_move_watchdog()
 
         # --- All checks passed — forward to robot ---
+        self.last_speed = speed
         self._robot.move(x=x, y=y, speed=speed)
 
     # ------------------------------------------------------------------
@@ -577,6 +580,7 @@ class SafetyEnforcer:
                 "SAFETY: Angular speed clamped from %.2f to %.2f rad/s (policy: %s)",
                 original_speed, speed, self._policy.name,
             )
+        self.last_speed = speed
         self._robot.rotate(angle_rad=angle_rad, speed=speed)
 
     # ------------------------------------------------------------------
