@@ -242,6 +242,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
   and what APYROBO does not protect against.
+- docs/mcp.md says plainly that `apyrobo mcp` checks policy, not live sensors:
+  no move is refused because of what a scanner or camera sees now, and the
+  human-proximity check does not run. It also says the tool list is fixed, with
+  no raw ROS topic, service or action call.
 - The README shows the MCP safety demo as an animated terminal SVG, drawn by
   `scripts/make_safety_demo_svg.py` from the demo's real output; a test fails
   if the committed file no longer matches a fresh run.
