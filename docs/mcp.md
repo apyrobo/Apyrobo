@@ -416,6 +416,17 @@ for the full list). It is a software guard between a model and a robot, not a
 certified safety system: keep hardware e-stops and site safety measures in
 place, and try new setups on `mock://` or a simulator first.
 
+It checks policy, not live sensors. A move is judged against the numbers and
+zones you wrote, the robot's reported position and, with Nav2, the planned
+route. Nothing refuses a move because of what a scanner or camera sees now, and
+the enforcer's human-proximity check does not run under `apyrobo mcp`, because
+the server gives it no detections to read. Stopping for a person or an obstacle
+stays with Nav2's costmaps and the robot's own protection.
+
+The tool list is the fixed one under [Tools](#tools). The server exposes no raw
+ROS topic, service or action call, so a model cannot publish to a topic through
+it.
+
 No-go zones are checked at the target on every adapter. The route is checked
 too where the robot drives a straight line: `mock://`, `gazebo_native://`,
 `mujoco://`, `ros2://` without Nav2 and the other adapters without a planner
