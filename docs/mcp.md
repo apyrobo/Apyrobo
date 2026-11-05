@@ -108,8 +108,9 @@ clients don't read your shell's `PATH`) and says where the config file is on
 your OS. Use `cursor` or `claude-code` instead of `claude-desktop` for those
 clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
-`--max-speed` and `--no-go` flags as `apyrobo mcp`, checks them, and makes a
-relative `--policy-file` path absolute. It only prints: merge the output
+`--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
+flags as `apyrobo mcp`, checks them, and makes relative `--policy-file` and
+`--audit-log` paths absolute. It only prints: merge the output
 into your config yourself. The `uvx` command it prints installs from GitHub
 until `apyrobo mcp` is in a PyPI release, then `uvx apyrobo mcp`: the form
 follows your installed version. Without installing, run it as
@@ -219,6 +220,7 @@ names both. A speed in the task is not read, so use `move_to` to set one.
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
 | `--allow-area X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangle move targets may be in; with any set, a target outside all of them is refused; repeat for more |
 | `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
+| `--audit-log PATH` | off | Append one JSON line per motion decision to `PATH`; if a line cannot be written, motion is refused (see below) |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
 
 For a starting point, copy a commented policy from
@@ -258,6 +260,47 @@ lack elicitation get every motion command refused with a readable error,
 because the operator asked for confirmation and the server cannot get it
 from them. `apyrobo mcp config <client> --confirm-moves` puts the flag in
 the generated config.
+
+### Keep an audit log
+
+With `--audit-log PATH`, every motion decision is appended to `PATH` as one
+JSON line, synced to disk before the server goes on. The file is opened for
+each line, so you can rotate it while the server runs.
+
+```bash
+apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4 --audit-log ~/apyrobo-audit.jsonl
+```
+
+```json
+{"time":"2026-11-04T10:15:02.114+00:00","tool":"move_to","arguments":{"x":1.0,"y":0.0,"speed":9},"decision":"started","enforced_speed":null,"policy":"default+cli"}
+{"time":"2026-11-04T10:15:02.931+00:00","tool":"move_to","arguments":{"x":1.0,"y":0.0,"speed":9},"decision":"clamped","enforced_speed":0.5,"policy":"default+cli"}
+```
+
+Each line has `time` (UTC), `tool` (`move_to`, `rotate`, `execute_task` or
+`stop`), `arguments` as the client sent them, `decision`, `enforced_speed`, the
+speed the robot was given where one applies, and `policy`. A refusal or failure
+adds `detail`, cut to 500 characters. Read-only tools are not logged.
+
+| `decision` | Meaning |
+| --- | --- |
+| `started` | The motion call passed the client checks and is about to run; the next line says how it ended |
+| `ran` | It finished as asked (`stop` logs only this) |
+| `clamped` | It finished with a speed the policy lowered |
+| `refused` | The policy said no (a no-go zone, an allowed area), the client had gone, or it cannot confirm; earlier steps of an `execute_task` may have run |
+| `failed` | Bad arguments or an adapter error |
+| `declined` | The user said no under `--confirm-moves` |
+| `client_lost` | The client went away and the server stopped the robot; `detail` says how, and whether the stop failed |
+
+`started` is written before the robot is asked to move, and a move whose line
+cannot be written is refused, so a motion command never runs unlogged. A path
+that cannot be written stops the server at start. A log that breaks during a
+move shows at the next one: that move has already run and only its closing line
+is lost, and the next motion command is refused. `stop` always runs, logged or
+not.
+
+The log is a plain file on the machine that runs the server, with no signature
+or hash chain, so whoever can write there can change it. `apyrobo mcp config
+<client> --audit-log PATH` puts the flag in the generated config.
 
 ## On a ROS 2 robot or a Gazebo sim
 
