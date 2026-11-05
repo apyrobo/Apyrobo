@@ -409,6 +409,90 @@ def test_mcp_cancel_and_stop_end_a_running_nav2_goal(robot):
     )
 
 
+# Written into both costmaps by gazebo_nav_boot.sh (same numbers) as `apyrobo mcp
+# keepout` prints them. It lies across the straight line to KEEPOUT_GOAL with
+# open floor around it, so only the filter explains a detour.
+KEEPOUT_ZONE = (-1.8, 0.0, -1.4, 0.2)
+KEEPOUT_GOAL = (-1.6, 0.6)
+KEEPOUT_MIN_DETOUR_M = 0.2
+
+
+def _in_zone(p: tuple[float, float], zone: tuple[float, float, float, float]) -> bool:
+    return zone[0] <= p[0] <= zone[2] and zone[1] <= p[1] <= zone[3]
+
+
+def _line_crosses(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    zone: tuple[float, float, float, float],
+) -> bool:
+    steps = 200
+    return any(
+        _in_zone((a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps), zone)
+        for i in range(steps + 1)
+    )
+
+
+@pytest.mark.integration
+def test_nav2_routes_around_the_keepout_mask(robot):
+    """One list of zones feeds both layers: Nav2 drives around what MCP would refuse.
+
+    The same zone is given to `apyrobo mcp --no-go`. The target is clear and
+    the straight line to it is not, so the move only runs if Nav2's plan avoids
+    the zone, and the robot has to get there without ever entering it.
+    """
+    adapter = robot._adapter
+    start = adapter.position
+    assert _line_crosses(start, KEEPOUT_GOAL, KEEPOUT_ZONE), (
+        f"the straight line from {start} misses the zone, so this proves nothing"
+    )
+    cmd = [
+        sys.executable, "-m", "apyrobo", "--verbose", "mcp",
+        "--robot", "ros2://burger",
+        "--max-speed", str(MCP_MAX_SPEED),
+        "--no-go=" + ",".join(str(v) for v in KEEPOUT_ZONE),
+    ]
+    track = [start]
+    moving = threading.Event()
+    moving.set()
+
+    def sample() -> None:
+        while moving.is_set():
+            track.append(adapter.position)
+            time.sleep(0.05)
+
+    sampler = threading.Thread(target=sample, daemon=True)
+    with tempfile.TemporaryFile(mode="w+") as log:
+        client = _StdioMCPClient(cmd, stderr=log)
+        sampler.start()
+        try:
+            client.request("initialize", {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "apyrobo-nav2-e2e", "version": "1.0"},
+            })
+            is_error, moved = client.call_tool(
+                "move_to", {"x": KEEPOUT_GOAL[0], "y": KEEPOUT_GOAL[1]}
+            )
+        finally:
+            moving.clear()
+            sampler.join(timeout=5)
+            client.close()
+        log.seek(0)
+        server_log = log.read()
+    assert not is_error, f"the route around the zone was refused: {moved}\n" + server_log[-2000:]
+    assert "Nav2: sending goal" in server_log, server_log[-2000:]
+
+    end = adapter.position
+    assert _dist(end, KEEPOUT_GOAL) < 0.5, f"did not arrive: {end}, goal={KEEPOUT_GOAL}"
+    entered = [p for p in track if _in_zone(p, KEEPOUT_ZONE)]
+    assert not entered, f"robot entered the keepout zone at {entered[:5]}"
+    driven = sum(_dist(a, b) for a, b in zip(track, track[1:], strict=False))
+    assert driven > _dist(start, end) + KEEPOUT_MIN_DETOUR_M, (
+        f"no detour: drove {driven:.2f} m for a {_dist(start, end):.2f} m straight line"
+    )
+
+
 @pytest.mark.integration
 def test_position_comes_from_the_map_frame_under_nav2(robot):
     """With localisation up, the adapter reads the map-to-base transform, not /odom."""

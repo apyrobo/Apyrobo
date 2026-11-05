@@ -8,6 +8,11 @@ feeds both layers.
 
 Pure Python, no ROS. A pixel goes black if any part of it touches a zone, so
 the mask can only be a little larger than the zones, never smaller.
+
+Nav2 applies the filter after its inflation layer, so a black cell gets no
+inflation of its own: the shortest route skirts the zone, the footprint touches
+it, and the robot stalls there. A grey ramp around each zone does the inflation's
+job. It costs the planner and refuses nothing.
 """
 
 from __future__ import annotations
@@ -25,6 +30,8 @@ from typing import Any
 DEFAULT_RESOLUTION = 0.05
 #: Free space kept around the zones' bounding box, in metres.
 MARGIN_M = 1.0
+#: Width of the grey ramp around a zone, in metres: about a small robot's radius.
+DEFAULT_CLEARANCE = 0.3
 #: A bigger mask is almost always a typo in a coordinate or the resolution.
 MAX_PIXELS = 25_000_000
 #: Absorbs float error, so a zone edge on a pixel edge does not spill over it.
@@ -35,6 +42,8 @@ KEEPOUT = 0
 #: Black is occupancy 1.0 and white 0.0, so these only need to sit between.
 OCCUPIED_THRESH = 0.65
 FREE_THRESH = 0.25
+#: Stays strictly between the thresholds, so the map server keeps the shades.
+_RAMP_MARGIN = 0.01
 
 
 @dataclass(frozen=True)
@@ -50,17 +59,22 @@ class Mask:
 
 
 def build_mask(
-    zones: Sequence[dict[str, Any]], resolution: float = DEFAULT_RESOLUTION
+    zones: Sequence[dict[str, Any]],
+    resolution: float = DEFAULT_RESOLUTION,
+    clearance: float = DEFAULT_CLEARANCE,
 ) -> Mask:
     """Draw ``zones`` (rectangles in the map frame, metres) on a grid."""
     if not zones:
         raise ValueError("no no-go zones to draw; give --no-go or a --policy-file with zones")
     if not math.isfinite(resolution) or resolution <= 0:
         raise ValueError(f"resolution must be a positive number, got {resolution!r}")
-    origin_x = round(min(z["x_min"] for z in zones) - MARGIN_M, 6)
-    origin_y = round(min(z["y_min"] for z in zones) - MARGIN_M, 6)
-    x_end = max(z["x_max"] for z in zones) + MARGIN_M
-    y_end = max(z["y_max"] for z in zones) + MARGIN_M
+    if not math.isfinite(clearance) or clearance < 0:
+        raise ValueError(f"clearance must be zero or a positive number, got {clearance!r}")
+    margin = max(MARGIN_M, clearance + resolution)
+    origin_x = round(min(z["x_min"] for z in zones) - margin, 6)
+    origin_y = round(min(z["y_min"] for z in zones) - margin, 6)
+    x_end = max(z["x_max"] for z in zones) + margin
+    y_end = max(z["y_max"] for z in zones) + margin
     width = math.ceil((x_end - origin_x) / resolution - _EPS)
     height = math.ceil((y_end - origin_y) / resolution - _EPS)
     if width * height > MAX_PIXELS:
@@ -72,10 +86,38 @@ def build_mask(
     for zone in zones:
         first_col, end_col = _span(zone["x_min"], zone["x_max"], origin_x, resolution)
         first_row, end_row = _span(zone["y_min"], zone["y_max"], origin_y, resolution)
+        _shade_ramp(grid, (first_col, end_col), (first_row, end_row), resolution, clearance)
         for row in range(first_row, end_row):
             # The image's first row is the top of the map, so y counts up from the end.
             grid[height - 1 - row][first_col:end_col] = bytes([KEEPOUT]) * (end_col - first_col)
     return Mask(width, height, origin_x, origin_y, resolution, tuple(bytes(r) for r in grid))
+
+
+def _shade_ramp(
+    grid: list[bytearray],
+    cols: tuple[int, int],
+    rows: tuple[int, int],
+    resolution: float,
+    clearance: float,
+) -> None:
+    """Grey the pixels within ``clearance`` of a zone, darkest next to it."""
+    reach = math.ceil(clearance / resolution)
+    height, width = len(grid), len(grid[0])
+    for row in range(max(rows[0] - reach, 0), min(rows[1] + reach, height)):
+        dy = max(rows[0] - row, row - rows[1] + 1, 0)
+        line = grid[height - 1 - row]
+        for col in range(max(cols[0] - reach, 0), min(cols[1] + reach, width)):
+            dx = max(cols[0] - col, col - cols[1] + 1, 0)
+            distance = math.hypot(dx, dy) * resolution
+            if distance < clearance:
+                line[col] = min(line[col], _ramp_shade(distance / clearance))
+
+
+def _ramp_shade(fraction: float) -> int:
+    """The pixel value ``fraction`` of the way out: 0 is next to the zone, 1 is free."""
+    low = FREE_THRESH + _RAMP_MARGIN
+    high = OCCUPIED_THRESH - _RAMP_MARGIN
+    return round(FREE * (1 - (high - (high - low) * fraction)))
 
 
 def _span(low: float, high: float, origin: float, resolution: float) -> tuple[int, int]:
@@ -169,7 +211,7 @@ def main(args: argparse.Namespace) -> int:
     """Write the mask, print where it went and the config to paste."""
     out_dir = Path(args.ko_out)
     try:
-        mask = build_mask(_zones(args), args.ko_resolution)
+        mask = build_mask(_zones(args), args.ko_resolution, args.ko_clearance)
         _, yaml_path = write_mask(mask, out_dir)
     except (ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

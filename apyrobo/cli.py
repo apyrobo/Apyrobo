@@ -3106,7 +3106,7 @@ def main() -> None:
                                      "not exercised here, it needs a client that can ask you")
     p_mcp_keepout = mcp_sub.add_parser(
         "keepout",
-        help="Write a Nav2 keepout mask from your no-go zones and print the config (experimental)",
+        help="Write a Nav2 keepout mask from your no-go zones and print the config",
     )
     p_mcp_keepout.add_argument("--policy-file", dest="ko_policy_file", default=None,
                                metavar="PATH")
@@ -3114,6 +3114,10 @@ def main() -> None:
                                metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
     p_mcp_keepout.add_argument("--resolution", dest="ko_resolution", type=float, default=0.05,
                                metavar="M", help="Metres per pixel (default: 0.05)")
+    p_mcp_keepout.add_argument("--clearance", dest="ko_clearance", type=float, default=0.3,
+                               metavar="METRES",
+                               help="Width of the grey ramp that keeps Nav2's routes off a zone "
+                                    "(default 0.3, 0 for none)")
     p_mcp_keepout.add_argument("--out", dest="ko_out", default=".", metavar="DIR",
                                help="Folder for keepout_mask.pgm and .yaml (default: here)")
 

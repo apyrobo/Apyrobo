@@ -11,10 +11,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- `apyrobo mcp keepout` (experimental) writes a Nav2 keepout mask from the same
-  `--no-go` and `--policy-file` zones the server refuses, and prints the Nav2
-  parameters to paste. Loaded by Nav2's map server on Jazzy and Humble; no test
-  has Nav2 route around a zone with it yet.
+- `apyrobo mcp keepout` writes a Nav2 keepout mask from the same `--no-go` and
+  `--policy-file` zones the server refuses, and prints the Nav2 parameters to
+  paste. A grey ramp around each zone (`--clearance`, default 0.3 m) keeps routes
+  off its edge, where a robot would otherwise stall. The Nav2-in-Gazebo e2e drives
+  a TurtleBot3 around a zone on Humble with the printed parameters.
 
 - `apyrobo mcp --audit-log PATH` appends one JSON line for each motion decision
   (time, tool, arguments, decision, enforced speed, policy), synced before the

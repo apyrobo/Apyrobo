@@ -379,15 +379,15 @@ image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
 
 ### Write a Nav2 keepout mask
 
-Experimental. This turns the zones the server refuses into a mask for Nav2's
-keepout filter, so that Nav2 plans and drives around them:
+This turns the zones the server refuses into a mask for Nav2's keepout filter,
+so that Nav2 plans and drives around them:
 
 ```bash
 apyrobo mcp keepout --policy-file your_policy.yaml --out ~/maps
 ```
 
 It takes `--policy-file` and `--no-go` as the server does, plus `--resolution`
-(metres per pixel, default 0.05). It writes `keepout_mask.pgm` and
+(metres per pixel, default 0.05) and `--clearance` (below). It writes `keepout_mask.pgm` and
 `keepout_mask.yaml` to `--out`, replacing any earlier pair, and prints the Nav2
 parameters to paste: two servers, which need a lifecycle manager listing both,
 and the filter for both costmaps. Run it again whenever the zones change, and
@@ -395,13 +395,25 @@ restart those servers.
 
 A pixel goes black if any part of it touches a zone, so a zone can grow by up to
 a pixel on each side but not shrink. The mask is in the map frame, covering the
-zones plus 1 m. Allowed areas are not drawn.
+zones plus at least 1 m. Allowed areas are not drawn.
 
-What has been tested: Nav2's map server on Jazzy and Humble loaded a mask, published
-it with the cells in the right place, and the filter info server took the printed
-parameters. What has not: no test yet has Nav2 route around a zone with
-this mask, so the costmap block is untested, and the feature stays experimental
-until one does. Check it in simulation first.
+Nav2 applies the filter after its inflation layer, so black cells are not
+inflated: a route around a plain black zone hugs its edge, the robot's footprint
+touches it, and the robot stalls there. The mask therefore fades from dark grey
+to white around each zone. The grey adds cost for the planner and refuses nothing.
+`--clearance` sets its width in metres (default 0.3, 0 for none); use at least
+your robot's radius.
+
+What has been tested: in the Nav2-in-Gazebo end-to-end test
+([`test_gazebo_nav2_e2e.py`](../tests/integration/test_gazebo_nav2_e2e.py)), on
+Humble with Nav2's default planner and controller and the printed parameters
+merged into its default params file, a TurtleBot3 drives around a zone lying across
+the straight line to its goal, arrives, and never enters it. The same zone is given
+to `apyrobo mcp`, whose route check lets the move run because Nav2's plan avoids
+the zone. On Jazzy, Nav2's map server has loaded a mask, but no test has routed
+around one. Check your own robot in simulation first: other planners, controllers
+and footprints may need another `--clearance`, and the filter is only as accurate
+as your map frame.
 
 ## Troubleshooting
 

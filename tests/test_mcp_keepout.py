@@ -10,7 +10,16 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import pytest
 import yaml
 
-from apyrobo.mcp_keepout import KEEPOUT, MAX_PIXELS, build_mask, nav2_config, write_mask
+from apyrobo.mcp_keepout import (
+    FREE,
+    FREE_THRESH,
+    KEEPOUT,
+    MAX_PIXELS,
+    OCCUPIED_THRESH,
+    build_mask,
+    nav2_config,
+    write_mask,
+)
 
 
 def zone(x_min: float, y_min: float, x_max: float, y_max: float) -> dict[str, float]:
@@ -51,6 +60,54 @@ def test_cells_land_where_the_zones_are_with_y_up(tmp_path):
     assert black_cells(yaml_path) == {
         (-1, -1), (-0.5, -1), (-1, -0.5), (-0.5, -0.5), (2, 1), (2.5, 1),
     }
+
+
+def row_through(mask, y: float) -> bytes:
+    """The image row holding map height ``y``."""
+    return mask.rows[mask.height - 1 - int((y - mask.origin_y) / mask.resolution)]
+
+
+def test_a_grey_ramp_fades_out_from_the_zone_so_routes_keep_off_it():
+    mask = build_mask([zone(0, 0, 1, 1)], resolution=0.1, clearance=0.3)
+    pixels = list(row_through(mask, 0.55))
+    first_black = pixels.index(KEEPOUT)
+    outer, inner = pixels[first_black - 2:first_black]
+    assert FREE > outer > inner > KEEPOUT
+    assert pixels[first_black - 3] == FREE
+
+
+def test_the_ramp_stays_between_the_thresholds_so_the_map_server_keeps_it():
+    mask = build_mask([zone(0, 0, 1, 1)], resolution=0.05, clearance=0.5)
+    shades = set(b"".join(mask.rows)) - {FREE, KEEPOUT}
+    assert len(shades) > 5
+    for value in shades:
+        occupancy = (FREE - value) / FREE
+        assert FREE_THRESH < occupancy < OCCUPIED_THRESH
+
+
+def test_the_darker_shade_wins_where_two_ramps_meet_and_black_is_never_lightened():
+    mask = build_mask([zone(0, 0, 1, 1), zone(1.2, 0, 2, 1)], resolution=0.1, clearance=0.3)
+    pixels = list(row_through(mask, 0.55))
+    black_columns = [i for i, v in enumerate(pixels) if v == KEEPOUT]
+    assert len(black_columns) == 18
+    gap = pixels[black_columns[9]:black_columns[10]]
+    assert gap[0] == KEEPOUT and all(v < FREE for v in gap)
+
+
+def test_no_clearance_leaves_only_black_and_white():
+    mask = build_mask([zone(0, 0, 1, 1)], clearance=0)
+    assert set(b"".join(mask.rows)) == {KEEPOUT, FREE}
+
+
+def test_a_wide_clearance_still_fits_on_the_mask():
+    mask = build_mask([zone(0, 0, 1, 1)], resolution=0.1, clearance=2.0)
+    assert set(row_through(mask, 0.55)[:1]) == {FREE}
+
+
+@pytest.mark.parametrize("clearance", [-0.1, float("nan"), float("inf")])
+def test_a_bad_clearance_is_refused(clearance):
+    with pytest.raises(ValueError, match="clearance"):
+        build_mask([zone(0, 0, 1, 1)], clearance=clearance)
 
 
 def test_the_map_yaml_says_black_is_occupied(tmp_path):

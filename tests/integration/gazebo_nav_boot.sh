@@ -5,6 +5,7 @@
 #     + robot_state_publisher      (TF: base_footprint → base_link → base_scan)
 #     + Nav2 in SLAM mode          (slam_toolbox builds the map live — no
 #                                   pre-built map, no AMCL initial pose)
+#     + a keepout filter            (from `apyrobo mcp keepout`, in both costmaps)
 #
 # This is the sim side of the NL → plan → Nav2 → robot-moves end-to-end test
 # (test_gazebo_nav2_e2e.py). Unlike gazebo_boot.sh (cmd_vel only), the
@@ -90,12 +91,40 @@ done
 # bootstrap), and the turtlebot3_world walls give it features to match on.
 # The map argument is unused with slam:=True but bringup_launch.py requires
 # it; nav2_bringup ships a matching one.
+#
+# The keepout filter comes from what `apyrobo mcp keepout` prints, pasted into
+# Nav2's default params the way a user would. KEEPOUT_ZONE is the same zone as
+# in test_gazebo_nav2_e2e.py; it sits north of the corridor the other tests and
+# demos drive along.
+KEEPOUT_ZONE=-1.8,0.0,-1.4,0.2
+KEEPOUT_DIR=/tmp/keepout
+KEEPOUT_PARAMS="$KEEPOUT_DIR/nav2_params.yaml"
+mkdir -p "$KEEPOUT_DIR"
+echo "[gazebo_nav_boot] writing the keepout mask for $KEEPOUT_ZONE…"
+python3 -m apyrobo mcp keepout --no-go="$KEEPOUT_ZONE" --out "$KEEPOUT_DIR" \
+    > "$KEEPOUT_DIR/printed.yaml"
+python3 "$(dirname "$0")/merge_keepout_params.py" \
+    /opt/ros/humble/share/nav2_bringup/params/nav2_params.yaml \
+    "$KEEPOUT_DIR/printed.yaml" "$KEEPOUT_PARAMS"
+
 echo "[gazebo_nav_boot] launching Nav2 (SLAM mode)…"
 ros2 launch nav2_bringup bringup_launch.py \
     slam:=True \
     use_sim_time:=True \
     autostart:=True \
+    params_file:="$KEEPOUT_PARAMS" \
     map:=/opt/ros/humble/share/nav2_bringup/maps/turtlebot3_world.yaml &
+
+ros2 run nav2_map_server map_server --ros-args \
+    -r __node:=keepout_filter_mask_server \
+    --params-file "$KEEPOUT_PARAMS" -p use_sim_time:=true &
+ros2 run nav2_map_server costmap_filter_info_server --ros-args \
+    -r __node:=keepout_costmap_filter_info_server \
+    --params-file "$KEEPOUT_PARAMS" -p use_sim_time:=true &
+ros2 run nav2_lifecycle_manager lifecycle_manager --ros-args \
+    -r __node:=keepout_lifecycle_manager \
+    -p use_sim_time:=true -p autostart:=true \
+    -p "node_names:=[keepout_filter_mask_server, keepout_costmap_filter_info_server]" &
 
 # If slam_toolbox has not published map→odom within MAP_WAIT_S, the
 # healthcheck will eventually fail with only "Timed out waiting for transform
