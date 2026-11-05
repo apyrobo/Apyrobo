@@ -253,3 +253,35 @@ def test_bad_allow_area_is_a_readable_error():
     code, _, err = _run(_args(st_allow_area=["1,2,3"]))
     assert code == 1
     assert "allowed area must be x_min,y_min,x_max,y_max" in err
+
+
+def test_a_move_between_separate_areas_is_tried_and_refused():
+    code, out, _ = _run(_args(st_allow_area=["-1,-1,1,1", "5,5,6,6"]))
+    assert code == 0
+    assert "PASS  move between allowed areas" in out
+    assert "refused, robot stayed put" in out
+
+
+def test_touching_areas_leave_no_such_move_to_try():
+    code, out, _ = _run(_args(st_allow_area=["-1,-1,1,1", "1,-1,3,1"]))
+    assert code == 0
+    assert "not tried: no straight line from here leaves the areas" in out
+
+
+def test_one_area_prints_no_between_line():
+    _, out, _ = _run(_args(st_allow_area=["-5,-5,5,5"]))
+    assert "between allowed areas" not in out
+
+
+def test_a_gap_that_lets_the_move_through_fails(monkeypatch):
+    real = mcp_selftest._Client.tool
+
+    def lenient(self, name, **arguments):
+        if name == "move_to" and (arguments["x"], arguments["y"]) == (5.0, 5.0):
+            self._server.toolbox.enforcer.policy.allowed_areas = []
+        return real(self, name, **arguments)
+
+    monkeypatch.setattr(mcp_selftest._Client, "tool", lenient)
+    code, out, _ = _run(_args(st_allow_area=["-1,-1,1,1", "5,5,6,6"]))
+    assert code == 1
+    assert "FAIL  move between allowed areas" in out

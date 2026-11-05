@@ -24,6 +24,7 @@ import logging
 import math
 import threading
 import time
+from collections.abc import Sequence
 from typing import Any, Callable, NoReturn
 
 from apyrobo.core.robot import Robot
@@ -223,6 +224,22 @@ POLICY_REGISTRY: dict[str, SafetyPolicy] = {
 # Safety Enforcer
 # ---------------------------------------------------------------------------
 
+#: A gap between two areas narrower than this share of a segment is rounding.
+_SPAN_TOLERANCE = 1e-9
+
+
+def describe_area(area: dict[str, Any]) -> str:
+    """A zone or allowed area in words: ``'dock' (x 2 to 4, y 2 to 4)``."""
+    bounds = (
+        f"(x {area.get('x_min', float('-inf')):g} to "
+        f"{area.get('x_max', float('inf')):g}, "
+        f"y {area.get('y_min', float('-inf')):g} to "
+        f"{area.get('y_max', float('inf')):g})"
+    )
+    name = area.get("name")
+    return f"'{name}' {bounds}" if name else bounds
+
+
 def segment_enters_zone(
     start: tuple[float, float],
     end: tuple[float, float],
@@ -237,14 +254,27 @@ def segment_enters_zone(
     A start on the edge may leave, but not drive in across the zone.
     """
     x0, y0 = start
-    dx, dy = end[0] - x0, end[1] - y0
-    x_min = zone.get("x_min", float("-inf"))
-    x_max = zone.get("x_max", float("inf"))
-    y_min = zone.get("y_min", float("-inf"))
-    y_max = zone.get("y_max", float("inf"))
-
-    if x_min < x0 < x_max and y_min < y0 < y_max:
+    if (
+        zone.get("x_min", float("-inf")) < x0 < zone.get("x_max", float("inf"))
+        and zone.get("y_min", float("-inf")) < y0 < zone.get("y_max", float("inf"))
+    ):
         return False
+    span = _clip_segment(start, end, zone)
+    return span is not None and span[1] > 0.0
+
+
+def _clip_segment(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    rect: dict[str, Any],
+) -> tuple[float, float] | None:
+    """The stretch of ``start``->``end`` inside ``rect``, as fractions, or None."""
+    x0, y0 = start
+    dx, dy = end[0] - x0, end[1] - y0
+    x_min = rect.get("x_min", float("-inf"))
+    x_max = rect.get("x_max", float("inf"))
+    y_min = rect.get("y_min", float("-inf"))
+    y_max = rect.get("y_max", float("inf"))
 
     t_in, t_out = 0.0, 1.0
     for p, q in (
@@ -253,14 +283,47 @@ def segment_enters_zone(
     ):
         if p == 0:
             if q < 0:
-                return False
+                return None
         elif p < 0:
             t_in = max(t_in, q / p)
         else:
             t_out = min(t_out, q / p)
         if t_in > t_out:
-            return False
-    return t_out > 0.0
+            return None
+    return t_in, t_out
+
+
+def route_leaves_areas(
+    route: Sequence[tuple[float, float]],
+    areas: Sequence[dict[str, Any]],
+) -> tuple[float, float] | None:
+    """
+    Return the first point where ``route`` leaves the union of ``areas``, or None.
+
+    Areas that touch or overlap count as one space, edges included. A route
+    that starts outside every area may drive in: only the stretch after it
+    first enters one is checked.
+    """
+    entered = False
+    for start, end in zip(route, route[1:], strict=False):
+        clipped = (_clip_segment(start, end, area) for area in areas)
+        spans = sorted(span for span in clipped if span is not None)
+        if not spans:
+            if entered:
+                return start
+            continue
+        reached = 0.0 if entered else spans[0][0]
+        entered = True
+        for t_in, t_out in spans:
+            if t_in > reached + _SPAN_TOLERANCE:
+                break
+            reached = max(reached, t_out)
+        if reached < 1.0 - _SPAN_TOLERANCE:
+            return (
+                start[0] + (end[0] - start[0]) * reached,
+                start[1] + (end[1] - start[1]) * reached,
+            )
+    return None
 
 
 class SafetyEnforcer:
@@ -377,6 +440,19 @@ class SafetyEnforcer:
     # ------------------------------------------------------------------
 
     def move(self, x: float, y: float, speed: float | None = None) -> None:
+        """Run a move through the safety stack; a refusal keeps its reason.
+
+        The reason is stored on the violation because a caller going through
+        SkillExecutor gets no exception text back.
+        """
+        try:
+            self._enforced_move(x, y, speed)
+        except SafetyViolation as exc:
+            if self._violations:
+                self._violations[-1].setdefault("message", str(exc))
+            raise
+
+    def _enforced_move(self, x: float, y: float, speed: float | None = None) -> None:
         """
         Move command with full safety enforcement stack.
 
@@ -386,9 +462,10 @@ class SafetyEnforcer:
             3. Static collision zone check (target)
             4. Allowed area check (target), when any are set
             5. Dynamic collision zone check (SF-07, target)
-            6. Path check: the route must not enter a zone. That is the
-               planner's route on adapters that plan their own, refused if
-               none comes back, and the straight line on the others
+            6. Path check: the route must not enter a zone or leave the
+               allowed areas. That is the planner's route on adapters that
+               plan their own, refused if none comes back, and the straight
+               line on the others
             7. Human proximity check (SF-02)
             8. Move timeout (SF-01)
         """
@@ -463,7 +540,8 @@ class SafetyEnforcer:
                     x, y, zone, self._policy.name,
                 )
                 raise SafetyViolation(
-                    f"Position ({x}, {y}) is inside collision zone: {zone}"
+                    f"Position ({x:g}, {y:g}) is inside collision zone "
+                    f"{describe_area(zone)}"
                 )
 
         # --- Allowed areas: deny by default once any are set ---
@@ -481,8 +559,8 @@ class SafetyEnforcer:
                 x, y, self._policy.name,
             )
             raise SafetyViolation(
-                f"Position ({x}, {y}) is outside every allowed area: "
-                f"{self._policy.allowed_areas}"
+                f"Position ({x:g}, {y:g}) is outside every allowed area: "
+                + ", ".join(describe_area(a) for a in self._policy.allowed_areas)
             )
 
         # --- SF-07: Dynamic collision zones from WorldState ---
@@ -498,7 +576,8 @@ class SafetyEnforcer:
                     self._violations.append(violation)
                     self._record_audit("violation", violation)
                     raise SafetyViolation(
-                        f"Position ({x}, {y}) blocked by dynamic obstacle zone: {zone}"
+                        f"Position ({x:g}, {y:g}) blocked by dynamic obstacle zone "
+                        f"{describe_area(zone)}"
                     )
 
         # --- Path check: a safe target does not make a safe route ---
@@ -907,19 +986,23 @@ class SafetyEnforcer:
     # SF-07: Dynamic collision zones from WorldState
     # ------------------------------------------------------------------
 
-    def crossed_zone(self, x: float, y: float) -> dict[str, Any] | None:
+    def route_fault(self, x: float, y: float) -> dict[str, Any] | None:
         """
-        Return the first zone the route to (x, y) enters, or None.
+        Return what is wrong with the route to (x, y), or None if it is clear.
 
-        The route is the planner's when the adapter plans its own, otherwise
-        the straight line from the current position. With no zones set no
-        route is fetched. Raises SafetyViolation when zones are set and the
-        route cannot be known: no plan came back, or the position is unreadable.
+        The answer is ``{"zone": <first zone entered>}`` or
+        ``{"left_at": (x, y)}``, the point where the route leaves the allowed
+        areas. The route is the planner's when the adapter plans its own,
+        otherwise the straight line from the current position. With no zones
+        and no allowed areas no route is fetched. Raises SafetyViolation when
+        the route is needed and cannot be known: no plan came back, or the
+        position is unreadable.
         """
         zones = list(self._policy.collision_zones)
         if self._world_state is not None:
             zones += self._get_dynamic_zones()
-        if not zones:
+        areas = self._policy.allowed_areas
+        if not zones and not areas:
             return None
         if getattr(self._robot, "plans_own_path", False) is True:
             route = self._planned_route(x, y)
@@ -928,8 +1011,9 @@ class SafetyEnforcer:
         for start, end in zip(route, route[1:], strict=False):
             for zone in zones:
                 if segment_enters_zone(start, end, zone):
-                    return zone
-        return None
+                    return {"zone": zone}
+        left_at = route_leaves_areas(route, areas)
+        return None if left_at is None else {"left_at": left_at}
 
     def _planned_route(self, x: float, y: float) -> list[tuple[float, float]]:
         """The adapter's planned route as finite points, or SafetyViolation."""
@@ -966,28 +1050,37 @@ class SafetyEnforcer:
         raise SafetyViolation(message)
 
     def _check_path(self, x: float, y: float) -> None:
-        """Refuse a move whose route enters a collision zone."""
-        zone = self.crossed_zone(x, y)
-        if zone is None:
+        """Refuse a move whose route enters a zone or leaves the allowed areas."""
+        fault = self.route_fault(x, y)
+        if fault is None:
             return
         start = self._read_position()
-        violation = {
-            "type": "collision_zone_path",
-            "start": start,
-            "requested_position": (x, y),
-            "zone": zone,
-        }
+        route_text = f"({start[0]:g}, {start[1]:g}) to ({x:g}, {y:g})"
+        violation: dict[str, Any]
+        if "zone" in fault:
+            zone = fault["zone"]
+            violation = {"type": "collision_zone_path", "zone": zone}
+            problem = f"crosses collision zone {describe_area(zone)}"
+        else:
+            px, py = fault["left_at"]
+            areas = self._policy.allowed_areas
+            violation = {
+                "type": "allowed_area_path",
+                "left_at": (px, py),
+                "allowed_areas": list(areas),
+            }
+            problem = (
+                f"leaves the allowed areas at ({px:g}, {py:g}): "
+                + ", ".join(describe_area(a) for a in areas)
+            )
+        violation.update(start=start, requested_position=(x, y))
         self._violations.append(violation)
         self._record_audit("violation", violation)
         logger.error(
-            "SAFETY: Command REJECTED — route (%.2f, %.2f) -> (%.2f, %.2f) enters "
-            "collision zone %s (policy: %s)",
-            start[0], start[1], x, y, zone, self._policy.name,
+            "SAFETY: Command REJECTED — route %s %s (policy: %s)",
+            route_text, problem, self._policy.name,
         )
-        raise SafetyViolation(
-            f"Path from ({start[0]:g}, {start[1]:g}) to ({x:g}, {y:g}) "
-            f"crosses collision zone: {zone}"
-        )
+        raise SafetyViolation(f"Path from {route_text} {problem}")
 
     def _get_dynamic_zones(self) -> list[dict[str, float]]:
         """

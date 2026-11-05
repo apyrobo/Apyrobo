@@ -1,6 +1,7 @@
 """apyrobo mcp --audit-log: a line for each motion decision, or no motion."""
 from __future__ import annotations
 
+import errno
 import json
 import os
 import subprocess
@@ -262,6 +263,54 @@ def test_the_motion_after_a_client_loss_is_refused_in_the_log(log):
     assert decisions(log) == [("move_to", "refused")]
 
 
+def wait_for_halt(server):
+    server.join_halt(5)
+    assert not server._halter.is_alive()
+
+
+def test_the_stop_after_a_client_loss_is_logged_once(log):
+    server = make(log)
+    server.client_lost("stdin closed")
+    server.client_lost("signal 15")
+    wait_for_halt(server)
+    entry, = lines(log)
+    assert (entry["tool"], entry["decision"]) == ("stop", "client_lost")
+    assert entry["detail"] == "stdin closed"
+
+
+def test_a_stop_that_failed_after_a_client_loss_says_so(log):
+    server = make(log)
+
+    def no_link():
+        raise RuntimeError("no link")
+
+    server.toolbox.enforcer.stop = no_link
+    server.client_lost("stdin closed")
+    wait_for_halt(server)
+    assert lines(log)[0]["detail"] == "stdin closed; stop failed: no link"
+
+
+def test_a_broken_log_does_not_end_the_stop_after_a_client_loss():
+    server = build_server(agent=None)
+    server.audit_log = Broken()
+    stops = []
+
+    def stop():
+        stops.append(1)
+        server._motion_running = len(stops) < 2
+
+    server.toolbox.enforcer.stop = stop
+    server._motion_running = True
+    server.client_lost("stdin closed")
+    wait_for_halt(server)
+    assert len(stops) == 2
+
+
+def test_no_client_loss_means_nothing_to_wait_for(log):
+    make(log).join_halt()
+    assert decisions(log) == []
+
+
 def test_a_full_disk_refuses_motion():
     if not os.path.exists("/dev/full"):
         pytest.skip("needs /dev/full")
@@ -272,6 +321,26 @@ def test_a_full_disk_refuses_motion():
     assert moves == []
 
 
+@pytest.mark.parametrize("code", [errno.EINVAL, errno.ENOTSUP])
+def test_a_file_that_cannot_sync_is_still_logged(log, monkeypatch, code):
+    def refuse(fd):
+        raise OSError(code, "nothing to sync")
+
+    monkeypatch.setattr(os, "fsync", refuse)
+    AuditLog(log).record({"tool": "stop"})
+    assert lines(log) == [{"tool": "stop"}]
+
+
+def test_a_failed_sync_is_a_failed_record(log, monkeypatch):
+    def fail(fd):
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(os, "fsync", fail)
+    with pytest.raises(OSError):
+        AuditLog(log).record({"tool": "stop"})
+
+
+@pytest.mark.skipif(not os.path.isdir("/dev/fd"), reason="no /dev/fd on this platform")
 def test_a_pipe_needs_no_sync(tmp_path):
     read_end, write_end = os.pipe()
     with os.fdopen(read_end) as reader:
@@ -291,7 +360,10 @@ def test_a_real_server_writes_the_log_and_reports_it_at_start(tmp_path, log):
         last_id=2,
     )
     assert f"audit_log={log}" in done.stderr
-    assert decisions(log) == [("move_to", "started"), ("move_to", "clamped")]
+    assert decisions(log) == [
+        ("move_to", "started"), ("move_to", "clamped"), ("stop", "client_lost"),
+    ]
+    assert lines(log)[-1]["detail"] == "stdin closed"
 
 
 def test_a_path_that_cannot_be_written_stops_the_start(tmp_path):

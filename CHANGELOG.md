@@ -11,6 +11,18 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- `apyrobo mcp keepout` (experimental) writes a Nav2 keepout mask from the same
+  `--no-go` and `--policy-file` zones the server refuses, and prints the Nav2
+  parameters to paste. Loaded by Nav2's map server on Jazzy and Humble; no test
+  has Nav2 route around a zone with it yet.
+
+- `apyrobo mcp --audit-log PATH` appends one JSON line for each motion decision
+  (time, tool, arguments, decision, enforced speed, policy), synced before the
+  server goes on. A move whose `started` line cannot be written is refused, and
+  `stop` always runs. A stop after the client went away is logged as
+  `client_lost`. `apyrobo mcp config <client> --audit-log PATH` passes the flag
+  through; docs/mcp.md describes the format.
+
 - `ros2://` through `uvx`: docs/mcp.md's troubleshooting now explains why a
   sourced ROS 2 environment is not enough on its own — `uvx` runs in an
   isolated environment that `rclpy` reaches through `PYTHONPATH` while the
@@ -172,6 +184,21 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   docs/gz_sim_port.md). Not run in CI yet.
 
 ### Fixed
+
+- Allowed areas now hold along the route, not only at the target. A straight
+  line, or a Nav2 plan on `ros2://`, that leaves the areas on the way to an
+  allowed target is refused, so two separate areas no longer let a robot cross
+  the space between them. **Behaviour change:** with areas that do not touch,
+  such a move used to run. Areas that touch or overlap count as one space, and
+  a robot that starts outside every area may still drive in. `ros2://` now asks
+  Nav2 for a plan when areas are set, even with no zones, and refuses the move
+  if none comes back. `apyrobo mcp selftest` tries such a move when more than
+  one area is set.
+
+- `execute_task` refusals are written as a sentence, not a Python dict, and match
+  `move_to`: `Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4)`, with
+  the zone's name when it has one. The structured detail is under `refusal` in
+  the JSON that follows; `safety_report` violations gain a `message` field.
 
 - Windows: `apyrobo mcp` treats a closed stdin or stdout as the client leaving.
   A failed write there raised `EINVAL`, not `BrokenPipeError`, and ended the

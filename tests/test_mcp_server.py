@@ -366,3 +366,56 @@ def test_cli_stdio_round_trip():
     assert replies[1]["result"]["isError"] is True
     assert "REFUSED by safety policy" in replies[1]["result"]["content"][0]["text"]
     assert "apyrobo mcp" in proc.stderr
+
+
+# -- refusals read as sentences ---------------------------------------------
+
+
+def test_refusal_reads_as_a_sentence_for_move_and_task(server):
+    _, moved = call(server, "move_to", {"x": 3, "y": 3})
+    _, tasked = call(server, "execute_task", {"task": "go to (3, 3)"})
+
+    sentence = "Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4)."
+    assert sentence in moved
+    assert sentence in tasked
+    assert "{'" not in moved
+    assert "{'" not in tasked.split("\n\n")[0]
+    assert "The robot did not move. Choose a different target." in tasked
+
+
+def test_task_refusal_keeps_the_structured_detail_in_its_json(server):
+    _, text = call(server, "execute_task", {"task": "go to (3, 3)"})
+    outcome = json.loads(text.split("\n\n", 1)[1])
+    assert outcome["refusal"]["type"] == "collision_zone"
+    assert outcome["refusal"]["zone"] == ZONE
+    assert outcome["refusal"]["requested_position"] == [3.0, 3.0]
+
+
+def test_refusal_names_a_named_zone():
+    named = build_server(max_speed=0.5, no_go_zones=[{"name": "dock", **ZONE}])
+    _, text = call(named, "move_to", {"x": 3, "y": 3})
+    assert "zone 'dock' (x 2 to 4, y 2 to 4)" in text
+
+
+def test_refusal_writes_out_a_crossed_zone():
+    area = {"x_min": 0.0, "y_min": 0.0, "x_max": 9.0, "y_max": 9.0}
+    srv = build_server(max_speed=0.5, no_go_zones=[ZONE], allowed_areas=[area])
+    _, crossed = call(srv, "move_to", {"x": 6, "y": 6})
+    _, outside = call(srv, "move_to", {"x": 20, "y": 0})
+    assert "crosses collision zone (x 2 to 4, y 2 to 4)." in crossed
+    assert "outside every allowed area: (x 0 to 9, y 0 to 9)." in outside
+
+
+def test_safety_report_keeps_the_refusal_text(server):
+    call(server, "move_to", {"x": 3, "y": 3})
+    _, report = call(server, "safety_report")
+    violation = json.loads(report)["violations"][0]
+    assert violation["zone"] == ZONE
+    assert violation["message"].startswith("Position (3, 3) is inside")
+
+
+def test_a_refused_later_step_does_not_claim_the_robot_stayed(server):
+    _, text = call(server, "execute_task", {"task": "deliver the package from (1, 0) to (3, 3)"})
+    assert "at step 3: Position (3, 3) is inside collision zone" in text
+    assert "did not move" not in text.split("\n\n")[0]
+    assert json.loads(text.split("\n\n", 1)[1])["position"] == {"x": 1.0, "y": 0.0}

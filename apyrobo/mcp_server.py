@@ -100,6 +100,8 @@ AUDIT_DETAIL_CHARS = 500
 # How long a motion call may wait for the stdin thread to reach pending input.
 STDIN_SETTLE_S = 0.25
 STDIN_SETTLE_POLL_S = 0.001
+# How long exit waits for the stop after a client loss to be logged.
+HALT_JOIN_S = 1.0
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -345,7 +347,7 @@ class RobotToolbox:
         Shows the target and the speed the policy will actually allow.
         Returns None for a move the policy refuses anyway (target in a
         no-go zone or outside the allowed areas, or a route that crosses a
-        zone), so the user is not asked
+        zone or leaves the areas), so the user is not asked
         to approve a refused move.
         Raises ToolError for invalid arguments.
         """
@@ -360,7 +362,7 @@ class RobotToolbox:
             if self.enforcer.outside_allowed_areas(x, y):
                 return None
             try:
-                if self.enforcer.crossed_zone(x, y) is not None:
+                if self.enforcer.route_fault(x, y) is not None:
                     return None
             except SafetyViolation:
                 return None
@@ -571,10 +573,15 @@ class RobotToolbox:
         if status != "completed":
             reason = getattr(result, "error", None) or "execution failed"
             if refusals:
+                refusal = refusals[-1]
+                still = "The robot did not move. " if not result.steps_completed else ""
                 reason = (
                     f"REFUSED by safety policy '{self.enforcer.policy.name}' at step "
-                    f"{result.steps_completed + 1}: {refusals[-1]}"
+                    f"{result.steps_completed + 1}: "
+                    f"{refusal.get('message', refusal.get('type'))}. "
+                    f"{still}Choose a different target."
                 )
+                outcome["refusal"] = refusal
             outcome["error"] = reason
             raise ToolError(f"{reason}\n\n{json.dumps(_jsonable(outcome), indent=2)}")
         return outcome
@@ -624,6 +631,7 @@ class MCPServer:
         self.client_gone = False
         self._motion_running = False
         self._halting = False
+        self._halter: threading.Thread | None = None
         self._reader: threading.Thread | None = None
         self._client_stdin: IO[str] | None = None
 
@@ -1163,17 +1171,32 @@ class MCPServer:
             return
         self._halting = True
         logger.warning("MCP: client lost (%s), stopping the robot", reason)
-        threading.Thread(target=self._halt, name="apyrobo-mcp-halt", daemon=True).start()
+        self._halter = threading.Thread(
+            target=self._halt, args=(reason,), name="apyrobo-mcp-halt", daemon=True
+        )
+        self._halter.start()
 
-    def _halt(self) -> None:
+    def _halt(self, reason: str) -> None:
+        logged = False
         while True:
+            detail = reason
             try:
                 self.toolbox.enforcer.stop()
             except Exception as exc:
                 logger.error("MCP: stop after client loss failed: %s", exc)
+                detail = f"{reason}; stop failed: {exc}"
+            if not logged:
+                # Here, not in client_lost(): that also runs in a signal handler.
+                self._audit_after("stop", {}, "client_lost", detail=detail)
+                logged = True
             if not self._motion_running:
                 return
             time.sleep(HALT_REPEAT_S)
+
+    def join_halt(self, timeout: float = HALT_JOIN_S) -> None:
+        """Give the stop after a client loss time to finish and be logged."""
+        if self._halter is not None:
+            self._halter.join(timeout)
 
     def _serve_loop(self, out: IO[str]) -> None:
         while True:

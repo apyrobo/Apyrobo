@@ -64,9 +64,10 @@ allowed_areas:
 ```
 
 With `allowed_areas` set, a target outside every area is refused, so a place you
-forgot to write down is off limits as a target. The area is checked at the
-target only: a route between two allowed points may leave it. No-go zones are
-what is checked along the way.
+forgot to write down is off limits. Nav2's planned route is checked too: a plan
+that leaves the areas on the way to an allowed target is refused, so two areas
+with a gap between them need a third area joining them. A robot that starts
+outside every area may drive in.
 
 ## 3. Check it on `mock://`
 
@@ -124,8 +125,10 @@ robot's `sshd_config` to bound the wait.
 On `ros2://` with Nav2 the server checks Nav2's planned route before it sends the
 goal. It does not watch the drive: the controller can stray from the plan and
 Nav2 can replan. For an area that matters, add a Nav2 keepout filter to both the
-global and the local costmap. That is the stronger layer, and you set it up
-yourself.
+global and the local costmap. That is the stronger layer.
+[`apyrobo mcp keepout`](mcp.md#write-a-nav2-keepout-mask) writes the mask from
+your zones and prints the parameters, but it is experimental and the wiring is
+yours: check in simulation that Nav2 routes around the zone.
 
 Only raise `max_speed` or drop `--confirm-moves` once short supervised runs have
 behaved as you expect.
@@ -139,8 +142,6 @@ behaved as you expect.
 - **A wrong map or a bad localisation estimate.** Zones are only as good as the
   frame they are drawn in.
 - **The path actually driven.** See step 6.
-- **A route that leaves an allowed area.** Only the target is checked against
-  allowed areas.
 - **Software that bypasses it.** Limits apply to commands that go through
   `apyrobo mcp`. Anything else publishing to `/cmd_vel` or sending Nav2 goals is
   not checked.

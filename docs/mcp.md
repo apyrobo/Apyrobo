@@ -108,8 +108,9 @@ clients don't read your shell's `PATH`) and says where the config file is on
 your OS. Use `cursor` or `claude-code` instead of `claude-desktop` for those
 clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
-`--max-speed` and `--no-go` flags as `apyrobo mcp`, checks them, and makes a
-relative `--policy-file` path absolute. It only prints: merge the output
+`--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
+flags as `apyrobo mcp`, checks them, and makes relative `--policy-file` and
+`--audit-log` paths absolute. It only prints: merge the output
 into your config yourself. The `uvx` command it prints installs from GitHub
 until `apyrobo mcp` is in a PyPI release, then `uvx apyrobo mcp`: the form
 follows your installed version. Without installing, run it as
@@ -169,7 +170,8 @@ input, so set `ClientAliveInterval` and `ClientAliveCountMax` in the robot's
 what they do on `mock://`, before you touch a client config. It lists the
 tools, runs a normal move, shows an over-limit move clamped to your limit, and
 tries a move into each no-go zone. With allowed areas set, it also tries a
-target outside them. It exits 0 if all of that held, 1 if not.
+target outside them, and with more than one area, a move from one to another
+through the space between them. It exits 0 if all of that held, 1 if not.
 
 ```bash
 apyrobo mcp selftest --max-speed 0.5 --no-go 2,2,4,4
@@ -219,6 +221,7 @@ names both. A speed in the task is not read, so use `move_to` to set one.
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
 | `--allow-area X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangle move targets may be in; with any set, a target outside all of them is refused; repeat for more |
 | `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
+| `--audit-log PATH` | off | Append one JSON line per motion decision to `PATH`; if a line cannot be written, motion is refused (see below) |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
 
 For a starting point, copy a commented policy from
@@ -235,6 +238,11 @@ is off limits too. Unset, targets outside the no-go zones are accepted as
 before. No-go zones still win inside an allowed area, and `--allow-area` adds
 to the file's areas. An `allowed_areas` key with an empty list is an error, not
 "anywhere".
+
+The route is held to the areas too: a straight line, or a Nav2 plan on `ros2://`,
+that leaves them on the way to an allowed target is refused. Areas that touch or
+overlap count as one space. A robot that starts outside every area may drive in;
+the check starts where the route first enters one.
 
 ```bash
 apyrobo mcp --max-speed 0.5 --allow-area 0,0,10,6 --no-go 2,2,4,4
@@ -258,6 +266,47 @@ lack elicitation get every motion command refused with a readable error,
 because the operator asked for confirmation and the server cannot get it
 from them. `apyrobo mcp config <client> --confirm-moves` puts the flag in
 the generated config.
+
+### Keep an audit log
+
+With `--audit-log PATH`, every motion decision is appended to `PATH` as one
+JSON line, synced to disk before the server goes on. The file is opened for
+each line, so you can rotate it while the server runs.
+
+```bash
+apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4 --audit-log ~/apyrobo-audit.jsonl
+```
+
+```json
+{"time":"2026-11-04T10:15:02.114+00:00","tool":"move_to","arguments":{"x":1.0,"y":0.0,"speed":9},"decision":"started","enforced_speed":null,"policy":"default+cli"}
+{"time":"2026-11-04T10:15:02.931+00:00","tool":"move_to","arguments":{"x":1.0,"y":0.0,"speed":9},"decision":"clamped","enforced_speed":0.5,"policy":"default+cli"}
+```
+
+Each line has `time` (UTC), `tool` (`move_to`, `rotate`, `execute_task` or
+`stop`), `arguments` as the client sent them, `decision`, `enforced_speed`, the
+speed the robot was given where one applies, and `policy`. A refusal or failure
+adds `detail`, cut to 500 characters. Read-only tools are not logged.
+
+| `decision` | Meaning |
+| --- | --- |
+| `started` | The motion call passed the client checks and is about to run; the next line says how it ended |
+| `ran` | It finished as asked (`stop` logs only this) |
+| `clamped` | It finished with a speed the policy lowered |
+| `refused` | The policy said no (a no-go zone, an allowed area), the client had gone, or it cannot confirm; earlier steps of an `execute_task` may have run |
+| `failed` | Bad arguments or an adapter error |
+| `declined` | The user said no under `--confirm-moves` |
+| `client_lost` | The client went away and the server stopped the robot; `detail` says how, and whether the stop failed |
+
+`started` is written before the robot is asked to move, and a move whose line
+cannot be written is refused, so a motion command never runs unlogged. A path
+that cannot be written stops the server at start. A log that breaks during a
+move shows at the next one: that move has already run and only its closing line
+is lost, and the next motion command is refused. `stop` always runs, logged or
+not.
+
+The log is a plain file on the machine that runs the server, with no signature
+or hash chain, so whoever can write there can change it. `apyrobo mcp config
+<client> --audit-log PATH` puts the flag in the generated config.
 
 ## On a ROS 2 robot or a Gazebo sim
 
@@ -297,6 +346,32 @@ docker compose -f docker/docker-compose.yml --profile gazebo-nav up \
 
 Not covered yet: real hardware in CI, and the ROS 2 Jazzy + Gazebo Harmonic
 image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
+
+### Write a Nav2 keepout mask
+
+Experimental. This turns the zones the server refuses into a mask for Nav2's
+keepout filter, so that Nav2 plans and drives around them:
+
+```bash
+apyrobo mcp keepout --policy-file your_policy.yaml --out ~/maps
+```
+
+It takes `--policy-file` and `--no-go` as the server does, plus `--resolution`
+(metres per pixel, default 0.05). It writes `keepout_mask.pgm` and
+`keepout_mask.yaml` to `--out`, replacing any earlier pair, and prints the Nav2
+parameters to paste: two servers, which need a lifecycle manager listing both,
+and the filter for both costmaps. Run it again whenever the zones change, and
+restart those servers.
+
+A pixel goes black if any part of it touches a zone, so a zone can grow by up to
+a pixel on each side but not shrink. The mask is in the map frame, covering the
+zones plus 1 m. Allowed areas are not drawn.
+
+What has been tested: Nav2's map server on Jazzy and Humble loaded a mask, published
+it with the cells in the right place, and the filter info server took the printed
+parameters. What has not: no test yet has Nav2 route around a zone with
+this mask, so the costmap block is untested, and the feature stays experimental
+until one does. Check it in simulation first.
 
 ## Troubleshooting
 
@@ -434,23 +509,26 @@ refuse a move whose straight line enters a zone, and a robot already inside a
 zone may drive out. That check assumes the adapter reports a true position and
 drives straight, so it is no substitute for a planner that knows your map.
 
-On `ros2://` with Nav2, and with zones set, the server asks Nav2 for its route
-through the `ComputePathToPose` action before sending the goal, and refuses the
-move if any stretch of that route enters a zone. If no plan comes back
+On `ros2://` with Nav2, and with zones or allowed areas set, the server asks
+Nav2 for its route through the `ComputePathToPose` action before sending the
+goal, and refuses the move if any stretch of that route enters a zone or leaves
+the allowed areas. If no plan comes back
 (`plan_timeout_sec`, 10 seconds by default), the plan is empty, or it holds
 non-finite points, the move is refused rather than sent. A robot already inside a zone may
-drive out. With no zones set, no plan is requested.
+drive out. With no zones and no allowed areas set, no plan is requested.
 
 This checks the plan, not the drive: Nav2's controller may stray from the plan
 and Nav2 may replan during the move, and those paths are not checked. If the
 robot must never enter an area, add a Nav2 keepout filter to both the global
 and the local costmap, so that planning and driving both respect it; it is the
-stronger layer, and APYROBO does not set it up for you.
+stronger layer. `apyrobo mcp keepout` writes one from the same zones (see
+[Write a Nav2 keepout mask](#write-a-nav2-keepout-mask)); wiring it into Nav2 is
+yours to do.
 
-Allowed areas are checked at the target only, on every adapter. The route is
-not compared with them: a robot sent from one allowed area to another may pass
-through space outside both, and Nav2 may route outside an area to reach a target
-inside it.
+Allowed areas are checked at the target and along the route, the same way: the
+straight line on `mock://`, Nav2's plan on `ros2://`. The same limit applies:
+this checks the plan, not the drive, so only a keepout filter holds a robot
+inside an area that Nav2's controller might stray from.
 
 Moving from `mock://` to hardware? [Your first real robot](first-real-robot.md)
 goes through these checks in order, and lists what they do not cover.
