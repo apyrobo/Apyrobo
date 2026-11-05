@@ -185,6 +185,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `llms.txt` now leads with `apyrobo mcp`, its one-line try-out, the config
+  command and what it doesn't guarantee. It no longer says safety cannot be
+  bypassed by any agent, which went further than the code does.
+
 - `apyrobo mcp`: a `stop` call or a client's `notifications/cancelled` now reaches
   the robot during a move; before, neither was acted on until the move ended.
   The move comes back as a `STOPPED:` error (a cancelled request gets no reply,

@@ -1,15 +1,58 @@
-# APYROBO — AI-Native Robotics Orchestration Framework
+# APYROBO — the safety layer between your AI agent and your robot
 
-APYROBO is an open-source Python framework for building AI agents that control robots.
-It provides hardware abstraction (mock, ROS 2, Unitree, Isaac Sim), a skill graph engine,
-multi-robot coordination, natural language safety policies, and built-in observability.
+APYROBO is an open-source Python framework for AI agents that control robots. Its main
+entry point is `apyrobo mcp`, a Model Context Protocol server: Claude, Cursor or any MCP
+client gets tools to look at a robot and move it, and every motion command goes through
+APYROBO's `SafetyEnforcer` first.
 
-The key differentiation: the same APYROBO agent code runs on any robot — change the URI,
-not the code. Safety is enforced at the framework layer and cannot be bypassed by any agent.
+## MCP server (start here)
+
+Try it with no robot and no ROS. This needs uv and git, and runs on a simulated `mock://` robot:
+
+```bash
+uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+```
+
+`apyrobo mcp` is not in a PyPI release yet (`pip install apyrobo` gives 4.0.0 without it),
+so the command above installs from GitHub.
+
+Print a ready-to-paste client config with the absolute path for this machine. The client
+can be `claude-desktop`, `cursor` or `claude-code`:
+
+```bash
+uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
+```
+
+What it does:
+
+- A speed above the limit is clamped, and the result says so.
+- A target inside a no-go zone is refused, and so is a straight line that crosses one.
+  On `ros2://` with Nav2, the planned route is checked before the goal is sent.
+- `stop` is always allowed, and it acts during a running move. A client cancel or lost
+  client also stops the move.
+- Tools: `robot_status`, `list_capabilities`, `move_to`, `rotate`, `stop`, `plan_task`,
+  `execute_task`, `safety_report`. There are no raw ROS topic, service or action calls.
+
+What it doesn't guarantee:
+
+- It is a software guard between a model and a robot, not a certified safety system.
+  Keep hardware e-stops and site safety measures in place.
+- It checks policy, not live sensors. Nothing refuses a move because of what a scanner or
+  camera sees now, and the human-proximity check does not run under `apyrobo mcp`.
+- The stop and cancel behaviour is tested on `mock://` and a slow test adapter, not on Nav2.
+
+Full guide: [docs/mcp.md](docs/mcp.md). First real robot: [docs/first-real-robot.md](docs/first-real-robot.md).
+
+## Python framework
+
+The same agent code runs on any robot: change the URI, not the code. The framework provides
+hardware abstraction (mock, ROS 2, Unitree, Isaac Sim), a skill graph engine, multi-robot
+coordination, natural language safety policies and built-in observability. Motion commands
+sent through it are checked by the `SafetyEnforcer`.
 
 ## Quick start
 
-```python
+```bash
 pip install apyrobo
 ```
 
@@ -61,6 +104,7 @@ apyrobo registry search navigation      # search skill registry
 
 ## Documentation
 
+- [MCP server guide](docs/mcp.md)
 - [Quickstart (5 min)](docs/quickstart_5min.md)
 - [Architecture overview](docs/architecture.md)
 - [Concept index](docs/concepts/index.md)
