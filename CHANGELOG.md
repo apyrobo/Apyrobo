@@ -185,6 +185,16 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Allowed areas now hold along the route, not only at the target. A straight
+  line, or a Nav2 plan on `ros2://`, that leaves the areas on the way to an
+  allowed target is refused, so two separate areas no longer let a robot cross
+  the space between them. **Behaviour change:** with areas that do not touch,
+  such a move used to run. Areas that touch or overlap count as one space, and
+  a robot that starts outside every area may still drive in. `ros2://` now asks
+  Nav2 for a plan when areas are set, even with no zones, and refuses the move
+  if none comes back. `apyrobo mcp selftest` tries such a move when more than
+  one area is set.
+
 - `execute_task` refusals are written as a sentence, not a Python dict, and match
   `move_to`: `Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4)`, with
   the zone's name when it has one. The structured detail is under `refusal` in

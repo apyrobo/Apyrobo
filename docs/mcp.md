@@ -170,7 +170,8 @@ input, so set `ClientAliveInterval` and `ClientAliveCountMax` in the robot's
 what they do on `mock://`, before you touch a client config. It lists the
 tools, runs a normal move, shows an over-limit move clamped to your limit, and
 tries a move into each no-go zone. With allowed areas set, it also tries a
-target outside them. It exits 0 if all of that held, 1 if not.
+target outside them, and with more than one area, a move from one to another
+through the space between them. It exits 0 if all of that held, 1 if not.
 
 ```bash
 apyrobo mcp selftest --max-speed 0.5 --no-go 2,2,4,4
@@ -237,6 +238,11 @@ is off limits too. Unset, targets outside the no-go zones are accepted as
 before. No-go zones still win inside an allowed area, and `--allow-area` adds
 to the file's areas. An `allowed_areas` key with an empty list is an error, not
 "anywhere".
+
+The route is held to the areas too: a straight line, or a Nav2 plan on `ros2://`,
+that leaves them on the way to an allowed target is refused. Areas that touch or
+overlap count as one space. A robot that starts outside every area may drive in;
+the check starts where the route first enters one.
 
 ```bash
 apyrobo mcp --max-speed 0.5 --allow-area 0,0,10,6 --no-go 2,2,4,4
@@ -503,12 +509,13 @@ refuse a move whose straight line enters a zone, and a robot already inside a
 zone may drive out. That check assumes the adapter reports a true position and
 drives straight, so it is no substitute for a planner that knows your map.
 
-On `ros2://` with Nav2, and with zones set, the server asks Nav2 for its route
-through the `ComputePathToPose` action before sending the goal, and refuses the
-move if any stretch of that route enters a zone. If no plan comes back
+On `ros2://` with Nav2, and with zones or allowed areas set, the server asks
+Nav2 for its route through the `ComputePathToPose` action before sending the
+goal, and refuses the move if any stretch of that route enters a zone or leaves
+the allowed areas. If no plan comes back
 (`plan_timeout_sec`, 10 seconds by default), the plan is empty, or it holds
 non-finite points, the move is refused rather than sent. A robot already inside a zone may
-drive out. With no zones set, no plan is requested.
+drive out. With no zones and no allowed areas set, no plan is requested.
 
 This checks the plan, not the drive: Nav2's controller may stray from the plan
 and Nav2 may replan during the move, and those paths are not checked. If the
@@ -518,10 +525,10 @@ stronger layer. `apyrobo mcp keepout` writes one from the same zones (see
 [Write a Nav2 keepout mask](#write-a-nav2-keepout-mask)); wiring it into Nav2 is
 yours to do.
 
-Allowed areas are checked at the target only, on every adapter. The route is
-not compared with them: a robot sent from one allowed area to another may pass
-through space outside both, and Nav2 may route outside an area to reach a target
-inside it.
+Allowed areas are checked at the target and along the route, the same way: the
+straight line on `mock://`, Nav2's plan on `ros2://`. The same limit applies:
+this checks the plan, not the drive, so only a keepout filter holds a robot
+inside an area that Nav2's controller might stray from.
 
 Moving from `mock://` to hardware? [Your first real robot](first-real-robot.md)
 goes through these checks in order, and lists what they do not cover.

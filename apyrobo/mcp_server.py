@@ -347,7 +347,7 @@ class RobotToolbox:
         Shows the target and the speed the policy will actually allow.
         Returns None for a move the policy refuses anyway (target in a
         no-go zone or outside the allowed areas, or a route that crosses a
-        zone), so the user is not asked
+        zone or leaves the areas), so the user is not asked
         to approve a refused move.
         Raises ToolError for invalid arguments.
         """
@@ -362,7 +362,7 @@ class RobotToolbox:
             if self.enforcer.outside_allowed_areas(x, y):
                 return None
             try:
-                if self.enforcer.crossed_zone(x, y) is not None:
+                if self.enforcer.route_fault(x, y) is not None:
                     return None
             except SafetyViolation:
                 return None
