@@ -124,8 +124,10 @@ robot's `sshd_config` to bound the wait.
 On `ros2://` with Nav2 the server checks Nav2's planned route before it sends the
 goal. It does not watch the drive: the controller can stray from the plan and
 Nav2 can replan. For an area that matters, add a Nav2 keepout filter to both the
-global and the local costmap. That is the stronger layer, and you set it up
-yourself.
+global and the local costmap. That is the stronger layer.
+[`apyrobo mcp keepout`](mcp.md#write-a-nav2-keepout-mask) writes the mask from
+your zones and prints the parameters, but it is experimental and the wiring is
+yours: check in simulation that Nav2 routes around the zone.
 
 Only raise `max_speed` or drop `--confirm-moves` once short supervised runs have
 behaved as you expect.
