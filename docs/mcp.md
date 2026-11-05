@@ -341,6 +341,32 @@ docker compose -f docker/docker-compose.yml --profile gazebo-nav up \
 Not covered yet: real hardware in CI, and the ROS 2 Jazzy + Gazebo Harmonic
 image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
 
+### Write a Nav2 keepout mask
+
+Experimental. This turns the zones the server refuses into a mask for Nav2's
+keepout filter, so that Nav2 plans and drives around them:
+
+```bash
+apyrobo mcp keepout --policy-file your_policy.yaml --out ~/maps
+```
+
+It takes `--policy-file` and `--no-go` as the server does, plus `--resolution`
+(metres per pixel, default 0.05). It writes `keepout_mask.pgm` and
+`keepout_mask.yaml` to `--out`, replacing any earlier pair, and prints the Nav2
+parameters to paste: two servers, which need a lifecycle manager listing both,
+and the filter for both costmaps. Run it again whenever the zones change, and
+restart those servers.
+
+A pixel goes black if any part of it touches a zone, so a zone can grow by up to
+a pixel on each side but not shrink. The mask is in the map frame, covering the
+zones plus 1 m. Allowed areas are not drawn.
+
+What has been tested: Nav2's map server on Jazzy and Humble loaded a mask, published
+it with the cells in the right place, and the filter info server took the printed
+parameters. What has not: no test yet has Nav2 route around a zone with
+this mask, so the costmap block is untested, and the feature stays experimental
+until one does. Check it in simulation first.
+
 ## Troubleshooting
 
 **Check the server on its own first.** Run the same command your client
@@ -488,7 +514,9 @@ This checks the plan, not the drive: Nav2's controller may stray from the plan
 and Nav2 may replan during the move, and those paths are not checked. If the
 robot must never enter an area, add a Nav2 keepout filter to both the global
 and the local costmap, so that planning and driving both respect it; it is the
-stronger layer, and APYROBO does not set it up for you.
+stronger layer. `apyrobo mcp keepout` writes one from the same zones (see
+[Write a Nav2 keepout mask](#write-a-nav2-keepout-mask)); wiring it into Nav2 is
+yours to do.
 
 Allowed areas are checked at the target only, on every adapter. The route is
 not compared with them: a robot sent from one allowed area to another may pass

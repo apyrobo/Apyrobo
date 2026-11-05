@@ -11,6 +11,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- `apyrobo mcp keepout` (experimental) writes a Nav2 keepout mask from the same
+  `--no-go` and `--policy-file` zones the server refuses, and prints the Nav2
+  parameters to paste. Loaded by Nav2's map server on Jazzy and Humble; no test
+  has Nav2 route around a zone with it yet.
+
 - `apyrobo mcp --audit-log PATH` appends one JSON line for each motion decision
   (time, tool, arguments, decision, enforced speed, policy), synced before the
   server goes on. A move whose `started` line cannot be written is refused, and

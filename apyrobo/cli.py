@@ -1619,6 +1619,10 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         from apyrobo.mcp_selftest import main as run_selftest
 
         sys.exit(run_selftest(args))
+    if getattr(args, "mcp_command", None) == "keepout":
+        from apyrobo.mcp_keepout import main as write_keepout
+
+        sys.exit(write_keepout(args))
 
     from apyrobo.mcp_server import build_server, parse_zone
 
@@ -3100,6 +3104,18 @@ def main() -> None:
     p_mcp_selftest.add_argument("--confirm-moves", dest="st_confirm_moves", action="store_true",
                                 help="Say you will run the server with --confirm-moves; "
                                      "not exercised here, it needs a client that can ask you")
+    p_mcp_keepout = mcp_sub.add_parser(
+        "keepout",
+        help="Write a Nav2 keepout mask from your no-go zones and print the config (experimental)",
+    )
+    p_mcp_keepout.add_argument("--policy-file", dest="ko_policy_file", default=None,
+                               metavar="PATH")
+    p_mcp_keepout.add_argument("--no-go", dest="ko_no_go", action="append", default=None,
+                               metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+    p_mcp_keepout.add_argument("--resolution", dest="ko_resolution", type=float, default=0.05,
+                               metavar="M", help="Metres per pixel (default: 0.05)")
+    p_mcp_keepout.add_argument("--out", dest="ko_out", default=".", metavar="DIR",
+                               help="Folder for keepout_mask.pgm and .yaml (default: here)")
 
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
