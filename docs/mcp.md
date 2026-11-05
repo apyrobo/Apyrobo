@@ -164,6 +164,31 @@ A dead network link is different. Until TCP gives up, the server sees no end of
 input, so set `ClientAliveInterval` and `ClientAliveCountMax` in the robot's
 `sshd_config` to bound the wait. Keep your robot's own e-stop within reach.
 
+### Stopping a move
+
+The server reads its input while a move runs, so two things reach the robot
+during a move:
+
+- A `stop` tool call. The running move comes back as an error (`isError`)
+  starting `STOPPED:` with the last known position, then `stop` gets its own
+  reply.
+- `notifications/cancelled` for the running move's request id, which is what a
+  client sends when it gives up on a call. MCP says a cancelled request should
+  get no reply, so it gets none. A cancel for any other request leaves the
+  running move alone. A cancelled move that has not started never starts.
+
+Either way the stop is repeated until the move returns, `execute_task` drops
+its remaining steps, and a motion request sent before a `stop` but not started
+yet is refused. Later moves run as usual.
+
+**A client that times out now stops the robot.** Clients give up on a tool call
+after their own timeout and send that cancel, so a long Nav2 move can stop
+partway through. If yours do, raise the client's tool timeout or send shorter
+moves. Whether a client's own stop button sends the cancel depends on the client.
+
+This is tested on `mock://`, a slow test adapter and the official MCP Python SDK
+client abandoning a call, not yet on a real Nav2 goal.
+
 ### Check your limits first
 
 `apyrobo mcp selftest` takes the same policy flags as the server and prints
@@ -292,9 +317,11 @@ adds `detail`, cut to 500 characters. Read-only tools are not logged.
 | `started` | The motion call passed the client checks and is about to run; the next line says how it ended |
 | `ran` | It finished as asked (`stop` logs only this) |
 | `clamped` | It finished with a speed the policy lowered |
-| `refused` | The policy said no (a no-go zone, an allowed area), the client had gone, or it cannot confirm; earlier steps of an `execute_task` may have run |
+| `refused` | The policy said no (a no-go zone, an allowed area), the client had gone, a `stop` came in after the request, or it cannot confirm; earlier steps of an `execute_task` may have run |
 | `failed` | Bad arguments or an adapter error |
 | `declined` | The user said no under `--confirm-moves` |
+| `stopped` | A `stop` reached it while it ran |
+| `cancelled` | The client cancelled it, while it ran or before it started |
 | `client_lost` | The client went away and the server stopped the robot; `detail` says how, and whether the stop failed |
 
 `started` is written before the robot is asked to move, and a move whose line

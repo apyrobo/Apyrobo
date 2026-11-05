@@ -185,6 +185,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `apyrobo mcp`: a `stop` call or a client's `notifications/cancelled` now reaches
+  the robot during a move; before, neither was acted on until the move ended.
+  The move comes back as a `STOPPED:` error (a cancelled request gets no reply,
+  as MCP asks), `execute_task` drops its remaining steps, a motion request sent
+  before the stop does not start, and later moves run as usual. The audit log
+  gains `stopped` and `cancelled`. A client that gives up on a long move now stops
+  the robot. Tested on `mock://`, a slow test adapter and the official SDK client,
+  not yet on a real Nav2 goal.
+
 - `apyrobo mcp --max-speed` refuses at start any value that isn't finite and
   positive. `nan` and `inf` used to turn the speed limit off, and `0` or `-1`
   started a server. A policy file's `max_speed` and `max_angular_speed` refuse
