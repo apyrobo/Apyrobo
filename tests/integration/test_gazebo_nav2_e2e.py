@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -158,20 +159,31 @@ class _StdioMCPClient:
         )
         self._next_id = 1
 
-    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    def write(self, message: dict[str, Any]) -> None:
+        """Send one message without waiting for an answer."""
+        assert self.proc.stdin is not None
+        self.proc.stdin.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
+        self.proc.stdin.flush()
+
+    def send(self, method: str, params: dict[str, Any]) -> int:
+        """Send a request and return its id; read the reply with `reply_to`."""
         msg_id = self._next_id
         self._next_id += 1
-        assert self.proc.stdin is not None and self.proc.stdout is not None
-        self.proc.stdin.write(
-            json.dumps({"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params}) + "\n"
-        )
-        self.proc.stdin.flush()
+        self.write({"id": msg_id, "method": method, "params": params})
+        return msg_id
+
+    def reply_to(self, msg_id: int, method: str) -> dict[str, Any]:
+        """Read the next reply, which has to be the one for `msg_id`."""
+        assert self.proc.stdout is not None
         line = self.proc.stdout.readline()
         assert line, f"apyrobo mcp closed the connection during {method}"
         reply = json.loads(line)
         assert reply.get("id") == msg_id, f"unexpected reply {reply!r}"
         assert "error" not in reply, f"{method} failed: {reply['error']}"
         return reply["result"]
+
+    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        return self.reply_to(self.send(method, params), method)
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
         result = self.request("tools/call", {"name": name, "arguments": arguments})
@@ -305,6 +317,96 @@ def test_mcp_refuses_a_goal_whose_nav2_route_crosses_a_zone(robot):
     )
     assert "Nav2: sending goal" not in server_log, "the goal reached Nav2 despite the refusal"
     assert _dist(start, adapter.position) < 0.15, "robot moved after a refused command"
+
+
+# How far the robot has to get before the stop is sent, and how far short of
+# GOAL it must end up. GOAL is 0.8 m from START, several seconds at this speed.
+STOP_AFTER_M = 0.15
+STOP_SHORT_OF_GOAL_M = 0.25
+STOP_MAX_SPEED = 0.22
+
+
+def _wait_until_driving(adapter: Any, start: tuple[float, float]) -> None:
+    """Block until the physics robot is on its way, so the stop lands mid-move."""
+    deadline = time.time() + 30.0
+    while _dist(start, adapter.position) < STOP_AFTER_M:
+        assert time.time() < deadline, f"robot never started moving from {start}"
+        time.sleep(0.05)
+
+
+def _assert_stopped_short(adapter: Any, action: str) -> tuple[float, float]:
+    """The robot settles, stays put and has not reached GOAL."""
+    time.sleep(1.5)  # Nav2's last velocity command and a little coasting
+    settled = adapter.position
+    time.sleep(2.0)
+    assert _dist(settled, adapter.position) < 0.05, (
+        f"robot still moving 1.5 s after {action}: {settled} then {adapter.position}"
+    )
+    assert _dist(settled, GOAL) > STOP_SHORT_OF_GOAL_M, (
+        f"robot reached the goal region despite {action}: {settled}, goal={GOAL}"
+    )
+    return settled
+
+
+@pytest.mark.integration
+def test_mcp_cancel_and_stop_end_a_running_nav2_goal(robot):
+    """A client's cancel, then a stop call, each halt the robot partway to the goal.
+
+    Both arrive while move_to is still running, and Nav2 has to confirm the
+    goal as cancelled. The cancelled move gets no reply: the next line the
+    server writes must be the answer to the call after it.
+    """
+    adapter = robot._adapter
+    cmd = [
+        sys.executable, "-m", "apyrobo", "--verbose", "mcp",
+        "--robot", "ros2://burger",
+        "--max-speed", str(STOP_MAX_SPEED),
+    ]
+    with tempfile.TemporaryFile(mode="w+") as log:
+        client = _StdioMCPClient(cmd, stderr=log)
+        # A move that is not stopped blocks the readline below; fail, don't hang.
+        watchdog = threading.Timer(120.0, client.proc.kill)
+        watchdog.start()
+        try:
+            client.request("initialize", {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "apyrobo-nav2-e2e", "version": "1.0"},
+            })
+            move = {"name": "move_to", "arguments": {"x": GOAL[0], "y": GOAL[1]}}
+
+            start = adapter.position
+            move_id = client.send("tools/call", move)
+            _wait_until_driving(adapter, start)
+            client.write({
+                "method": "notifications/cancelled",
+                "params": {"requestId": move_id, "reason": "client gave up"},
+            })
+            after_cancel = _assert_stopped_short(adapter, "the cancel")
+            is_error, report = client.call_tool("safety_report", {})
+            assert not is_error and report, "server did not answer after a cancelled move"
+
+            move_id = client.send("tools/call", move)
+            _wait_until_driving(adapter, after_cancel)
+            stop_id = client.send("tools/call", {"name": "stop", "arguments": {}})
+            stopped = client.reply_to(move_id, "move_to")
+            assert stopped.get("isError"), f"a stopped move did not return an error: {stopped}"
+            assert stopped["content"][0]["text"].startswith("STOPPED:"), stopped
+            assert not client.reply_to(stop_id, "stop").get("isError")
+            _assert_stopped_short(adapter, "stop")
+        finally:
+            watchdog.cancel()
+            client.close()
+        log.seek(0)
+        server_log = log.read()
+    assert server_log.count("Nav2: sending goal") >= 2, (
+        "the moves did not go through Nav2 (fell back to cmd_vel?). "
+        "Server log tail:\n" + server_log[-2000:]
+    )
+    assert server_log.count("Nav2: cancelling current goal") >= 2, server_log[-2000:]
+    assert server_log.count("Nav2: goal CANCELLED") >= 2, (
+        "Nav2 did not confirm the goals as cancelled:\n" + server_log[-2000:]
+    )
 
 
 @pytest.mark.integration
