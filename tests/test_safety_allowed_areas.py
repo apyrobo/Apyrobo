@@ -57,7 +57,8 @@ class TestEnforcer:
 
     def test_any_of_several_areas_will_do(self):
         far = {"x_min": 20.0, "y_min": 20.0, "x_max": 30.0, "y_max": 30.0}
-        guard = enforcer(allowed_areas=[AREA, far])
+        farther = {"x_min": 40.0, "y_min": 40.0, "x_max": 50.0, "y_max": 50.0}
+        guard = enforcer(allowed_areas=[farther, far])  # the robot starts in neither
         guard.move(25.0, 25.0)
         assert guard.get_position() == (25.0, 25.0)
         with pytest.raises(SafetyViolation):

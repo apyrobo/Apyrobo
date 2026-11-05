@@ -9,7 +9,9 @@ user can see their limits hold before touching any client config:
 * an over-limit move is clamped to the policy's speed limit,
 * a move into each no-go zone is refused and the robot stays put,
 * a move across each no-go zone, to a free target, is refused too,
-* with allowed areas set, a move to a target outside them is refused.
+* with allowed areas set, a move to a target outside them is refused,
+* with more than one allowed area, a move from one to another through space
+  outside them is refused, when the areas leave such a move.
 
 It then warns about what the policy leaves unset, without changing the exit
 code: a passing run only says the limits you wrote down hold.
@@ -102,12 +104,37 @@ def _clear(
     zones: Sequence[dict[str, Any]],
     areas: Sequence[dict[str, Any]] = (),
 ) -> bool:
-    """True if ``end`` is a free target and the straight line to it enters no zone."""
+    """True if ``end`` is a free target and the straight line to it is too."""
+    from apyrobo.safety.enforcer import route_leaves_areas
+
+    return (
+        _allowed(*end, zones, areas)
+        and not _enters_a_zone(start, end, zones)
+        and route_leaves_areas([start, end], areas) is None
+    )
+
+
+def _enters_a_zone(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    zones: Sequence[dict[str, Any]],
+) -> bool:
     from apyrobo.safety.enforcer import segment_enters_zone
 
-    return _allowed(*end, zones, areas) and not any(
-        segment_enters_zone(start, end, z) for z in zones
-    )
+    return any(segment_enters_zone(start, end, z) for z in zones)
+
+
+def _area_spots(areas: Sequence[dict[str, Any]]) -> list[tuple[float, float]]:
+    """A 5 by 5 grid of points across each allowed area."""
+    spots = []
+    for area in areas:
+        width = float(area["x_max"]) - float(area["x_min"])
+        height = float(area["y_max"]) - float(area["y_min"])
+        spots += [
+            (float(area["x_min"]) + width * i / 4, float(area["y_min"]) + height * j / 4)
+            for i in range(5) for j in range(5)
+        ]
+    return spots
 
 
 def free_targets(
@@ -122,13 +149,7 @@ def free_targets(
     points = [*near, (edge + 1.0, 0.0), (edge + 2.0, 0.0)]
     points += [(x * r, y * r) for r in (0.25, 0.5, 2.0, 4.0, 8.0) for x, y in near]
     # Spots across each allowed area, which may be nowhere near the start.
-    for area in areas:
-        width = float(area["x_max"]) - float(area["x_min"])
-        height = float(area["y_max"]) - float(area["y_min"])
-        points += [
-            (float(area["x_min"]) + width * i / 4, float(area["y_min"]) + height * j / 4)
-            for i in range(5) for j in range(5)
-        ]
+    points += _area_spots(areas)
     for first in points:
         if _clear(start, first, zones, areas):
             for second in [*points, start]:
@@ -280,6 +301,39 @@ def _check_outside(
     return Check(True, name, f"move to ({x:g}, {y:g}) refused, robot stayed at {after}")
 
 
+def _check_between_areas(
+    client: _Client,
+    zones: Sequence[dict[str, Any]],
+    areas: Sequence[dict[str, Any]],
+    speed: float,
+) -> Check:
+    from apyrobo.safety.enforcer import route_leaves_areas
+
+    name = "move between allowed areas"
+    before = client.position()
+    if before is None:
+        return Check(False, name, "could not read the robot's position")
+    target = next(
+        (
+            spot for spot in _area_spots(areas)
+            if _allowed(*spot, zones, areas)
+            and not _enters_a_zone(before, spot, zones)
+            and route_leaves_areas([before, spot], areas) is not None
+        ),
+        None,
+    )
+    if target is None:
+        return Check(True, name, "not tried: no straight line from here leaves the areas")
+    x, y = target
+    is_error, text = client.tool("move_to", x=x, y=y, speed=speed)
+    after = client.position()
+    if not is_error or "leaves the allowed areas" not in text:
+        return Check(False, name, f"move {before} to ({x:g}, {y:g}) was not refused: {text}")
+    if before != after:
+        return Check(False, name, f"robot moved from {before} to {after}")
+    return Check(True, name, f"move {before} to ({x:g}, {y:g}) refused, robot stayed put")
+
+
 def run_checks(server: Any) -> list[Check]:
     """Run every check against a server built on ``mock://``."""
     policy = server.toolbox.enforcer.policy
@@ -311,6 +365,8 @@ def run_checks(server: Any) -> list[Check]:
         checks.append(_check_crossing(client, zone, i, zones, speed, areas))
     if areas:
         checks.append(_check_outside(client, zones, areas, speed))
+    if len(areas) > 1:
+        checks.append(_check_between_areas(client, zones, areas, speed))
     return checks
 
 
