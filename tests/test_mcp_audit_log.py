@@ -1,6 +1,7 @@
 """apyrobo mcp --audit-log: a line for each motion decision, or no motion."""
 from __future__ import annotations
 
+import errno
 import json
 import os
 import subprocess
@@ -320,6 +321,26 @@ def test_a_full_disk_refuses_motion():
     assert moves == []
 
 
+@pytest.mark.parametrize("code", [errno.EINVAL, errno.ENOTSUP])
+def test_a_file_that_cannot_sync_is_still_logged(log, monkeypatch, code):
+    def refuse(fd):
+        raise OSError(code, "nothing to sync")
+
+    monkeypatch.setattr(os, "fsync", refuse)
+    AuditLog(log).record({"tool": "stop"})
+    assert lines(log) == [{"tool": "stop"}]
+
+
+def test_a_failed_sync_is_a_failed_record(log, monkeypatch):
+    def fail(fd):
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(os, "fsync", fail)
+    with pytest.raises(OSError):
+        AuditLog(log).record({"tool": "stop"})
+
+
+@pytest.mark.skipif(not os.path.isdir("/dev/fd"), reason="no /dev/fd on this platform")
 def test_a_pipe_needs_no_sync(tmp_path):
     read_end, write_end = os.pipe()
     with os.fdopen(read_end) as reader:
