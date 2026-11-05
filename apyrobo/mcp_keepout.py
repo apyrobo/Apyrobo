@@ -13,11 +13,12 @@ the mask can only be a little larger than the zones, never smaller.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 #: Metres per pixel unless ``--resolution`` says otherwise.
@@ -107,8 +108,10 @@ def write_mask(mask: Mask, out_dir: Path, name: str = "keepout_mask") -> tuple[P
     return pgm, yaml_path
 
 
-def nav2_config(mask_path: Path) -> str:
+def nav2_config(mask_path: PurePath) -> str:
     """The Nav2 parameters that load the mask and use it in both costmaps."""
+    # A JSON string is a valid YAML double-quoted one: backslashes stay escaped.
+    yaml_filename = json.dumps(str(mask_path), ensure_ascii=False)
     filter_lines = (
         '      filters: ["keepout_filter"]\n'
         "      keepout_filter:\n"
@@ -122,7 +125,7 @@ def nav2_config(mask_path: Path) -> str:
         "  ros__parameters:\n"
         '    frame_id: "map"\n'
         '    topic_name: "/keepout_filter_mask"\n'
-        f'    yaml_filename: "{mask_path}"\n'
+        f"    yaml_filename: {yaml_filename}\n"
         "keepout_costmap_filter_info_server:\n"
         "  ros__parameters:\n"
         "    type: 0\n"

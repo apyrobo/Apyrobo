@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 import yaml
@@ -88,10 +88,9 @@ def test_a_huge_mask_is_refused_before_it_is_allocated():
 
 
 def test_the_config_covers_both_costmaps_and_names_the_mask():
-    config = yaml.safe_load(nav2_config(Path("/maps/keepout_mask.yaml")))
-    assert config["keepout_filter_mask_server"]["ros__parameters"]["yaml_filename"] == (
-        "/maps/keepout_mask.yaml"
-    )
+    mask = Path("/maps/keepout_mask.yaml")
+    config = yaml.safe_load(nav2_config(mask))
+    assert config["keepout_filter_mask_server"]["ros__parameters"]["yaml_filename"] == str(mask)
     mask_server = config["keepout_filter_mask_server"]["ros__parameters"]
     info = config["keepout_costmap_filter_info_server"]["ros__parameters"]
     assert info["type"] == 0
@@ -101,6 +100,16 @@ def test_the_config_covers_both_costmaps_and_names_the_mask():
         assert params["filters"] == ["keepout_filter"]
         assert params["keepout_filter"]["plugin"] == "nav2_costmap_2d::KeepoutFilter"
         assert params["keepout_filter"]["filter_info_topic"] == info["filter_info_topic"]
+
+
+@pytest.mark.parametrize("mask", [
+    PureWindowsPath(r"C:\Users\robot\maps\keepout_mask.yaml"),
+    PurePosixPath('/maps/a "quoted" name/keepout_mask.yaml'),
+    PurePosixPath("/maps/\u00e9t\u00e9/keepout_mask.yaml"),
+])
+def test_any_mask_path_survives_the_yaml(mask):
+    config = yaml.safe_load(nav2_config(mask))
+    assert config["keepout_filter_mask_server"]["ros__parameters"]["yaml_filename"] == str(mask)
 
 
 def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
