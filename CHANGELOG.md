@@ -308,7 +308,8 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   simulated AGV, not hardware.
 
 - `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
-  and what APYROBO does not protect against.
+  and what APYROBO does not protect against. It says `ros2://` needs no rosbridge
+  and how to set `ROS_DOMAIN_ID` over `--ssh`.
 - docs/mcp.md says plainly that `apyrobo mcp` checks policy, not live sensors:
   no move is refused because of what a scanner or camera sees now, and the
   human-proximity check does not run. It also says the tool list is fixed, with

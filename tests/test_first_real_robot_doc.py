@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from apyrobo.cli import main
+from apyrobo.mcp_clients import remote_command
 from apyrobo.mcp_server import build_server
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,6 +82,36 @@ def test_ssh_config_command_keeps_the_policy_on_the_robot(policy, monkeypatch, c
     remote = json.loads(out[: out.rindex("}") + 1])["mcpServers"]["apyrobo"]["args"][-1]
     assert "--policy-file /home/ubuntu/first-robot.yaml" in remote
     assert "--confirm-moves" in remote
+
+
+def test_no_rosbridge_note_matches_the_code():
+    assert "no rosbridge to install" in TEXT
+    assert "`rclpy`" in TEXT
+    bridge = ROOT / "apyrobo" / "core" / "ros2_bridge.py"
+    assert "import rclpy" in bridge.read_text(encoding="utf-8")
+    for source in (ROOT / "apyrobo").rglob("*.py"):
+        assert "rosbridge" not in source.read_text(encoding="utf-8"), source
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="the remote command is run by a POSIX shell on the robot",
+)
+def test_a_domain_set_in_the_setup_file_reaches_the_server(tmp_path):
+    fake = tmp_path / "apyrobo"
+    fake.write_text('#!/bin/sh\necho "domain=$ROS_DOMAIN_ID"\n', encoding="utf-8")
+    fake.chmod(0o755)
+    setup = tmp_path / "apyrobo-ros.bash"
+    setup.write_text("export ROS_DOMAIN_ID=30\n", encoding="utf-8")
+    done = subprocess.run(
+        remote_command(["--robot", "ros2://"], "apyrobo", str(setup)),
+        shell=True,
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert done.stdout.strip() == "domain=30"
 
 
 def test_doc_says_it_is_not_a_certified_system_and_keeps_the_e_stop():

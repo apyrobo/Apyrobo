@@ -115,6 +115,21 @@ apyrobo mcp config claude-desktop --ssh ubuntu@robot.local \
 The file path is on the robot, and login must be key-based. See
 [Client on your laptop, robot elsewhere](mcp.md#client-on-your-laptop-robot-elsewhere).
 
+There is no rosbridge to install and no websocket port to open. `ros2://` talks
+to ROS 2 through `rclpy` inside the server's own process, so the server has to
+run where ROS 2 is sourced and on the robot's `ROS_DOMAIN_ID`. On the robot, or
+over `--ssh` as above, that is the robot's own ROS 2.
+
+If your robot uses a domain other than 0, set it in the file you pass to
+`--ssh-setup`. A non-interactive ssh shell may skip `.bashrc`, and an `env` block
+in the client config stays on your laptop:
+
+```bash
+# /home/ubuntu/apyrobo-ros.bash on the robot
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID=30
+```
+
 The server stops the robot when its client goes away, tested on `mock://` and a
 slow test adapter, not yet on a real Nav2 goal. A dead network link is not seen
 until TCP gives up, so set `ClientAliveInterval` and `ClientAliveCountMax` in the
