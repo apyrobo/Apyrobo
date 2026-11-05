@@ -1274,9 +1274,14 @@ _ZONE_KEYS = ("x_min", "y_min", "x_max", "y_max")
 
 
 def _positive(value: Any, where: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        raise ValueError(f"{where} must be a positive number, got {value!r}")
-    return float(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        with contextlib.suppress(OverflowError):  # an int too big for a float
+            number = float(value)
+            # NaN compares false with everything, so it must not get here as
+            # a limit: every "speed > limit" check would then pass.
+            if math.isfinite(number) and number > 0:
+                return number
+    raise ValueError(f"{where} must be a positive number, got {value!r}")
 
 
 def _file_zone(
@@ -1409,6 +1414,8 @@ def build_server(
     from apyrobo.core.robot import Robot
     from apyrobo.safety.enforcer import POLICY_REGISTRY, SafetyEnforcer, SafetyPolicy
 
+    if max_speed is not None:
+        max_speed = _positive(max_speed, "--max-speed")
     log = AuditLog(audit_log) if audit_log is not None else None
     file_cfg = load_policy_file(policy_file) if policy_file is not None else {}
     base_name = policy or file_cfg.get("base") or "default"

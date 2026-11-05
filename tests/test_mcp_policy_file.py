@@ -115,6 +115,10 @@ def test_file_base_is_used_when_no_flag(tmp_path):
     [
         ("max_sped: 1\n", ".yaml", "unknown keys ['max_sped']"),
         ("max_speed: -1\n", ".yaml", "max_speed must be a positive number"),
+        ("max_speed: .nan\n", ".yaml", "max_speed must be a positive number"),
+        ("max_speed: .inf\n", ".yaml", "max_speed must be a positive number"),
+        ("max_angular_speed: .nan\n", ".yaml", "max_angular_speed must be a positive number"),
+        ("max_speed: 1" + "0" * 400 + "\n", ".yaml", "max_speed must be a positive number"),
         ("max_speed: fast\n", ".yaml", "max_speed must be a positive number"),
         ("- 1\n- 2\n", ".yaml", "mapping of settings"),
         ("no_go_zones: {x_min: 1}\n", ".yaml", "no_go_zones must be a list"),

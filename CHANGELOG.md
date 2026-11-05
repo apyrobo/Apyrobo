@@ -185,6 +185,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- `apyrobo mcp --max-speed` refuses at start any value that isn't finite and
+  positive. `nan` and `inf` used to turn the speed limit off, and `0` or `-1`
+  started a server. A policy file's `max_speed` and `max_angular_speed` refuse
+  `.nan` and `.inf` too.
+
 - Allowed areas now hold along the route, not only at the target. A straight
   line, or a Nav2 plan on `ros2://`, that leaves the areas on the way to an
   allowed target is refused, so two separate areas no longer let a robot cross
