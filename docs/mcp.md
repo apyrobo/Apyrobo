@@ -187,7 +187,9 @@ partway through. If yours do, raise the client's tool timeout or send shorter
 moves. Whether a client's own stop button sends the cancel depends on the client.
 
 This is tested on `mock://`, a slow test adapter and the official MCP Python SDK
-client abandoning a call, not yet on a real Nav2 goal.
+client abandoning a call. CI also sends a cancel and a `stop` during a real Nav2
+goal in Gazebo: the robot stops short and Nav2 reports the goal cancelled. That
+is a simulator, not your robot.
 
 ### Check your limits first
 
@@ -363,7 +365,8 @@ talks to it over stdio as an MCP client would: an over-limit `move_to` is
 clamped and reported, goes through Nav2 and gets the robot to the target
 region; a target in the no-go zone is refused and the robot does not move;
 a clear target whose Nav2 route crosses a zone is refused and no goal is sent;
-`stop` and `safety_report` answer. To run the same stack locally with
+a cancel and a `stop` sent during a move stop the robot short of its goal and
+Nav2 reports the goal cancelled; `stop` and `safety_report` answer. To run the same stack locally with
 Docker:
 
 ```bash
