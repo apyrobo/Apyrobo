@@ -254,8 +254,12 @@ class SkillExecutor:
         confidence_estimator: Any = None,
         world_state_provider: Any = None,
         state_store: Any = None,
+        abort_reason: Callable[[], str | None] | None = None,
     ) -> None:
         self._robot = robot
+        # Returns why to give up, once a caller has stopped the robot. Checked
+        # before every step and retry, so a stopped task starts nothing new.
+        self._abort_reason = abort_reason or (lambda: None)
         self._listeners: list[EventListener] = []
         self._events: list[ExecutionEvent] = []
         self._state = state or ExecutionState()
@@ -459,7 +463,7 @@ class SkillExecutor:
         final_status = SkillStatus.FAILED
         error_msg = ""
 
-        while attempts < max_attempts:
+        while attempts < max_attempts and not self._abort_reason():
             attempts += 1
             self._emit(
                 skill.skill_id, SkillStatus.RUNNING,
@@ -625,6 +629,17 @@ class SkillExecutor:
         recovery_actions: list[RecoveryAction] = []
 
         for skill in order:
+            reason = self._abort_reason()
+            if reason:
+                recovery_actions.append(RecoveryAction.ABORT)
+                return TaskResult(
+                    task_name=f"graph_{len(order)}_skills",
+                    status=TaskStatus.FAILED,
+                    steps_completed=completed,
+                    steps_total=len(order),
+                    error=reason,
+                    recovery_actions_taken=recovery_actions,
+                )
             params = graph.get_parameters(skill.skill_id)
             status = self.execute_skill(skill, params)
 

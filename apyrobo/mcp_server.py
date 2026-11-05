@@ -219,6 +219,8 @@ class RobotToolbox:
         self.enforcer = enforcer
         self.agent = agent
         self.robot_uri = robot_uri
+        # Set while a motion call is being stopped: why execute_task ends early.
+        self.stop_reason: str | None = None
         self._tools: dict[str, tuple[dict[str, Any], Callable[[dict[str, Any]], Any]]] = {}
         self._register()
 
@@ -559,7 +561,8 @@ class RobotToolbox:
             raise ToolError("The planner produced no steps for this task.")
         v_before = len(self.enforcer.violations)
         i_before = len(self.enforcer.interventions)
-        result = SkillExecutor(self.enforcer).execute_graph(graph)
+        executor = SkillExecutor(self.enforcer, abort_reason=lambda: self.stop_reason)
+        result = executor.execute_graph(graph)
         status = getattr(result.status, "value", str(result.status))
         refusals = self.enforcer.violations[v_before:]
         outcome = {
@@ -634,11 +637,26 @@ class MCPServer:
         self._halter: threading.Thread | None = None
         self._reader: threading.Thread | None = None
         self._client_stdin: IO[str] | None = None
+        # A stop or cancel during a move. The stdin thread reads them while
+        # the serving loop is blocked in the move, so it starts the stop; the
+        # line is queued as usual, so a stop still gets its reply in turn.
+        self._motion_seq = 0
+        self._running_id: Any = None
+        self._interrupted: str | None = None
+        self._queue_lock = threading.Lock()
+        # Stop calls read from stdin but not served yet. A motion call reached
+        # while one is waiting was sent before that stop, so it must not start.
+        self._stops_waiting = 0
+        # Motion calls read but not served yet, and which of them were cancelled.
+        self._unserved_motions: set[Any] = set()
+        self._cancelled_unserved: set[Any] = set()
 
     # -- dispatch ------------------------------------------------------
 
     def handle(self, message: Any) -> dict[str, Any] | None:
         """Handle one decoded JSON-RPC message; return the response or None."""
+        if self._cancelled_while_queued(message):
+            return None
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             return _error(None, INVALID_REQUEST, "Invalid JSON-RPC 2.0 message")
         method = message.get("method")
@@ -737,7 +755,7 @@ class MCPServer:
                         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
                 else:
                     response = self._tools_call(msg_id, params)
-                    if "error" in response:
+                    if response is None or "error" in response:
                         return response
                     result = response["result"]
             else:
@@ -1014,7 +1032,7 @@ class MCPServer:
             "instructions": INSTRUCTIONS,
         }
 
-    def _tools_call(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+    def _tools_call(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any] | None:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         if not isinstance(name, str) or not self.toolbox.has_tool(name):
@@ -1024,13 +1042,23 @@ class MCPServer:
         moves = name in MOTION_TOOLS
         if moves:
             self._settle_client()
+        if moves:
+            self._motion_seq += 1
+            self._running_id = msg_id
+            self._interrupted = None
+            self.toolbox.stop_reason = None
         # In this order: _halt() stops repeating only when no motion is
         # running, and it starts after client_gone is set, so a move either
-        # sees client_gone here or is stopped by _halt().
+        # sees client_gone here or is stopped by _halt(). The same holds for
+        # _stops_waiting and _read_stop().
         self._motion_running = moves
-        if moves and self.client_gone:
+        if moves and (self.client_gone or self._stops_waiting):
             self._motion_running = False
-            text = f"REFUSED: the MCP client disconnected, so {name} did not run."
+            text = (
+                f"REFUSED: the MCP client disconnected, so {name} did not run."
+                if self.client_gone else
+                f"REFUSED: a stop came in after this request, so {name} did not run."
+            )
             self._audit_after(name, arguments, "refused", detail=text)
             return _tool_result(msg_id, text, is_error=True)
         audited = self.audit_log is not None and (moves or name == "stop")
@@ -1062,6 +1090,14 @@ class MCPServer:
             text, is_error = f"{type(exc).__name__}: {exc}", True
         finally:
             self._motion_running = False
+        interrupted = self._interrupted if moves else None
+        if interrupted is not None:
+            text = self._interrupted_text(name, interrupted, text if is_error else None)
+            self._audit_after(name, arguments, interrupted, detail=text)
+            # The spec: a receiver should not answer a cancelled request.
+            return None if interrupted == "cancelled" else _tool_result(
+                msg_id, text, is_error=True
+            )
         if audited:
             self._audit_result(name, arguments, text, is_error, before)
         return {
@@ -1069,6 +1105,17 @@ class MCPServer:
             "id": msg_id,
             "result": {"content": [{"type": "text", "text": text}], "isError": is_error},
         }
+
+    def _interrupted_text(self, name: str, interrupted: str, error: str | None) -> str:
+        """Say how a motion call ended after a stop or a cancel reached it."""
+        what = "a stop request" if interrupted == "stopped" else "the client's cancel"
+        text = f"STOPPED: {what} arrived during {name}, so it did not finish."
+        try:
+            here = self.toolbox._position()
+            text += f" Last known position: ({here['x']:.3f}, {here['y']:.3f})."
+        except Exception as exc:
+            logger.warning("MCP: could not read the position after a stop: %s", exc)
+        return f"{text}\n\n{error}" if error else text
 
     # -- transport -----------------------------------------------------
 
@@ -1086,7 +1133,9 @@ class MCPServer:
 
         With *watch_client*, stdin is read on a background thread, so the end
         of input is seen during a blocking move: the robot is stopped at once
-        and any motion request not yet started is refused.
+        and any motion request not yet started is refused. A ``stop`` call or
+        a ``notifications/cancelled`` for the running motion call acts the
+        same way on that call, and the session goes on.
         """
         stdin = stdin or sys.stdin
         out = stdout or sys.stdout
@@ -1111,12 +1160,95 @@ class MCPServer:
     def _read_client(self, stdin: IO[str], inbox: queue.SimpleQueue[Any]) -> None:
         try:
             for line in stdin:
+                # Before the line is queued, so the serving loop cannot reach
+                # it first and take a stop nobody has counted.
+                self._read_ahead(line)
                 inbox.put(line)
         except Exception as exc:
             logger.warning("MCP: reading stdin failed: %s", exc)
         finally:
             self.client_lost("stdin closed")
             inbox.put(_EOF)
+
+    def _read_ahead(self, line: str) -> None:
+        """Act on a stop or cancel as it is read, ahead of the blocked loop."""
+        try:
+            decoded = json.loads(line)
+        except (ValueError, RecursionError):
+            return  # The serving loop answers it with a parse error.
+        for message in decoded if isinstance(decoded, list) else [decoded]:
+            if _is_stop_call(message):
+                self._read_stop()
+            elif _is_motion_call(message):
+                with self._queue_lock:
+                    self._unserved_motions.add(message["id"])
+            elif isinstance(message, dict) and message.get("method") == "notifications/cancelled":
+                params = message.get("params")
+                if isinstance(params, dict):
+                    self._read_cancel(params.get("requestId"))
+
+    def _read_stop(self) -> None:
+        with self._queue_lock:
+            self._stops_waiting += 1
+        self._interrupt("stopped")
+
+    def _read_cancel(self, request_id: Any) -> None:
+        """Cancel the running motion call or a queued one; anything else is ignored."""
+        if self._motion_running and self._running_id == request_id:
+            self._interrupt("cancelled")
+        elif isinstance(request_id, (str, int)):
+            with self._queue_lock:
+                if request_id in self._unserved_motions:
+                    self._cancelled_unserved.add(request_id)
+
+    def _cancelled_while_queued(self, message: Any) -> bool:
+        """Settle what _read_ahead() counted; True for a call cancelled unserved."""
+        with self._queue_lock:
+            if _is_stop_call(message):
+                self._stops_waiting = max(0, self._stops_waiting - 1)
+            if not _is_motion_call(message):
+                return False
+            msg_id = message["id"]
+            self._unserved_motions.discard(msg_id)
+            cancelled = msg_id in self._cancelled_unserved
+            self._cancelled_unserved.discard(msg_id)
+        if cancelled:
+            params = message["params"]
+            arguments = params.get("arguments")
+            self._audit_after(
+                params["name"], arguments if isinstance(arguments, dict) else {}, "cancelled",
+                detail="Cancelled by the client before it started.",
+            )
+        return cancelled
+
+    def _interrupt(self, how: str) -> None:
+        """Stop the motion call running now, if any. It may start another one later."""
+        seq = self._motion_seq
+        if not self._motion_running:
+            return
+        self._interrupted = how
+        self.toolbox.stop_reason = (
+            "A stop request arrived, so the remaining steps did not run."
+            if how == "stopped" else
+            "The client cancelled the call, so the remaining steps did not run."
+        )
+        logger.warning("MCP: %s during a motion call, stopping the robot", how)
+        threading.Thread(
+            target=self._stop_motion, args=(seq,), name="apyrobo-mcp-stop", daemon=True
+        ).start()
+
+    def _stop_motion(self, seq: int) -> None:
+        """Repeat the stop until motion call *seq* returns, as _halt() does.
+
+        A later motion call is not touched: a stop ends the call it reached,
+        and the client may move the robot again afterwards.
+        """
+        while self._motion_running and self._motion_seq == seq:
+            try:
+                self.toolbox.enforcer.stop()
+            except Exception as exc:
+                logger.error("MCP: stop during a motion call failed: %s", exc)
+            time.sleep(HALT_REPEAT_S)
 
     def _settle_client(self) -> None:
         """Let the stdin thread catch up before a motion call.
@@ -1167,6 +1299,9 @@ class MCPServer:
         Safe to call from a signal handler, and more than once.
         """
         self.client_gone = True
+        self.toolbox.stop_reason = (
+            "The MCP client disconnected, so the remaining steps did not run."
+        )
         if self._halting:
             return
         self._halting = True
@@ -1223,6 +1358,26 @@ class MCPServer:
         except OSError as exc:
             # Windows reports a closed pipe as EINVAL, not BrokenPipeError.
             raise BrokenPipeError(f"could not write to the client: {exc}") from exc
+
+
+def _is_tool_call(message: Any) -> bool:
+    return (
+        isinstance(message, dict)
+        and message.get("method") == "tools/call"
+        and isinstance(message.get("id"), (str, int))
+        and isinstance(message.get("params"), dict)
+    )
+
+
+def _is_stop_call(message: Any) -> bool:
+    return _is_tool_call(message) and message["params"].get("name") == "stop"
+
+
+def _is_motion_call(message: Any) -> bool:
+    if not _is_tool_call(message):
+        return False
+    name = message["params"].get("name")
+    return isinstance(name, str) and name in MOTION_TOOLS
 
 
 def _declined(msg_id: Any, name: Any, action: Any) -> dict[str, Any]:
