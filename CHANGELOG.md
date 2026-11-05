@@ -54,8 +54,8 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   move for each zone, and `--confirm-moves` no longer asks about such a move.
 - **Deny by default with allowed areas.** `apyrobo mcp --allow-area
   X_MIN,Y_MIN,X_MAX,Y_MAX` (repeatable) and `allowed_areas` in a policy file:
-  with at least one set, a move target outside all of them is refused. Unset
-  keeps today's behaviour. Only the target is checked, not the route.
+  with at least one set, a move target outside all of them is refused, and so
+  is a route that leaves them. Unset keeps today's behaviour.
   `apyrobo mcp selftest` tests it, and `apyrobo mcp config` passes it through.
   `SafetyPolicy` gains `allowed_areas`. Zones given as NaN or infinity are now
   a readable error at start; a NaN zone used to refuse nothing.
