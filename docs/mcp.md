@@ -399,9 +399,12 @@ zones plus 1 m. Allowed areas are not drawn.
 
 What has been tested: Nav2's map server on Jazzy and Humble loaded a mask, published
 it with the cells in the right place, and the filter info server took the printed
-parameters. What has not: no test yet has Nav2 route around a zone with
-this mask, so the costmap block is untested, and the feature stays experimental
-until one does. Check it in simulation first.
+parameters. In a one-off Gazebo run on Humble with the default Nav2 parameters,
+the costmaps took the mask and Nav2 planned around the zone, but the robot did
+not arrive: it drove up to the zone and stuck there. Nav2 does not inflate a
+keepout mask, so the route hugs the zone's edge. No test in CI covers this. The
+feature stays experimental until a robot gets around a zone with this mask, so
+check it in simulation first.
 
 ## Troubleshooting
 
