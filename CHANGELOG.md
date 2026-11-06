@@ -193,6 +193,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo mcp` `execute_task` and `plan_task` with the rule planner no longer do the opposite of "don't": "don't go to (3, 3)" planned and drove to (3, 3). A task with a negation, a number in exponent form (`(1e3, 2)` drove to (3, 2)) or three numbers for one target (`(1, 2, 3)` dropped the 3) is now refused with a reason starting "Not planned:", and the robot does not move.
 - `apyrobo mcp` `rotate` now returns an error on an adapter that cannot turn in place, such as `ros2://`, and sends nothing. It did nothing there and still reported `rotated`; the audit log records the call as `failed`.
 - `apyrobo mcp selftest` now checks `--audit-log PATH`, given before or after `selftest`. It passed with a log path the server cannot open, so the server then exited at start in the client; the check now fails, naming the path. Nothing is written to the log.
 - `apyrobo mcp` on `ros2://` through Nav2 no longer says a speed was clamped as if that limited the drive. A Nav2 goal carries no speed, so `move_to` and `execute_task` replies now carry `speed_limit_applied: false` and a note, and the audit log's decision is `not_limited` with no enforced speed. `mock://` and the `/cmd_vel` fallback still report `clamped` and `ran`.

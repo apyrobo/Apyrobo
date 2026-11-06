@@ -572,6 +572,10 @@ class RobotToolbox:
             "can_proceed": bool(report.can_proceed),
         }
         if isinstance(getattr(self.agent, "planned_by", None), RuleBasedProvider):
+            unreadable = RuleBasedProvider.cannot_read(text)
+            if unreadable is not None:
+                plan.update(steps=[], confidence=0.0, can_proceed=False, reason=unreadable)
+                return graph, plan
             # A plan from the rule planner: its templates hold placeholder
             # targets, so every drive must go to a point the task named.
             named = RuleBasedProvider._extract_coordinates(_rule_coordinates_text(text))
