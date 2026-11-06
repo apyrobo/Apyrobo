@@ -177,6 +177,16 @@ during a move:
   get no reply, so it gets none. A cancel for any other request leaves the
   running move alone. A cancelled move that has not started never starts.
 
+A `robot_status` call read during a move is answered at once, ahead of the
+move's own reply, so a client that sends requests while one is running can watch
+the position change. Motion stays one call at a time, and every other request
+waits for the move to end, as does a `robot_status` inside a JSON-RPC batch or
+sent while an earlier status read is still out. Whether you see this depends on
+your client: one that waits for each tool call before sending the next never
+sends the read. This is tested on `mock://` and a slow test adapter. On `ros2://`
+the reply reads the pose the adapter already keeps from `/odom`, the map
+transform and Nav2 feedback, not a fresh query.
+
 Either way the stop is repeated until the move returns, `execute_task` drops
 its remaining steps, and a motion request sent before a `stop` but not started
 yet is refused. Later moves run as usual.

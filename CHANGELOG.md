@@ -10,6 +10,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp` answers `robot_status` during a move, so a client that sends
+  requests while one is running can watch the robot drive. Motion stays one call
+  at a time, and a status read that hangs in the adapter does not hold up a stop.
 
 - `apyrobo mcp keepout` (experimental) writes a Nav2 keepout mask from the same
   `--no-go` and `--policy-file` zones the server refuses, and prints the Nav2

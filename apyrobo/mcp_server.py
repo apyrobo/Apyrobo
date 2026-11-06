@@ -102,6 +102,8 @@ STDIN_SETTLE_S = 0.25
 STDIN_SETTLE_POLL_S = 0.001
 # How long exit waits for the stop after a client loss to be logged.
 HALT_JOIN_S = 1.0
+# How long exit waits for a status read that a move left running.
+STATUS_JOIN_S = 1.0
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -650,6 +652,11 @@ class MCPServer:
         # Motion calls read but not served yet, and which of them were cancelled.
         self._unserved_motions: set[Any] = set()
         self._cancelled_unserved: set[Any] = set()
+        # A robot_status read during a move runs on its own thread, one at a
+        # time: an adapter that blocks must not hold up a stop behind it.
+        self._status_thread: threading.Thread | None = None
+        self._status_running = False
+        self._write_lock = threading.Lock()
 
     # -- dispatch ------------------------------------------------------
 
@@ -1050,8 +1057,10 @@ class MCPServer:
         # In this order: _halt() stops repeating only when no motion is
         # running, and it starts after client_gone is set, so a move either
         # sees client_gone here or is stopped by _halt(). The same holds for
-        # _stops_waiting and _read_stop().
-        self._motion_running = moves
+        # _stops_waiting and _read_stop(). Only motion calls touch the flag:
+        # a status read can run here on its own thread during a move.
+        if moves:
+            self._motion_running = True
         if moves and (self.client_gone or self._stops_waiting):
             self._motion_running = False
             text = (
@@ -1089,7 +1098,8 @@ class MCPServer:
             logger.warning("MCP: tool %s failed: %s", name, exc)
             text, is_error = f"{type(exc).__name__}: {exc}", True
         finally:
-            self._motion_running = False
+            if moves:
+                self._motion_running = False
         interrupted = self._interrupted if moves else None
         if interrupted is not None:
             text = self._interrupted_text(name, interrupted, text if is_error else None)
@@ -1135,7 +1145,8 @@ class MCPServer:
         of input is seen during a blocking move: the robot is stopped at once
         and any motion request not yet started is refused. A ``stop`` call or
         a ``notifications/cancelled`` for the running motion call acts the
-        same way on that call, and the session goes on.
+        same way on that call, and the session goes on. A ``robot_status``
+        call read during a move is answered at once, before the move's reply.
         """
         stdin = stdin or sys.stdin
         out = stdout or sys.stdout
@@ -1155,6 +1166,9 @@ class MCPServer:
         except BrokenPipeError:
             self.client_lost("stdout closed")
         finally:
+            status = self._status_thread
+            if status is not None:
+                status.join(STATUS_JOIN_S)
             self._lines = self._out = None
 
     def _read_client(self, stdin: IO[str], inbox: queue.SimpleQueue[Any]) -> None:
@@ -1162,20 +1176,25 @@ class MCPServer:
             for line in stdin:
                 # Before the line is queued, so the serving loop cannot reach
                 # it first and take a stop nobody has counted.
-                self._read_ahead(line)
-                inbox.put(line)
+                if not self._read_ahead(line):
+                    inbox.put(line)
         except Exception as exc:
             logger.warning("MCP: reading stdin failed: %s", exc)
         finally:
             self.client_lost("stdin closed")
             inbox.put(_EOF)
 
-    def _read_ahead(self, line: str) -> None:
-        """Act on a stop or cancel as it is read, ahead of the blocked loop."""
+    def _read_ahead(self, line: str) -> bool:
+        """Act on a stop or cancel as it is read, ahead of the blocked loop.
+
+        Returns True when the line has been dealt with and must not be queued.
+        """
         try:
             decoded = json.loads(line)
         except (ValueError, RecursionError):
-            return  # The serving loop answers it with a parse error.
+            return False  # The serving loop answers it with a parse error.
+        if self._status_during_motion(decoded):
+            return True
         for message in decoded if isinstance(decoded, list) else [decoded]:
             if _is_stop_call(message):
                 self._read_stop()
@@ -1186,6 +1205,43 @@ class MCPServer:
                 params = message.get("params")
                 if isinstance(params, dict):
                     self._read_cancel(params.get("requestId"))
+        return False
+
+    def _status_during_motion(self, message: Any) -> bool:
+        """Start answering a status read now if a move is holding the loop up.
+
+        Not on this thread: it has to go on reading, or a stop sent after a
+        status read that blocks in the adapter would never be seen. While one
+        read is out, the next waits in the queue like any other request. So
+        does a batch, and a read sent before the move started.
+        """
+        if not self._motion_running or not _is_status_call(message):
+            return False
+        out = self._out
+        if out is None or self._status_running:
+            return False
+        self._status_running = True
+        self._status_thread = threading.Thread(
+            target=self._answer_status, args=(message, out),
+            name="apyrobo-mcp-status", daemon=True,
+        )
+        self._status_thread.start()
+        return True
+
+    def _answer_status(self, message: dict[str, Any], out: IO[str]) -> None:
+        try:
+            try:
+                response = self.handle(message)
+            finally:
+                # Before the reply goes out: a client may send the next read
+                # the moment it has this one.
+                self._status_running = False
+            if response is not None:
+                self._write(out, response)
+        except BrokenPipeError:
+            self.client_lost("stdout closed")
+        except ValueError as exc:  # The stream closed as the session ended.
+            logger.warning("MCP: could not answer a status read: %s", exc)
 
     def _read_stop(self) -> None:
         with self._queue_lock:
@@ -1350,11 +1406,11 @@ class MCPServer:
             if response is not None:
                 self._write(out, response)
 
-    @staticmethod
-    def _write(out: IO[str], response: Any) -> None:
+    def _write(self, out: IO[str], response: Any) -> None:
         try:
-            out.write(json.dumps(response, separators=(",", ":")) + "\n")
-            out.flush()
+            with self._write_lock:
+                out.write(json.dumps(response, separators=(",", ":")) + "\n")
+                out.flush()
         except OSError as exc:
             # Windows reports a closed pipe as EINVAL, not BrokenPipeError.
             raise BrokenPipeError(f"could not write to the client: {exc}") from exc
@@ -1371,6 +1427,10 @@ def _is_tool_call(message: Any) -> bool:
 
 def _is_stop_call(message: Any) -> bool:
     return _is_tool_call(message) and message["params"].get("name") == "stop"
+
+
+def _is_status_call(message: Any) -> bool:
+    return _is_tool_call(message) and message["params"].get("name") == "robot_status"
 
 
 def _is_motion_call(message: Any) -> bool:
