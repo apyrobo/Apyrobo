@@ -193,10 +193,26 @@ Either way the stop is repeated until the move returns, `execute_task` drops
 its remaining steps, and a motion request sent before a `stop` but not started
 yet is refused. Later moves run as usual.
 
-**A client that times out now stops the robot.** Clients give up on a tool call
-after their own timeout and send that cancel, so a long Nav2 move can stop
-partway through. If yours do, raise the client's tool timeout or send shorter
-moves. Whether a client's own stop button sends the cancel depends on the client.
+**A client that times out now stops the robot.** Most clients give up on a long
+tool call and send that cancel, so a long Nav2 move can stop partway through.
+Limits differ by client and version, and change often. What users report as of
+November 2026:
+
+- Claude Desktop cuts a call off after about 60 seconds to 4 minutes, and no
+  setting for it has been found. Send shorter moves.
+- Claude Code allows hours by default, and the per-server `timeout` sets the
+  limit.
+- The Cursor CLI cuts a call off after about 60 seconds.
+
+None of these is tested here. Try your own client on `mock://` with a slow move
+before you trust a limit.
+
+**Stopping from a client.** Don't assume a client's stop button stops the robot
+until you have tried it: look for `cancelled` in the `--audit-log`. Reports say
+Claude Code moves a call to the background after 2 minutes, and Esc no longer
+stops it after that, and that `CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS=0` keeps Esc
+working for the whole move. Neither is confirmed here. Keep a physical stop
+within reach either way.
 
 This is tested on `mock://`, a slow test adapter and the official MCP Python SDK
 client abandoning a call. CI also sends a cancel and a `stop` during a real Nav2

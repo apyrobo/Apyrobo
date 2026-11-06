@@ -187,6 +187,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   (`tests/integration/test_gazebo_nav2_e2e.py`, unchanged) against
   ROS 2 Jazzy + Gazebo Harmonic in one command (`docker/docker-compose.yml`,
   docs/gz_sim_port.md). Not run in CI yet.
+- docs/mcp.md: per-client tool-call limits as users report them (November
+  2026), in place of advice to raise a timeout that Claude Desktop does not
+  offer, and a note that a client's stop button is unproven until you see
+  `cancelled` in the audit log.
 
 ### Fixed
 - `apyrobo mcp` on `ros2://` through Nav2 no longer says a speed was clamped as if that limited the drive. A Nav2 goal carries no speed, so `move_to` and `execute_task` replies now carry `speed_limit_applied: false` and a note, and the audit log's decision is `not_limited` with no enforced speed. `mock://` and the `/cmd_vel` fallback still report `clamped` and `ran`.
