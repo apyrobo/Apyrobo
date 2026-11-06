@@ -189,25 +189,29 @@ result = agent.execute("go to 5, 3 then pick up the object", robot)
 Select models automatically for your hardware — no LiteLLM string knowledge required:
 
 ```bash
-apyrobo exec "patrol zone A" --robot mock://turtlebot4 --profile jetson-orin
-apyrobo exec "pick up the box" --robot mock://ur10     --profile workstation-gpu
-apyrobo exec "navigate to dock" --robot mock://mir100  --profile cpu-only
+apyrobo execute "go to (1, 2)" --robot mock://turtlebot4 --provider llm --profile jetson-orin
+apyrobo execute "pick up the box" --robot mock://ur10    --provider llm --profile workstation-gpu
+apyrobo execute "navigate to dock" --robot mock://mir100 --provider llm --profile cpu-only
+apyrobo profiles                                         # lists the profiles below
 ```
+
+A profile only picks the model for `--provider llm`; the default rule planner uses no model.
 
 ```python
 from apyrobo import Robot, Agent
-from apyrobo.compute_profiles import get_profile
+from apyrobo.profiles import get_profile
 
 profile = get_profile("jetson-orin")
-agent = Agent(provider="llm", model=profile.default_llm)
+agent = Agent(provider="llm", model=profile.litellm_model)
 ```
 
 | Profile | Target Hardware | Default LLM |
 |---------|----------------|-------------|
-| `jetson-orin` | NVIDIA Jetson Orin | `ollama/llama3.2` |
-| `workstation-gpu` | RTX 3080+ / A100 | `ollama/llama3.1:70b` |
-| `cloud` | Cloud VM / CI | `claude-sonnet-4-20250514` |
-| `cpu-only` | Laptop / Raspberry Pi | `ollama/qwen2.5:3b` |
+| `jetson-orin` | NVIDIA Jetson Orin | `ollama/llama3.2:3b` |
+| `raspberry-pi` | Raspberry Pi 4/5 | `ollama/llama3.2:1b` |
+| `workstation-gpu` | Linux workstation with a GPU | `anthropic/claude-sonnet-4-6` |
+| `cloud` | Cloud VM or container | `anthropic/claude-opus-4-7` |
+| `cpu-only` | CPU-only machine, CI | `anthropic/claude-haiku-4-5-20251001` |
 
 ### Orchestration Server
 
@@ -334,7 +338,7 @@ apyrobo/
 │   ├── sensors/          # Sensor pipelines, fusion, world state
 │   ├── inference/        # Multi-tier LLM routing, circuit breakers
 │   ├── orchestration/    # OrchestrationAdapter ABC, OrchestrationServer, stdio
-│   ├── compute_profiles/ # Hardware profile → model mapping
+│   ├── profiles/         # Hardware profile → model mapping
 │   ├── hardware/         # Per-robot spec files (reach, DoF, sensors, limits)
 │   ├── observability.py  # Structured logging, metrics, tracing, alerting
 │   ├── persistence.py    # State store (JSON, SQLite, Redis)

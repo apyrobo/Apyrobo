@@ -43,7 +43,7 @@ else:
 apyrobo policy add "never exceed 0.5 m/s near humans"
 apyrobo policy add "never enter the server room"
 apyrobo policy list
-apyrobo policy check --action "navigate at 2 m/s to warehouse"
+apyrobo policy check "navigate at 2 m/s to warehouse"
 # exits 1 with violation message — safe to use in CI or pre-flight scripts
 ```
 

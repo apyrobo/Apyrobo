@@ -121,7 +121,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
     if _profile_name:
         from apyrobo.profiles import get_profile as _gp
         _profile = _gp(_profile_name)
-        _default_model = _profile.llm_model
+        _default_model = _profile.litellm_model
     else:
         _default_model = None
     provider, model = _resolve_provider(args.provider, getattr(args, "model", _default_model))
@@ -1537,7 +1537,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     if profile_name:
         from apyrobo.profiles import get_profile as _gp
         _profile = _gp(profile_name)
-        _default_model: str | None = _profile.llm_model
+        _default_model: str | None = _profile.litellm_model
     else:
         _default_model = None
 

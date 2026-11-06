@@ -64,28 +64,29 @@ robot = Robot("isaac_sim://sim_robot_0", IsaacSimAdapter("sim_robot_0", host="lo
 Implement three methods:
 
 ```python
-from apyrobo.core.adapters import CapabilityAdapter, RobotCapabilities
+from apyrobo.core.adapters import CapabilityAdapter
+from apyrobo.core.schemas import Capability, CapabilityType, RobotCapability
 
 class MyRobotAdapter(CapabilityAdapter):
 
-    def capabilities(self) -> RobotCapabilities:
+    def get_capabilities(self) -> RobotCapability:
         # Describe what your robot can do
-        return RobotCapabilities(
-            robot_id="my_robot",
+        return RobotCapability(
+            robot_id=self.robot_name,
             name="My Robot",
-            capabilities=[...],
+            capabilities=[
+                Capability(capability_type=CapabilityType.NAVIGATE, name="navigate_to"),
+            ],
             max_speed=1.0,
         )
 
-    def execute_skill(self, skill_name: str, **params) -> bool:
-        # Run a skill on the hardware
-        if skill_name == "navigate_to":
-            return self._navigate(params["x"], params["y"])
-        return False
+    def move(self, x: float, y: float, speed: float | None = None) -> None:
+        # Send the robot to (x, y)
+        self.target = (x, y, speed)
 
-    def get_state(self) -> dict:
-        # Return current robot state
-        return {"x": self._x, "y": self._y, "battery_pct": self._battery}
+    def stop(self) -> None:
+        # Halt at once; this must work in every state
+        self.target = None
 ```
 
 Full authoring guide: [adapter_authoring.md](../adapter_authoring.md)

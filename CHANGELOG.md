@@ -189,6 +189,8 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   docs/gz_sim_port.md). Not run in CI yet.
 
 ### Fixed
+- `--profile` with `--provider llm` now passes a provider-qualified model such as `ollama/llama3.2:3b` to `apyrobo plan`, `execute` and `serve`. LiteLLM could not route the bare Ollama names, so a profile on Ollama could not reach its model.
+- The README's compute profiles section ran code that does not exist (`apyrobo exec`, `apyrobo.compute_profiles`, `default_llm`) and listed the wrong models; it now matches the code, as do the `apyrobo policy check` examples, the custom adapter example in `docs/concepts/adapter_pattern.md` and the memory names in `MIGRATION.md`. `tests/test_docs_code.py` checks documented imports and commands.
 
 - `llms.txt` now leads with `apyrobo mcp`, its one-line try-out, the config
   command and what it doesn't guarantee. It no longer says safety cannot be

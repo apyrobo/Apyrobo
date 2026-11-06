@@ -51,6 +51,11 @@ class ComputeProfile:
     # Arbitrary extra settings (passed through to LLM clients)
     extra: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def litellm_model(self) -> str:
+        """Model string for LiteLLM, which needs the provider to route Ollama."""
+        return f"{self.llm_provider}/{self.llm_model}"
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict (e.g. for JSON output)."""
         return {

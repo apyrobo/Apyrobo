@@ -35,6 +35,6 @@ the task it targets.
 **CLI equivalent:**
 ```bash
 apyrobo policy add "never exceed 0.3 m/s near humans"
-apyrobo policy check --action "navigate at 2 m/s"
+apyrobo policy check "navigate at 2 m/s"
 # → exits 1 with violation message
 ```

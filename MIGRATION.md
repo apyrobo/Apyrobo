@@ -91,13 +91,13 @@ from apyrobo.memory import MemoryStore
 
 **After** — package with episodic / semantic / plan-cache modules:
 ```python
-from apyrobo.memory.episodic import EpisodicMemory
-from apyrobo.memory.semantic import SemanticMemory
+from apyrobo.memory import AgentMemory, EpisodicMemory, SemanticMemory
+from apyrobo.memory.episodic import EpisodicStore
+from apyrobo.memory.semantic import SemanticStore
 from apyrobo.memory.plan_cache import PlanCache
 ```
 
-The legacy `apyrobo.memory.MemoryStore` is still available as a compatibility
-shim but will be removed in v2.0.
+`apyrobo.memory.MemoryStore` no longer exists.
 
 ---
 
