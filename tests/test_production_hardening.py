@@ -47,6 +47,28 @@ def _agent() -> Agent:
     return Agent(provider="rule")
 
 
+def _hold_armed_until_recovered(
+    watchdog: SkillWatchdog, skill_type: str, skill_id: str = "", deadline: float = 10.0,
+) -> None:
+    """Keep a skill armed until the timer has fired and its recovery has ended.
+
+    A fixed sleep can end first on a busy machine, and leaving the block cancels
+    the timer. The deadline only bounds a watchdog that never fires.
+    """
+    recovered = threading.Event()
+    execute_action = watchdog._execute_action
+
+    def spy(action: WatchdogAction) -> None:
+        try:
+            execute_action(action)
+        finally:
+            recovered.set()
+
+    watchdog._execute_action = spy  # type: ignore[method-assign]
+    with watchdog.arm(skill_type, skill_id=skill_id):
+        assert recovered.wait(deadline), "watchdog did not fire before the deadline"
+
+
 # ---------------------------------------------------------------------------
 # Degraded-mode: LLM runtime failure → rule-based fallback
 # ---------------------------------------------------------------------------
@@ -280,8 +302,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.1)
         watchdog.set_timeout("slow_skill", seconds=0.05, action=WatchdogAction.STOP)
 
-        with watchdog.arm("slow_skill", skill_id="slow_skill_0"):
-            time.sleep(0.2)  # longer than watchdog timeout
+        _hold_armed_until_recovered(watchdog, "slow_skill", skill_id="slow_skill_0")
 
         assert watchdog.fire_count == 1
 
@@ -290,8 +311,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.05)
         watchdog.set_timeout("test", seconds=0.03, action=WatchdogAction.STOP)
 
-        with watchdog.arm("test", skill_id="test_0"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "test", skill_id="test_0")
 
         robot.stop.assert_called()
 
@@ -300,8 +320,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.05)
         watchdog.set_timeout("grip", seconds=0.03, action=WatchdogAction.OPEN_GRIPPER)
 
-        with watchdog.arm("grip", skill_id="grip_0"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "grip", skill_id="grip_0")
 
         robot.gripper_open.assert_called()
 
@@ -310,8 +329,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.05)
         watchdog.set_timeout("test", seconds=0.03, action=WatchdogAction.LOG_ONLY)
 
-        with watchdog.arm("test"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "test")
 
         robot.stop.assert_not_called()
         robot.gripper_open.assert_not_called()
@@ -323,8 +341,7 @@ class TestSkillWatchdog:
                                   home_fn=lambda: home_called.append(True))
         watchdog.set_timeout("arm", seconds=0.03, action=WatchdogAction.HOME)
 
-        with watchdog.arm("arm"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "arm")
 
         assert home_called
 
@@ -333,8 +350,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.05)
         watchdog.set_timeout("arm", seconds=0.03, action=WatchdogAction.HOME)
 
-        with watchdog.arm("arm"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "arm")
 
         robot.stop.assert_called()
 
@@ -343,8 +359,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.05)
         watchdog.set_timeout("test", seconds=0.03, action=WatchdogAction.LOG_ONLY)
 
-        with watchdog.arm("test", skill_id="test_99"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "test", skill_id="test_99")
 
         assert len(watchdog.firings) == 1
         firing = watchdog.firings[0]
@@ -358,8 +373,7 @@ class TestSkillWatchdog:
         watchdog.set_timeout("test", seconds=0.03, action=WatchdogAction.LOG_ONLY)
 
         with patch("apyrobo.safety.watchdog.emit_event") as mock_emit:
-            with watchdog.arm("test", skill_id="test_0"):
-                time.sleep(0.1)
+            _hold_armed_until_recovered(watchdog, "test", skill_id="test_0")
 
         mock_emit.assert_called_once()
         assert mock_emit.call_args[0][0] == "skill.watchdog_fired"
@@ -370,8 +384,7 @@ class TestSkillWatchdog:
         watchdog = SkillWatchdog(robot, default_timeout=0.05)
 
         # Should not raise even though stop() throws
-        with watchdog.arm("anything"):
-            time.sleep(0.1)
+        _hold_armed_until_recovered(watchdog, "anything")
 
         assert watchdog.fire_count == 1
 
