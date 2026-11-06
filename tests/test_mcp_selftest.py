@@ -285,3 +285,54 @@ def test_a_gap_that_lets_the_move_through_fails(monkeypatch):
     code, out, _ = _run(_args(st_allow_area=["-1,-1,1,1", "5,5,6,6"]))
     assert code == 1
     assert "FAIL  move between allowed areas" in out
+
+
+def test_an_audit_log_the_server_cannot_open_fails(tmp_path):
+    path = tmp_path / "missing" / "a.log"
+    code, out, _ = _run(_args(st_audit_log=str(path)))
+    assert code == 1
+    assert f"FAIL  audit log: cannot open {path} for append" in out
+    assert "apyrobo mcp would exit at start" in out
+    assert "3/4 checks passed" in out
+    assert not path.parent.exists()
+
+
+def test_an_existing_audit_log_passes_and_is_left_as_it_was(tmp_path):
+    path = tmp_path / "a.log"
+    path.write_bytes(b'{"decision":"ran"}\n')
+    code, out, _ = _run(_args(st_audit_log=str(path)))
+    assert code == 0
+    assert f"PASS  audit log: {path} can be opened for append; nothing was written" in out
+    assert "4/4 checks passed" in out
+    assert path.read_bytes() == b'{"decision":"ran"}\n'
+
+
+def test_a_new_audit_log_passes_and_leaves_no_file_behind(tmp_path):
+    path = tmp_path / "a.log"
+    code, out, _ = _run(_args(st_audit_log=str(path)))
+    assert code == 0
+    assert "PASS  audit log" in out
+    assert not path.exists()
+
+
+def test_a_directory_as_audit_log_fails(tmp_path):
+    code, out, _ = _run(_args(st_audit_log=str(tmp_path)))
+    assert code == 1
+    assert "FAIL  audit log" in out
+
+
+def test_no_audit_log_means_no_audit_check():
+    _, out, _ = _run(_args())
+    assert "audit log" not in out
+
+
+@pytest.mark.parametrize("where", ["before", "after"])
+def test_audit_log_flag_works_on_either_side_of_selftest(monkeypatch, capsys, tmp_path, where):
+    bad = str(tmp_path / "missing" / "a.log")
+    argv = (["apyrobo", "mcp", "--audit-log", bad, "selftest"] if where == "before"
+            else ["apyrobo", "mcp", "selftest", "--audit-log", bad])
+    monkeypatch.setattr("sys.argv", argv)
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 1
+    assert "FAIL  audit log" in capsys.readouterr().out

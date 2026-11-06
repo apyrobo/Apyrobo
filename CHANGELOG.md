@@ -193,6 +193,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo mcp selftest` now checks `--audit-log PATH`, given before or after `selftest`. It passed with a log path the server cannot open, so the server then exited at start in the client; the check now fails, naming the path. Nothing is written to the log.
 - `apyrobo mcp` on `ros2://` through Nav2 no longer says a speed was clamped as if that limited the drive. A Nav2 goal carries no speed, so `move_to` and `execute_task` replies now carry `speed_limit_applied: false` and a note, and the audit log's decision is `not_limited` with no enforced speed. `mock://` and the `/cmd_vel` fallback still report `clamped` and `ran`.
 - A move sent with no speed, or speed 0, now stays within the policy's `max_speed`. On the `ros2://` `/cmd_vel` fallback it drove at 0.5 m/s under any limit; the safety layer now hands the robot its default speed or the limit, whichever is lower, and an adapter that leaves the speed to the robot gets the limit. Adapters can declare `default_speed`.
 - `apyrobo mcp --confirm-moves` on protocol 2026-07-28: a yes now runs its move once. Resending the same answer ran the move again for up to 10 minutes without a new question; it now gets an `Invalid or expired requestState` error, and a no cannot be resent as a yes.
