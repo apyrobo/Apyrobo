@@ -16,6 +16,7 @@ from __future__ import annotations
 import abc
 import json
 import logging
+import math
 import re
 from typing import Any, Generator
 
@@ -162,6 +163,47 @@ class RuleBasedProvider(AgentProvider):
             )
         return None
 
+    # "rotate" or "turn" with an angle in degrees or radians: "rotate 90
+    # degrees", "turn right 45 deg", "rotate 1.57 rad", "turn 90°".
+    _TURN_WORD = re.compile(r"\b(?:rotate|turn)\b")
+    _ANGLE = re.compile(
+        r"(-?\d+(?:\.\d+)?)\s*(degrees?|degs?|°|radians?|rads?)(?![a-z])"
+    )
+    _CLOCKWISE = re.compile(r"\bright\b|(?<![a-z])clockwise\b")
+    _COUNTERCLOCKWISE = re.compile(r"\bleft\b|\b(?:counter|anti)-?clockwise\b")
+
+    @classmethod
+    def extract_angle(cls, task: str) -> float | None:
+        """The turn ``task`` asks for, in radians (positive = left), or None.
+
+        Only a number with a unit counts: "turn left" has no angle, and the
+        planner must not guess one. "right" or "clockwise" turn the other way.
+        """
+        text = task.lower()
+        if not cls._TURN_WORD.search(text):
+            return None
+        found = cls._ANGLE.search(text)
+        if found is None:
+            return None
+        value = float(found.group(1))
+        if found.group(2).startswith(("deg", "°")):
+            value = math.radians(value)
+        if cls._CLOCKWISE.search(text) and not cls._COUNTERCLOCKWISE.search(text):
+            value = -abs(value)
+        elif cls._COUNTERCLOCKWISE.search(text) and not cls._CLOCKWISE.search(text):
+            value = abs(value)
+        return value
+
+    @classmethod
+    def is_status_ask(cls, task: str) -> bool:
+        """True when ``task`` asks for the robot's status."""
+        text = task.lower()
+        status_words = next(
+            words for words, steps in cls.TASK_PATTERNS
+            if steps and steps[0]["skill_id"] == "report_status"
+        )
+        return any(word in text for word in status_words)
+
     def plan(self, task: str, available_skills: list[dict[str, Any]],
              capabilities: list[str]) -> list[dict[str, Any]]:
         task_lower = task.lower()
@@ -212,6 +254,12 @@ class RuleBasedProvider(AgentProvider):
 
                 logger.info("RuleBasedProvider: planned %d steps for %r", len(plan), task)
                 return plan
+
+        # A turn with a stated angle: "rotate 90 degrees", "turn right 45 deg".
+        angle = self.extract_angle(task)
+        if angle is not None:
+            logger.info("RuleBasedProvider: rotate %.4f rad for %r", angle, task)
+            return [{"skill_id": "rotate", "parameters": {"angle_rad": angle}}]
 
         # Fallback: check available_skills catalog for a name/description match
         match = self._match_available_skill(task_lower, available_skills)

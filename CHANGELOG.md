@@ -193,6 +193,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo mcp` `execute_task` with the rule planner no longer reports `completed` for a task it did not recognise. "dock", "go forward 1 metre" and "turn left" planned a single status report, the robot stayed put and the reply said completed; such a task is now refused with a "Not planned:" reason listing what the planner understands, and `plan_task` says `can_proceed: false`. "rotate 90 degrees" turned 0 rad; a turn now uses the angle the task states, in degrees or radians, and is refused without one or on a robot that cannot turn in place.
 - `apyrobo mcp` `execute_task` and `plan_task` with the rule planner no longer do the opposite of "don't": "don't go to (3, 3)" planned and drove to (3, 3). A task with a negation, a number in exponent form (`(1e3, 2)` drove to (3, 2)) or three numbers for one target (`(1, 2, 3)` dropped the 3) is now refused with a reason starting "Not planned:", and the robot does not move.
 - `apyrobo mcp` `rotate` now returns an error on an adapter that cannot turn in place, such as `ros2://`, and sends nothing. It did nothing there and still reported `rotated`; the audit log records the call as `failed`.
 - `apyrobo mcp selftest` now checks `--audit-log PATH`, given before or after `selftest`. It passed with a log path the server cannot open, so the server then exited at start in the client; the check now fails, naming the path. Nothing is written to the log.

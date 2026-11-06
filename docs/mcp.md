@@ -276,6 +276,15 @@ refuses those rather than guess: a task with "don't", "do not", "never" or "not"
 nothing; `execute_task` returns an error starting "Not planned:" and `plan_task`
 returns `can_proceed: false` with the same reason.
 
+It also refuses a task it does not recognise, rather than report it done. It
+understands driving to a point, picking up at a point, a delivery, a turn with
+its angle and unit ("rotate 90 degrees", "turn right 45 deg", "rotate 1.5 rad";
+right and clockwise turn negative), stop and a status report. Anything else,
+such as "dock", "go forward 1 metre" or "turn left" with no angle, used to plan
+a status report and end `completed` with the robot where it was; it now moves
+nothing and gets a "Not planned:" reason that lists what it understands. A turn
+on a robot that cannot turn in place, such as `ros2://`, is refused the same way.
+
 ## Options
 
 | Flag | Default | Meaning |
