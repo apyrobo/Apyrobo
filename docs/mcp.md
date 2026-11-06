@@ -269,6 +269,13 @@ and `plan_task` returns `can_proceed: false` with the same reason. A delivery
 with one point starts from where the robot is; "deliver from (1, 1) to (5, 1)"
 names both. A speed in the task is not read, so use `move_to` to set one.
 
+The rule planner cannot read a negation or every way of writing a number, so it
+refuses those rather than guess: a task with "don't", "do not", "never" or "not"
+(it used to plan the very drive it ruled out), a number in exponent form such as
+`1e3`, and three or more numbers for one target such as `(1, 2, 3)`. Each moves
+nothing; `execute_task` returns an error starting "Not planned:" and `plan_task`
+returns `can_proceed: false` with the same reason.
+
 ## Options
 
 | Flag | Default | Meaning |

@@ -119,9 +119,58 @@ class RuleBasedProvider(AgentProvider):
     ) -> None:
         self._extra_patterns: list[tuple[str, str]] = patterns or []
 
+    # "don't", "do not", "never", "not": this planner has no way to honour a
+    # negation, so it must not plan the motion that follows one.
+    _NEGATION = re.compile(r"\b(?:do\s+not|don['\u2019]?t|dont|never|not)\b")
+    # A number in exponent form ("1e3"), which _extract_coordinates would read
+    # only in part.
+    _EXPONENT_NUMBER = re.compile(r"\d(?:\.\d*)?\s*e\s*[+-]?\d")
+    # Three or more numbers in one coordinate group ("(1, 2, 3)"): only two
+    # would be read and the rest dropped.
+    _NUMBER_TRIPLE = re.compile(
+        r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
+    )
+
+    @classmethod
+    def cannot_read(cls, task: str) -> str | None:
+        """Say why this planner cannot plan ``task`` as written, or None.
+
+        The rule planner matches keywords and pulls out number pairs. A task
+        with a negation, or a number it would read only in part, would be
+        planned as something nobody asked for, so it is refused instead.
+        """
+        text = task.lower()
+        if cls._NEGATION.search(text):
+            return (
+                "Not planned: this task contains a negation ('don't', 'do not', "
+                "'never' or 'not') and the rule planner cannot tell what it rules "
+                "out, so the robot will not guess. Say only what the robot should "
+                "do, like 'go to (3, 3)'."
+            )
+        if cls._EXPONENT_NUMBER.search(text):
+            return (
+                "Not planned: this task has a number in exponent form (like 1e3) "
+                "that the rule planner cannot read whole, so the robot will not "
+                "guess a target. Write it out, like 'go to (1000, 2)'."
+            )
+        if cls._NUMBER_TRIPLE.search(text):
+            return (
+                "Not planned: this task gives three or more numbers for one "
+                "target, and the rule planner reads only x and y, so the robot "
+                "will not guess which to drop. Give one (x, y) pair, like "
+                "'go to (1, 2)'."
+            )
+        return None
+
     def plan(self, task: str, available_skills: list[dict[str, Any]],
              capabilities: list[str]) -> list[dict[str, Any]]:
         task_lower = task.lower()
+
+        # A task this planner would misread gets no plan at all.
+        reason = self.cannot_read(task)
+        if reason is not None:
+            logger.warning("RuleBasedProvider: not planning %r: %s", task, reason)
+            return []
 
         # Check caller-supplied regex patterns first (highest priority).
         for pattern, skill_id in self._extra_patterns:
