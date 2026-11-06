@@ -503,9 +503,25 @@ class RobotToolbox:
             result["speed_note"] = SPEED_NOT_APPLIED
         return result
 
+    def rotate_available(self) -> bool:
+        """False when the adapter keeps the base no-op rotate (ros2://, for one)."""
+        from apyrobo.core.adapters import CapabilityAdapter
+
+        adapter = getattr(self.robot, "_adapter", None)
+        if not isinstance(adapter, CapabilityAdapter):
+            return True
+        return getattr(type(adapter), "rotate", None) is not CapabilityAdapter.rotate
+
     def _rotate(self, args: dict[str, Any]) -> dict[str, Any]:
         angle = _num(args, "angle_rad")
         speed = _num(args, "speed", required=False)
+        if not self.rotate_available():
+            adapter = type(getattr(self.robot, "_adapter", None)).__name__
+            raise ToolError(
+                f"rotate is not available on this robot: {adapter} cannot turn in "
+                "place, so nothing was sent and the robot did not move. Use move_to; "
+                "the robot turns as it drives."
+            )
         interventions = self._guarded(lambda: self.enforcer.rotate(angle_rad=angle, speed=speed))
         return {
             "status": "rotated",
