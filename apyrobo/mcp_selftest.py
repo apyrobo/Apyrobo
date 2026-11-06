@@ -11,7 +11,9 @@ user can see their limits hold before touching any client config:
 * a move across each no-go zone, to a free target, is refused too,
 * with allowed areas set, a move to a target outside them is refused,
 * with more than one allowed area, a move from one to another through space
-  outside them is refused, when the areas leave such a move.
+  outside them is refused, when the areas leave such a move,
+* with ``--audit-log PATH``, the server could open that file for append.
+  Nothing is written to it.
 
 It then warns about what the policy leaves unset, without changing the exit
 code: a passing run only says the limits you wrote down hold.
@@ -27,6 +29,7 @@ import contextlib
 import json
 import logging
 import math
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -370,6 +373,30 @@ def run_checks(server: Any) -> list[Check]:
     return checks
 
 
+def _check_audit_log(path: str) -> Check:
+    """Can ``apyrobo mcp --audit-log PATH`` open *path*? Writes nothing to it.
+
+    The server opens the file for append at start and exits if it cannot, so
+    a client would show a dead server. The file is opened the same way here;
+    a file this check had to create is removed again.
+    """
+    name = "audit log"
+    existed = os.path.lexists(path)
+    try:
+        with open(path, "ab"):
+            pass
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        return Check(
+            False, name,
+            f"cannot open {path} for append ({reason}); apyrobo mcp would exit at start",
+        )
+    if not existed:
+        with contextlib.suppress(OSError):
+            os.remove(path)
+    return Check(True, name, f"{path} can be opened for append; nothing was written to it")
+
+
 def policy_warnings(policy: Any, confirm_moves: bool) -> list[str]:
     """What the policy leaves unset. These never change the exit code."""
     from apyrobo.safety.enforcer import DEFAULT_POLICY
@@ -485,6 +512,11 @@ def main(
         safety_logger.setLevel(level)
         with contextlib.suppress(Exception):
             enforcer.stop()
+
+    # The server is built without the log, so no test move lands in a real one.
+    audit_log = getattr(args, "st_audit_log", None) or getattr(args, "audit_log", None)
+    if audit_log:
+        checks.append(_check_audit_log(str(audit_log)))
 
     confirm_moves = bool(
         getattr(args, "confirm_moves", False) or getattr(args, "st_confirm_moves", False)

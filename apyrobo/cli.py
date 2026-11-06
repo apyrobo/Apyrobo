@@ -3104,6 +3104,10 @@ def main() -> None:
     p_mcp_selftest.add_argument("--confirm-moves", dest="st_confirm_moves", action="store_true",
                                 help="Say you will run the server with --confirm-moves; "
                                      "not exercised here, it needs a client that can ask you")
+    p_mcp_selftest.add_argument("--audit-log", dest="st_audit_log", default=None,
+                                metavar="PATH",
+                                help="Check the server could open this audit log; "
+                                     "nothing is written to it")
     p_mcp_keepout = mcp_sub.add_parser(
         "keepout",
         help="Write a Nav2 keepout mask from your no-go zones and print the config (experimental)",

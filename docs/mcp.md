@@ -235,6 +235,10 @@ apyrobo mcp selftest --max-speed 0.5 --no-go 2,2,4,4
 It refuses any robot other than `mock://`, so it cannot move hardware. It does
 not exercise `--confirm-moves`, which needs a client that can ask you.
 
+With `--audit-log PATH`, it also checks that the server could open that file
+for append, and fails if not, since `apyrobo mcp` exits at start when it cannot.
+It writes nothing to the log, and a file it had to create to check is removed.
+
 A pass only says the limits you wrote down hold. So the report also warns about
 what your policy leaves unset: no no-go zones, no allowed area, the built-in
 speed limits, and `--confirm-moves` off (pass that flag to `selftest` too if you run the server
