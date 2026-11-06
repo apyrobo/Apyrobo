@@ -252,7 +252,7 @@ missing from your map: a zone you never wrote down looks like free space.
 | `robot_status` | no | Robot id, position (m), heading (rad), health, active safety policy |
 | `list_capabilities` | no | What the robot can do and which sensors it has |
 | `move_to(x, y, speed?)` | yes | Drive to a point; speed clamped, no-go targets refused |
-| `rotate(angle_rad, speed?)` | yes | Rotate in place (does nothing on `ros2://`, though it reports `rotated`) |
+| `rotate(angle_rad, speed?)` | yes | Rotate in place; an error on adapters that cannot, such as `ros2://` |
 | `stop()` | stops | Stop all motion; always allowed |
 | `plan_task(task)` | no | Natural-language task → ordered skills, parameters, confidence |
 | `execute_task(task)` | yes | Plan and run; stops at the first refused step and says why |
@@ -435,8 +435,8 @@ Without Nav2, on the `/cmd_vel` fallback, the limit holds. A `move_to` with no
 `speed`, or with `speed` 0, drives at the adapter's default of 0.5 m/s, or at
 the limit when that is lower; the audit log records the speed sent.
 
-`rotate` is not implemented on `ros2://`: the robot does not turn, and the tool
-still reports `rotated`. Nav2 turns the robot as part of a `move_to`.
+`rotate` is not implemented on `ros2://`: the tool returns an error saying so,
+and nothing is sent to the robot. Nav2 turns the robot as part of a `move_to`.
 
 ### Write a Nav2 keepout mask
 
