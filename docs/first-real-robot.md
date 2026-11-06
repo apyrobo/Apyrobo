@@ -93,8 +93,8 @@ apyrobo mcp --robot ros2:// --policy-file first-robot.yaml --confirm-moves
 
 Before the first move, lower the velocity limits in your Nav2 controller
 parameters (for DWB, `max_vel_x` and `max_speed_xy`). `max_speed` in the policy
-does not limit a Nav2 drive: the robot goes as fast as the controller allows, even
-when the reply says the speed was clamped. See
+does not limit a Nav2 drive: the robot goes as fast as the controller allows, and
+the reply says `"speed_limit_applied": false`. See
 [Speed on `ros2://`](mcp.md#speed-on-ros2).
 
 `--confirm-moves` makes each `move_to`, `rotate` and `execute_task` wait for your

@@ -286,6 +286,11 @@ if _HAS_ROS2:
         #: The /cmd_vel fallback drives at this speed when a move has none.
         default_speed = 0.5
 
+        @property
+        def speed_limit_applies(self) -> bool:
+            """False while moves go through Nav2: a NavigateToPose goal has no speed."""
+            return not self._has_nav2
+
         # Default topic/action mappings (TurtleBot4-compatible)
         DEFAULT_CONFIG = {
             "cmd_vel": "/cmd_vel",

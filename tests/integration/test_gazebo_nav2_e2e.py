@@ -207,7 +207,8 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
     """An MCP client drives the Gazebo robot through `apyrobo mcp --robot ros2://`.
 
     Same Nav2 stack as above, reached over MCP instead of the Python API:
-    an over-limit move runs with the speed clamp reported, Nav2 takes the
+    an over-limit move runs and says the speed limit was not applied (a Nav2
+    goal carries no speed), Nav2 takes the
     goal and the physics robot gets there; a target in the no-go zone is
     refused and the robot does not move.
     """
@@ -241,6 +242,12 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
             assert moved["safety_interventions"], (
                 f"1.0 m/s against a {MCP_MAX_SPEED} m/s limit was not reported as clamped: {moved}"
             )
+            # A Nav2 goal carries no speed: the reply must not pass the
+            # lowered number off as a limit on this drive.
+            assert moved.get("speed_limit_applied") is False, (
+                f"a Nav2 drive did not say the speed limit was not applied: {moved}"
+            )
+            assert "not applied" in moved.get("speed_note", ""), moved
 
             mid = adapter.position
             reported = (moved["position"]["x"], moved["position"]["y"])

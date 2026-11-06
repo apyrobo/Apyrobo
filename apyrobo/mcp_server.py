@@ -207,6 +207,14 @@ def _rule_coordinates_text(task: str) -> str:
     return _BARE_PAIR_IN_TASK.sub(r"\1 (\2, \3)", text)
 
 
+#: Said in a reply when a drive went through Nav2, which takes no speed.
+SPEED_NOT_APPLIED = (
+    "The speed limit was not applied to this drive: on ros2:// a Nav2 goal carries "
+    "no speed, so the robot drove at whatever speed Nav2's controller is configured "
+    "for. Set the limit in Nav2's controller parameters."
+)
+
+
 class RobotToolbox:
     """The tools the MCP server exposes, bound to one robot and one policy."""
 
@@ -409,6 +417,16 @@ class RobotToolbox:
             summary["allowed_areas"] = [dict(a) for a in p.allowed_areas]
         return summary
 
+    def speed_limit_applies(self) -> bool:
+        """False when the robot ignores the speed it is sent (ros2:// through Nav2)."""
+        adapter = getattr(self.robot, "_adapter", None)
+        return getattr(adapter, "speed_limit_applies", True) is not False
+
+    def _drove_unlimited(self, moves_before: int) -> bool:
+        """True when a move ran since *moves_before* and its speed limit did not apply."""
+        moves = getattr(self.enforcer, "moves_sent", 0)
+        return isinstance(moves, int) and moves > moves_before and not self.speed_limit_applies()
+
     def _position(self) -> dict[str, float]:
         x, y = self.enforcer.get_position()
         return {"x": float(x), "y": float(y)}
@@ -472,13 +490,18 @@ class RobotToolbox:
         x = _num(args, "x")
         y = _num(args, "y")
         speed = _move_speed(args)
+        moves_before = getattr(self.enforcer, "moves_sent", 0)
         interventions = self._guarded(lambda: self.enforcer.move(x=x, y=y, speed=speed))
-        return {
+        result: dict[str, Any] = {
             "status": "moved",
             "requested": {"x": x, "y": y, "speed": speed},
             "position": self._position(),
             "safety_interventions": interventions,
         }
+        if self._drove_unlimited(moves_before):
+            result["speed_limit_applied"] = False
+            result["speed_note"] = SPEED_NOT_APPLIED
+        return result
 
     def _rotate(self, args: dict[str, Any]) -> dict[str, Any]:
         angle = _num(args, "angle_rad")
@@ -563,6 +586,7 @@ class RobotToolbox:
             raise ToolError("The planner produced no steps for this task.")
         v_before = len(self.enforcer.violations)
         i_before = len(self.enforcer.interventions)
+        moves_before = getattr(self.enforcer, "moves_sent", 0)
         executor = SkillExecutor(self.enforcer, abort_reason=lambda: self.stop_reason)
         result = executor.execute_graph(graph)
         status = getattr(result.status, "value", str(result.status))
@@ -575,6 +599,9 @@ class RobotToolbox:
             "position": self._position(),
             "safety_interventions": self.enforcer.interventions[i_before:],
         }
+        if self._drove_unlimited(moves_before):
+            outcome["speed_limit_applied"] = False
+            outcome["speed_note"] = SPEED_NOT_APPLIED
         if status != "completed":
             reason = getattr(result, "error", None) or "execution failed"
             if refusals:
@@ -833,15 +860,21 @@ class MCPServer:
         arguments: dict[str, Any],
         text: str,
         is_error: bool,
-        before: tuple[int, int],
+        before: tuple[int, ...],
     ) -> None:
-        """Log how a tool call ended. *before*: violations, interventions at its start."""
+        """Log how a tool call ended.
+
+        *before*: violations, interventions and moves sent at its start.
+        """
         enforcer = self.toolbox.enforcer
         clamped = any("enforced" in i for i in enforcer.interventions[before[1]:])
         if text.startswith("REFUSED") or len(enforcer.violations) > before[0]:
             self._audit_after(name, arguments, "refused", detail=text)
         elif is_error:
             self._audit_after(name, arguments, "failed", detail=text)
+        elif self.toolbox._drove_unlimited(before[2]):
+            # Through Nav2 no speed reaches the robot, so nothing was clamped.
+            self._audit_after(name, arguments, "not_limited", detail=SPEED_NOT_APPLIED)
         else:
             self._audit_after(
                 name, arguments, "clamped" if clamped else "ran",
@@ -1097,7 +1130,11 @@ class MCPServer:
         if audited:
             enforcer = self.toolbox.enforcer
             enforcer.last_speed = None
-            before = (len(enforcer.violations), len(enforcer.interventions))
+            before = (
+                len(enforcer.violations),
+                len(enforcer.interventions),
+                getattr(enforcer, "moves_sent", 0),
+            )
         if audited and moves:
             # Before the robot moves: no record, no motion, and a crash
             # during the move leaves a "started" line with no outcome.

@@ -332,15 +332,16 @@ apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4 --audit-log ~/apyrobo-audit.jsonl
 
 Each line has `time` (UTC), `tool` (`move_to`, `rotate`, `execute_task` or
 `stop`), `arguments` as the client sent them, `decision`, `enforced_speed`, the
-speed the server passed to the robot adapter where one applies (not what a Nav2
-drive reaches, see [Speed on `ros2://`](#speed-on-ros2)), and `policy`. A refusal or failure
-adds `detail`, cut to 500 characters. Read-only tools are not logged.
+speed the server passed to the robot adapter where one applies (null on a Nav2
+drive, which takes no speed, see [Speed on `ros2://`](#speed-on-ros2)), and `policy`. A
+refusal, a failure or a `not_limited` drive adds `detail`, cut to 500 characters. Read-only tools are not logged.
 
 | `decision` | Meaning |
 | --- | --- |
 | `started` | The motion call passed the client checks and is about to run; the next line says how it ended |
 | `ran` | It finished as asked (`stop` logs only this) |
 | `clamped` | It finished with a speed the policy lowered |
+| `not_limited` | It finished on `ros2://` through Nav2, where no speed reaches the robot, so the policy's speed limit did not apply; `enforced_speed` is null |
 | `refused` | The policy said no (a no-go zone, an allowed area), the client had gone, a `stop` came in after the request, or it cannot confirm; earlier steps of an `execute_task` may have run |
 | `failed` | Bad arguments or an adapter error |
 | `declined` | The user said no under `--confirm-moves` |
@@ -383,9 +384,9 @@ the reason and the robot's current position, not as a success.
 [`tests/integration/test_gazebo_nav2_e2e.py`](../tests/integration/test_gazebo_nav2_e2e.py)
 starts `apyrobo mcp --robot ros2://burger` against a physics-simulated
 TurtleBot3 with Nav2 and slam_toolbox (ROS 2 Humble, Gazebo Classic) and
-talks to it over stdio as an MCP client would: an over-limit `move_to` is
-reported as clamped, goes through Nav2 and gets the robot to the target
-region (the test does not measure how fast the robot drove); a target in the no-go zone is refused and the robot does not move;
+talks to it over stdio as an MCP client would: an over-limit `move_to`
+says the speed limit was not applied, goes through Nav2 and gets the robot to
+the target region (the test does not measure how fast the robot drove); a target in the no-go zone is refused and the robot does not move;
 a clear target whose Nav2 route crosses a zone is refused and no goal is sent;
 a cancel and a `stop` sent during a move stop the robot short of its goal and
 Nav2 reports the goal cancelled; `stop` and `safety_report` answer. To run the same stack locally with
@@ -403,8 +404,10 @@ image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
 
 `--max-speed` and `max_speed` do not limit a Nav2 drive. A `navigate_to_pose`
 goal carries no speed, so `ros2://` logs the speed and sends the goal, and the
-robot drives as fast as Nav2's controller is configured to. The reply and the
-audit log still say the speed was clamped, which here means only that the
+robot drives as fast as Nav2's controller is configured to. The `move_to` and
+`execute_task` replies say so with `"speed_limit_applied": false` and a
+`speed_note`, and the audit log's decision is `not_limited`. A
+`speed_clamped` entry under `safety_interventions` there means only that the
 number was lowered. Set the limit you want in Nav2's controller parameters (for
 DWB, `max_vel_x` and `max_speed_xy`), and treat that as the real limit.
 

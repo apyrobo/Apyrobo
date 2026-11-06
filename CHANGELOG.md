@@ -189,6 +189,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   docs/gz_sim_port.md). Not run in CI yet.
 
 ### Fixed
+- `apyrobo mcp` on `ros2://` through Nav2 no longer says a speed was clamped as if that limited the drive. A Nav2 goal carries no speed, so `move_to` and `execute_task` replies now carry `speed_limit_applied: false` and a note, and the audit log's decision is `not_limited` with no enforced speed. `mock://` and the `/cmd_vel` fallback still report `clamped` and `ran`.
 - A move sent with no speed, or speed 0, now stays within the policy's `max_speed`. On the `ros2://` `/cmd_vel` fallback it drove at 0.5 m/s under any limit; the safety layer now hands the robot its default speed or the limit, whichever is lower, and an adapter that leaves the speed to the robot gets the limit. Adapters can declare `default_speed`.
 - `apyrobo mcp --confirm-moves` on protocol 2026-07-28: a yes now runs its move once. Resending the same answer ran the move again for up to 10 minutes without a new question; it now gets an `Invalid or expired requestState` error, and a no cannot be resent as a yes.
 - `--profile` with `--provider llm` now passes a provider-qualified model such as `ollama/llama3.2:3b` to `apyrobo plan`, `execute` and `serve`. LiteLLM could not route the bare Ollama names, so a profile on Ollama could not reach its model.
