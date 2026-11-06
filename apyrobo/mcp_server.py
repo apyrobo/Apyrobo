@@ -624,6 +624,10 @@ class MCPServer:
         # Seals the requestState of a confirmation round trip, so a client
         # cannot confirm one move and then send different arguments.
         self._state_key = secrets.token_bytes(32)
+        # requestStates already answered, with the time they were issued: a
+        # yes runs its move once, and a resend of the same state is refused
+        # until it would have expired anyway.
+        self._spent_states: dict[str, int] = {}
         # Capabilities the client declared in initialize (legacy sessions).
         self._client_caps: dict[str, Any] = {}
         # Set by serve(): the stdio channel used to send a legacy client an
@@ -846,24 +850,40 @@ class MCPServer:
 
     # -- --confirm-moves ---------------------------------------------------
 
-    def _seal(self, name: str, arguments: dict[str, Any], issued: int) -> str:
+    def _seal(
+        self, name: str, arguments: dict[str, Any], issued: int, nonce: str | None = None
+    ) -> str:
+        # The nonce makes each question's state unique, so two questions about
+        # the same move in the same second can each be answered once.
+        if nonce is None:
+            nonce = secrets.token_hex(8)
         body = json.dumps(
-            {"tool": name, "arguments": arguments, "issued": issued},
+            {"tool": name, "arguments": arguments, "issued": issued, "nonce": nonce},
             sort_keys=True, separators=(",", ":"),
         )
         mac = hmac.new(self._state_key, body.encode(), hashlib.sha256).hexdigest()
-        return f"{issued}.{mac}"
+        return f"{issued}.{nonce}.{mac}"
 
     def _state_ok(self, state: Any, name: str, arguments: dict[str, Any]) -> bool:
-        if not isinstance(state, str) or "." not in state:
+        if not isinstance(state, str):
             return False
-        issued_s, _ = state.split(".", 1)
-        if not issued_s.isdigit():
+        parts = state.split(".")
+        if len(parts) != 3 or not parts[0].isdigit():
             return False
-        issued = int(issued_s)
+        issued = int(parts[0])
         if not 0 <= time.time() - issued <= CONFIRM_TTL_S:
             return False
-        return hmac.compare_digest(state, self._seal(name, arguments, issued))
+        if state in self._spent_states:
+            return False
+        return hmac.compare_digest(state, self._seal(name, arguments, issued, parts[1]))
+
+    def _spend_state(self, state: str) -> None:
+        """Mark an answered requestState used; forget ones past their TTL."""
+        now = time.time()
+        for old, issued in list(self._spent_states.items()):
+            if now - issued > CONFIRM_TTL_S:
+                del self._spent_states[old]
+        self._spent_states[state] = int(state.split(".", 1)[0])
 
     def _confirm_gate(
         self, msg_id: Any, params: dict[str, Any], client_caps: dict[str, Any]
@@ -922,6 +942,9 @@ class MCPServer:
                 "Invalid or expired requestState: call the tool again without "
                 "inputResponses to ask for a new confirmation",
             )
+        # Any answer uses the state up: a yes runs once, and a no cannot be
+        # turned into a yes by resending the same state.
+        self._spend_state(params["requestState"])
         answer = responses.get(CONFIRM_INPUT_KEY) if isinstance(responses, dict) else None
         if isinstance(answer, dict) and answer.get("action") == "accept":
             return None

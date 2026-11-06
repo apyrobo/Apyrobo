@@ -296,12 +296,14 @@ declining leaves the robot where it is and returns a plain `declined` result.
 Approval never lifts a policy limit, and a `move_to` target in a no-go zone is
 refused without asking. `stop` and the read-only tools never ask.
 
-Two limits to know. For `execute_task` the question shows the task text and
+Each answer is good for one call. On 2026-07-28 a client that resends the
+same call with the same answer gets an `Invalid or expired requestState`
+error and must ask again; an unanswered question expires after 10 minutes.
+
+One limit to know. For `execute_task` the question shows the task text and
 the policy limits, not the planned steps, so a yes approves the words, not a
 route: a target in a no-go zone is refused only after the yes, and the robot
-follows what the planner made of the words. And on 2026-07-28 a yes is not
-single-use: for 10 minutes, a client that resends the same call with the same
-answer runs it again without a new question.
+follows what the planner made of the words.
 
 This works with clients that declare form elicitation, in both protocol
 eras: on 2026-07-28 through the multi-round-trip `input_required` result,
