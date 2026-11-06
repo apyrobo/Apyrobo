@@ -130,6 +130,64 @@ def test_confirmation_cannot_be_reused_for_other_arguments(server):
     assert position(server) == start
 
 
+def test_a_yes_runs_the_move_once(server):
+    first = modern_call(server, "rotate", {"angle_rad": 1.0})["result"]
+    answer = {
+        "inputResponses": {CONFIRM_INPUT_KEY: {"action": "accept"}},
+        "requestState": first["requestState"],
+    }
+    ran = modern_call(server, "rotate", {"angle_rad": 1.0}, **answer)["result"]
+    assert ran["isError"] is False
+    heading = server.toolbox.enforcer.get_orientation()
+    for _ in range(2):
+        again = modern_call(server, "rotate", {"angle_rad": 1.0}, **answer)
+        assert again["error"]["code"] == INVALID_PARAMS
+        assert "Invalid or expired requestState" in again["error"]["message"]
+    assert server.toolbox.enforcer.get_orientation() == pytest.approx(heading)
+
+
+def test_a_no_cannot_be_resent_as_a_yes(server):
+    start = position(server)
+    first = modern_call(server, "move_to", {"x": 1.0, "y": 0.5})["result"]
+    declined = modern_call(
+        server, "move_to", {"x": 1.0, "y": 0.5},
+        inputResponses={CONFIRM_INPUT_KEY: {"action": "decline"}},
+        requestState=first["requestState"],
+    )
+    assert json.loads(declined["result"]["content"][0]["text"])["status"] == "declined"
+    flipped = modern_call(
+        server, "move_to", {"x": 1.0, "y": 0.5},
+        inputResponses={CONFIRM_INPUT_KEY: {"action": "accept"}},
+        requestState=first["requestState"],
+    )
+    assert flipped["error"]["code"] == INVALID_PARAMS
+    assert position(server) == start
+
+
+def test_each_question_gets_its_own_yes(server, monkeypatch):
+    import apyrobo.mcp_server as mod
+
+    frozen = mod.time.time()
+    monkeypatch.setattr(mod.time, "time", lambda: frozen)
+    one = modern_call(server, "move_to", {"x": 1.0, "y": 0.5})["result"]["requestState"]
+    two = modern_call(server, "move_to", {"x": 1.0, "y": 0.5})["result"]["requestState"]
+    assert one != two
+    for state in (one, two):
+        result = confirm(server, "move_to", {"x": 1.0, "y": 0.5}, state=state)["result"]
+        assert result["isError"] is False
+
+
+def test_spent_states_are_forgotten_once_expired(server, monkeypatch):
+    import apyrobo.mcp_server as mod
+
+    confirm(server, "move_to", {"x": 1.0, "y": 0.5})
+    assert len(server._spent_states) == 1
+    real = mod.time.time()
+    monkeypatch.setattr(mod.time, "time", lambda: real + mod.CONFIRM_TTL_S + 5)
+    confirm(server, "move_to", {"x": 1.5, "y": 0.5})
+    assert len(server._spent_states) == 1
+
+
 def test_forged_or_expired_state_is_rejected(server, monkeypatch):
     forged = confirm(server, "move_to", {"x": 1.0, "y": 0.5}, state="1.deadbeef")
     assert forged["error"]["code"] == INVALID_PARAMS
