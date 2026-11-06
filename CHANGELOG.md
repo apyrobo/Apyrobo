@@ -69,7 +69,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - **`apyrobo mcp` — MCP server** (`apyrobo/mcp_server.py`, no extra
   dependencies): lets Claude, Cursor or any MCP client inspect, plan and
   drive a robot over stdio, with every motion command passed through the
-  `SafetyEnforcer`. Over-limit speeds are clamped and reported; targets in a
+  `SafetyEnforcer`. Over-limit speeds are clamped and reported, though a Nav2
+  drive on `ros2://` runs at its controller's speed whatever the limit, and
+  `rotate` does nothing on `ros2://`; targets in a
   no-go zone (`--no-go x_min,y_min,x_max,y_max`) are refused with a readable
   tool error. Defaults to `mock://turtlebot4`. Try it without installing:
   `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp`. See

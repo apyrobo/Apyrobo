@@ -5,7 +5,9 @@ server. Point an MCP client at it and the model gets tools to look at a
 robot, plan tasks and move it. Every motion command goes through APYROBO's
 `SafetyEnforcer` first:
 
-- a speed above the policy limit is **clamped**, and the result says so;
+- a speed above the policy limit is **clamped**, and the result says so (this
+  does not limit a Nav2 drive on `ros2://`, see
+  [Speed on `ros2://`](#speed-on-ros2));
 - a target inside a no-go zone is **refused**; the robot does not move and the
   model gets a readable `REFUSED by safety policy …` error, so it can pick
   another target;
@@ -230,7 +232,7 @@ missing from your map: a zone you never wrote down looks like free space.
 | `robot_status` | no | Robot id, position (m), heading (rad), health, active safety policy |
 | `list_capabilities` | no | What the robot can do and which sensors it has |
 | `move_to(x, y, speed?)` | yes | Drive to a point; speed clamped, no-go targets refused |
-| `rotate(angle_rad, speed?)` | yes | Rotate in place |
+| `rotate(angle_rad, speed?)` | yes | Rotate in place (does nothing on `ros2://`, though it reports `rotated`) |
 | `stop()` | stops | Stop all motion; always allowed |
 | `plan_task(task)` | no | Natural-language task → ordered skills, parameters, confidence |
 | `execute_task(task)` | yes | Plan and run; stops at the first refused step and says why |
@@ -321,7 +323,8 @@ apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4 --audit-log ~/apyrobo-audit.jsonl
 
 Each line has `time` (UTC), `tool` (`move_to`, `rotate`, `execute_task` or
 `stop`), `arguments` as the client sent them, `decision`, `enforced_speed`, the
-speed the robot was given where one applies, and `policy`. A refusal or failure
+speed the server passed to the robot adapter where one applies (not what a Nav2
+drive reaches, see [Speed on `ros2://`](#speed-on-ros2)), and `policy`. A refusal or failure
 adds `detail`, cut to 500 characters. Read-only tools are not logged.
 
 | `decision` | Meaning |
@@ -361,8 +364,8 @@ import) and on the same `ROS_DOMAIN_ID` as the robot. The `ros2://` adapter
 subscribes to `/odom` for the pose that `robot_status`, `move_to` and the
 safety checks use, and sends each `move_to` to Nav2 as a `navigate_to_pose`
 goal. If no Nav2 action server is found it falls back to driving `/cmd_vel`
-directly, which has no obstacle avoidance. Clamps and no-go refusals happen
-in APYROBO before the goal reaches Nav2, so a refused move is never sent.
+directly, which has no obstacle avoidance. No-go refusals happen in APYROBO
+before the goal reaches Nav2, so a refused move is never sent.
 If Nav2 rejects or aborts the goal, never answers it, navigation times out,
 or `stop` cancels it, `move_to` comes back as an error (`isError`) naming
 the reason and the robot's current position, not as a success.
@@ -372,8 +375,8 @@ the reason and the robot's current position, not as a success.
 starts `apyrobo mcp --robot ros2://burger` against a physics-simulated
 TurtleBot3 with Nav2 and slam_toolbox (ROS 2 Humble, Gazebo Classic) and
 talks to it over stdio as an MCP client would: an over-limit `move_to` is
-clamped and reported, goes through Nav2 and gets the robot to the target
-region; a target in the no-go zone is refused and the robot does not move;
+reported as clamped, goes through Nav2 and gets the robot to the target
+region (the test does not measure how fast the robot drove); a target in the no-go zone is refused and the robot does not move;
 a clear target whose Nav2 route crosses a zone is refused and no goal is sent;
 a cancel and a `stop` sent during a move stop the robot short of its goal and
 Nav2 reports the goal cancelled; `stop` and `safety_report` answer. To run the same stack locally with
@@ -386,6 +389,22 @@ docker compose -f docker/docker-compose.yml --profile gazebo-nav up \
 
 Not covered yet: real hardware in CI, and the ROS 2 Jazzy + Gazebo Harmonic
 image ([`docs/gz_sim_port.md`](gz_sim_port.md)) is not wired into CI.
+
+### Speed on `ros2://`
+
+`--max-speed` and `max_speed` do not limit a Nav2 drive. A `navigate_to_pose`
+goal carries no speed, so `ros2://` logs the speed and sends the goal, and the
+robot drives as fast as Nav2's controller is configured to. The reply and the
+audit log still say the speed was clamped, which here means only that the
+number was lowered. Set the limit you want in Nav2's controller parameters (for
+DWB, `max_vel_x` and `max_speed_xy`), and treat that as the real limit.
+
+Without Nav2, on the `/cmd_vel` fallback, the limit holds when the client sends
+a speed. A `move_to` with no `speed`, or with `speed` 0, drives at 0.5 m/s
+whatever the limit is.
+
+`rotate` is not implemented on `ros2://`: the robot does not turn, and the tool
+still reports `rotated`. Nav2 turns the robot as part of a `move_to`.
 
 ### Write a Nav2 keepout mask
 
@@ -512,7 +531,7 @@ open an issue if it has gone stale.
 | [Nav2 MCP Server](https://github.com/ajtudela/nav2_mcp_server) | Nav2 on ROS 2 Jazzy: `navigate_to_pose`, `follow_waypoints`, spin, back up, dock, costmaps, lifecycle | Back-up speed capped at 1.0 m/s; navigation speed is whatever Nav2's controller is configured for | None in the server | No | Needs ROS 2 and Nav2 (robot or sim) | `git clone` + `uv sync`, or its Docker image |
 | [Amazing ROS 2 MCP](https://github.com/proxi666/amazing-ros2-mcp) | Any ROS 2 robot through native `rclpy`, no rosbridge: topics, services, actions, parameters, camera images, Nav2 goals and waypoints | `/cmd_vel` values clamped to limits set in `config.py`; Nav2 goals use the controller's speed | None in the server; it can block listed topics and has a dry-run mode | No | Needs ROS 2 (robot or sim) | `git clone` + `pip install -e .` |
 | [armguard-mcp](https://github.com/Lynn-hh/armguard-mcp) | ROS 2 robot arms (MoveIt 2, `ros2_control`; Franka FR3): plan, preview, execute | Speed and step-size caps, plus joint, force and rate limits | Workspace box and keep-out zones, checked along the whole tool path | Yes, via MCP elicitation, for moves outside the envelope | Bundled simulated Franka FR3, no ROS | `uvx armguard-mcp` |
-| APYROBO (`apyrobo mcp`) | Mobile robots: `mock://`, or a ROS 2 robot through Nav2 (`ros2://`) | Clamped to `--max-speed` (and `max_angular_speed` in a `--policy-file`) | Rectangles from `--no-go` or `--policy-file`; a move into or across one is refused, and on `ros2://` Nav2's planned route is checked before the goal is sent | Opt-in `--confirm-moves`, via MCP elicitation; refuses motion if the client can't ask | `mock://turtlebot4`, no ROS | `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp` (`uvx apyrobo mcp` after the next release) |
+| APYROBO (`apyrobo mcp`) | Mobile robots: `mock://`, or a ROS 2 robot through Nav2 (`ros2://`) | Clamped to `--max-speed` (and `max_angular_speed` in a `--policy-file`); a Nav2 drive runs at whatever Nav2's controller is configured for | Rectangles from `--no-go` or `--policy-file`; a move into or across one is refused, and on `ros2://` Nav2's planned route is checked before the goal is sent | Opt-in `--confirm-moves`, via MCP elicitation; refuses motion if the client can't ask | `mock://turtlebot4`, no ROS | `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp` (`uvx apyrobo mcp` after the next release) |
 
 In short:
 
@@ -529,7 +548,8 @@ In short:
 ## What this does and doesn't guarantee
 
 The enforcer checks each command against the policy you set (speed limits and
-no-go zones here; see [`apyrobo/safety/enforcer.py`](../apyrobo/safety/enforcer.py)
+no-go zones here, though a speed limit does not reach a Nav2 drive, see
+[Speed on `ros2://`](#speed-on-ros2); see [`apyrobo/safety/enforcer.py`](../apyrobo/safety/enforcer.py)
 for the full list). It is a software guard between a model and a robot, not a
 certified safety system: keep hardware e-stops and site safety measures in
 place, and try new setups on `mock://` or a simulator first.

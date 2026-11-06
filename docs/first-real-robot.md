@@ -91,8 +91,15 @@ source /opt/ros/jazzy/setup.bash
 apyrobo mcp --robot ros2:// --policy-file first-robot.yaml --confirm-moves
 ```
 
+Before the first move, lower the velocity limits in your Nav2 controller
+parameters (for DWB, `max_vel_x` and `max_speed_xy`). `max_speed` in the policy
+does not limit a Nav2 drive: the robot goes as fast as the controller allows, even
+when the reply says the speed was clamped. See
+[Speed on `ros2://`](mcp.md#speed-on-ros2).
+
 `--confirm-moves` makes each `move_to`, `rotate` and `execute_task` wait for your
-yes, and shows the speed the policy will allow. Your MCP client must support
+yes, and shows the speed the policy will allow, which is not what a Nav2 drive
+uses. Your MCP client must support
 form elicitation. If it does not, every motion command is refused, which is the
 safe way round.
 
@@ -157,6 +164,8 @@ behaved as you expect.
 - **A wrong map or a bad localisation estimate.** Zones are only as good as the
   frame they are drawn in.
 - **The path actually driven.** See step 6.
+- **The speed of a Nav2 drive.** That is your controller's parameters, as step 4
+  says. `rotate` does nothing on `ros2://`, though it reports `rotated`.
 - **Software that bypasses it.** Limits apply to commands that go through
   `apyrobo mcp`. Anything else publishing to `/cmd_vel` or sending Nav2 goals is
   not checked.
