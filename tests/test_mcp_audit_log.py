@@ -82,9 +82,12 @@ def test_the_logged_speed_is_the_one_the_robot_was_given(log):
     assert lines(log)[-1]["enforced_speed"] == given[0] == 0.5
 
 
-def test_no_speed_asked_for_logs_none(log):
-    make(log).handle(call("move_to", x=1.0, y=0.0))
-    assert lines(log)[-1]["enforced_speed"] is None
+def test_no_speed_asked_for_logs_the_speed_handed_to_the_robot(log):
+    # mock:// lets the robot pick its own speed, so the move is sent at the limit.
+    server = make(log)
+    server.handle(call("move_to", x=1.0, y=0.0))
+    assert lines(log)[-1]["decision"] == "ran"
+    assert lines(log)[-1]["enforced_speed"] == server.toolbox.enforcer.policy.max_speed
 
 
 def test_the_log_can_be_rotated_while_the_server_runs(log):

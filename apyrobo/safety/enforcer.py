@@ -509,7 +509,29 @@ class SafetyEnforcer:
         # A SpeedProfile is not applied here: a single move has no elapsed time
         # to ramp over, and elapsed=0 would pin every move at min_speed.
         original_speed = speed
-        if speed is not None and speed > self._policy.max_speed:
+        if not speed:
+            # No speed (or 0) means "the adapter's default". Hand the robot an
+            # explicit speed so that default can't exceed the policy: the
+            # adapter's own default when it is within the limit, else the limit.
+            # An adapter whose robot picks its own speed gets the limit.
+            default = self._adapter_default_speed()
+            limit = self._policy.max_speed
+            speed = limit if default is None else min(default, limit)
+            if default is not None and default > limit:
+                intervention = {
+                    "type": "speed_clamped",
+                    "requested": None,
+                    "default": default,
+                    "enforced": speed,
+                    "max_allowed": limit,
+                }
+                self._interventions.append(intervention)
+                self._record_audit("intervention", intervention)
+                logger.warning(
+                    "SAFETY: Default speed %.2f lowered to %.2f m/s (policy: %s)",
+                    default, speed, self._policy.name,
+                )
+        elif speed > self._policy.max_speed:
             speed = self._policy.max_speed
             intervention = {
                 "type": "speed_clamped",
@@ -605,6 +627,15 @@ class SafetyEnforcer:
         # --- All checks passed — forward to robot ---
         self.last_speed = speed
         self._robot.move(x=x, y=y, speed=speed)
+
+    def _adapter_default_speed(self) -> float | None:
+        """The robot's speed for a move sent without one, or None if unknown."""
+        value = getattr(self._robot, "default_speed", None)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if not math.isfinite(value) or value <= 0:
+            return None
+        return float(value)
 
     # ------------------------------------------------------------------
     # SF-01: Move timeout

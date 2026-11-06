@@ -283,6 +283,9 @@ if _HAS_ROS2:
             - Maps found topics to APYROBO capability types
         """
 
+        #: The /cmd_vel fallback drives at this speed when a move has none.
+        default_speed = 0.5
+
         # Default topic/action mappings (TurtleBot4-compatible)
         DEFAULT_CONFIG = {
             "cmd_vel": "/cmd_vel",
@@ -902,7 +905,7 @@ if _HAS_ROS2:
             Runs a control loop at CMD_VEL_HZ until within GOAL_TOLERANCE_M
             or timeout.
             """
-            speed = speed or 0.5
+            speed = speed or self.default_speed
             self._nav_state = NavState.NAVIGATING
             dt = 1.0 / self.CMD_VEL_HZ
             t0 = time.time()
