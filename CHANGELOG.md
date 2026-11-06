@@ -189,6 +189,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   docs/gz_sim_port.md). Not run in CI yet.
 
 ### Fixed
+- A move sent with no speed, or speed 0, now stays within the policy's `max_speed`. On the `ros2://` `/cmd_vel` fallback it drove at 0.5 m/s under any limit; the safety layer now hands the robot its default speed or the limit, whichever is lower, and an adapter that leaves the speed to the robot gets the limit. Adapters can declare `default_speed`.
 - `apyrobo mcp --confirm-moves` on protocol 2026-07-28: a yes now runs its move once. Resending the same answer ran the move again for up to 10 minutes without a new question; it now gets an `Invalid or expired requestState` error, and a no cannot be resent as a yes.
 - `--profile` with `--provider llm` now passes a provider-qualified model such as `ollama/llama3.2:3b` to `apyrobo plan`, `execute` and `serve`. LiteLLM could not route the bare Ollama names, so a profile on Ollama could not reach its model.
 - The README's compute profiles section ran code that does not exist (`apyrobo exec`, `apyrobo.compute_profiles`, `default_llm`) and listed the wrong models; it now matches the code, as do the `apyrobo policy check` examples, the custom adapter example in `docs/concepts/adapter_pattern.md` and the memory names in `MIGRATION.md`. `tests/test_docs_code.py` checks documented imports and commands.

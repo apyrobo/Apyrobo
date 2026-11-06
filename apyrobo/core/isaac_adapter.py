@@ -143,6 +143,9 @@ class IsaacSimAdapter(CapabilityAdapter):
         await robot.move(3.0, 1.0)
     """
 
+    #: Speed in m/s for a move sent without one.
+    default_speed = 1.0
+
     #: Isaac Sim REST API version prefix
     _API_PREFIX = "/api/v1"
 
@@ -331,7 +334,7 @@ class IsaacSimAdapter(CapabilityAdapter):
         REST path: POST to ``/api/v1/robot/move``.
         Offline: updates internal state only.
         """
-        effective_speed = speed or 1.0
+        effective_speed = speed or self.default_speed
         dx = x - self._position[0]
         dy = y - self._position[1]
         dist = math.sqrt(dx * dx + dy * dy)

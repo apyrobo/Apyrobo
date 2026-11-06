@@ -76,6 +76,11 @@ class Robot:
     # Commands — thin wrappers that delegate to the adapter
     # ------------------------------------------------------------------
 
+    @property
+    def default_speed(self) -> float | None:
+        """Speed the adapter drives at when a move has no speed, if known."""
+        return getattr(self._adapter, "default_speed", None)
+
     def move(self, x: float, y: float, speed: float | None = None) -> None:
         """Command the robot to move to (x, y) at optional *speed* m/s."""
         self._adapter.move(x=x, y=y, speed=speed)

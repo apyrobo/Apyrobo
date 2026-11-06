@@ -149,6 +149,11 @@ class CapabilityAdapter(abc.ABC):
     #: target. The SafetyEnforcer then checks the route from plan_path().
     plans_own_path: bool = False
 
+    #: Speed in m/s this adapter drives at when move() gets no speed, or None
+    #: when the robot behind it picks its own. The SafetyEnforcer uses it to
+    #: keep a move sent without a speed within the policy's max_speed.
+    default_speed: float | None = None
+
     def __init__(self, robot_name: str, **kwargs: Any) -> None:
         self.robot_name = robot_name
         self._state = AdapterState.DISCONNECTED
@@ -592,6 +597,7 @@ class GazeboAdapter(CapabilityAdapter):
         self._gripper_open = True
         self._sim_speed_factor = kwargs.get("sim_speed_factor", 1.0)
         self._max_speed = kwargs.get("max_speed", 1.0)
+        self.default_speed = self._max_speed
         self._max_angular_speed = kwargs.get("max_angular_speed", 1.0)
         self._state = AdapterState.CONNECTED
         logger.info("GazeboAdapter created for %s (sim_speed=%.1fx)",

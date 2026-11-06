@@ -408,9 +408,9 @@ audit log still say the speed was clamped, which here means only that the
 number was lowered. Set the limit you want in Nav2's controller parameters (for
 DWB, `max_vel_x` and `max_speed_xy`), and treat that as the real limit.
 
-Without Nav2, on the `/cmd_vel` fallback, the limit holds when the client sends
-a speed. A `move_to` with no `speed`, or with `speed` 0, drives at 0.5 m/s
-whatever the limit is.
+Without Nav2, on the `/cmd_vel` fallback, the limit holds. A `move_to` with no
+`speed`, or with `speed` 0, drives at the adapter's default of 0.5 m/s, or at
+the limit when that is lower; the audit log records the speed sent.
 
 `rotate` is not implemented on `ros2://`: the robot does not turn, and the tool
 still reports `rotated`. Nav2 turns the robot as part of a `move_to`.

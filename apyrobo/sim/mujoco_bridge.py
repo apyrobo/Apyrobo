@@ -116,6 +116,7 @@ class MuJoCoBridgeAdapter(CapabilityAdapter):
         )
 
         self.max_speed = float(kwargs.get("max_speed", 2.0))
+        self.default_speed = self.max_speed
         self._realtime = bool(kwargs.get("realtime", False))
         self._grasp_radius = float(kwargs.get("grasp_radius", 0.4))
         self._lift_height = float(kwargs.get("lift_height", 0.08))
