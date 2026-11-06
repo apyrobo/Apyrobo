@@ -357,6 +357,8 @@ class SafetyEnforcer:
         self._audit_log: list[SafetyAuditEntry] = []
         # The speed of the last command handed to the robot, after all limits.
         self.last_speed: float | None = None
+        # How many moves were handed to the robot (rotations not counted).
+        self.moves_sent = 0
 
         # SF-02/SF-07: WorldState integration
         self._world_state = world_state
@@ -626,6 +628,7 @@ class SafetyEnforcer:
 
         # --- All checks passed — forward to robot ---
         self.last_speed = speed
+        self.moves_sent += 1
         self._robot.move(x=x, y=y, speed=speed)
 
     def _adapter_default_speed(self) -> float | None:
