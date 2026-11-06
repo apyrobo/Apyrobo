@@ -290,11 +290,18 @@ apyrobo mcp --max-speed 0.5 --allow-area 0,0,10,6 --no-go 2,2,4,4
 ### Confirm every move
 
 With `--confirm-moves`, each motion command waits for a yes from the user.
-The server asks through MCP elicitation and shows the target and the speed
-the policy will actually allow (after clamping); declining leaves the robot
-where it is and returns a plain `declined` result. Approval never lifts a
-policy limit, and a target in a no-go zone is refused without asking.
-`stop` and the read-only tools never ask.
+The server asks through MCP elicitation. For `move_to` and `rotate` it shows
+the target and the speed the policy will actually allow (after clamping);
+declining leaves the robot where it is and returns a plain `declined` result.
+Approval never lifts a policy limit, and a `move_to` target in a no-go zone is
+refused without asking. `stop` and the read-only tools never ask.
+
+Two limits to know. For `execute_task` the question shows the task text and
+the policy limits, not the planned steps, so a yes approves the words, not a
+route: a target in a no-go zone is refused only after the yes, and the robot
+follows what the planner made of the words. And on 2026-07-28 a yes is not
+single-use: for 10 minutes, a client that resends the same call with the same
+answer runs it again without a new question.
 
 This works with clients that declare form elicitation, in both protocol
 eras: on 2026-07-28 through the multi-round-trip `input_required` result,
