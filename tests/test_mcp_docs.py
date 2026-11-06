@@ -71,3 +71,14 @@ def test_the_enforcer_reads_no_live_sensors_as_the_docs_say():
     text = " ".join(_doc().split())
     assert "It checks policy, not live sensors." in text
     assert "human-proximity check does not run" in text
+
+
+def test_docs_say_the_speed_limit_does_not_reach_a_nav2_drive():
+    text = _doc()
+    assert "### Speed on `ros2://`" in text
+    assert "do not limit a Nav2 drive" in text
+    assert "Clamps and no-go refusals happen" not in text
+    llms = (DOC.parent.parent / "llms.txt").read_text(encoding="utf-8")
+    assert "Nav2's controller parameters" in llms
+    robot = (DOC.parent / "first-real-robot.md").read_text(encoding="utf-8")
+    assert "mcp.md#speed-on-ros2" in robot
