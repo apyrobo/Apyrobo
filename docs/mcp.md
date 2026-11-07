@@ -254,7 +254,7 @@ missing from your map: a zone you never wrote down looks like free space.
 | `move_to(x, y, speed?)` | yes | Drive to a point; speed clamped, no-go targets refused |
 | `rotate(angle_rad, speed?)` | yes | Rotate in place; an error on adapters that cannot, such as `ros2://` |
 | `stop()` | stops | Stop all motion; always allowed |
-| `plan_task(task)` | no | Natural-language task → ordered skills, parameters, confidence |
+| `plan_task(task)` | no | Natural-language task → ordered skills, parameters, confidence; `can_proceed: false` with the reason when the policy would refuse a drive |
 | `execute_task(task)` | yes | Plan and run; stops at the first refused step and says why |
 | `safety_report()` | no | Every clamp and refusal since the server started |
 
@@ -290,6 +290,16 @@ drive, such as "go to (3, 3) then come back to (0, 0)", is refused with a
 "Not planned:" reason: send one target per call. It used to drive only to the
 last place and report `completed`, so a refusal for the first one never showed.
 A delivery may name two: "deliver from (1, 1) to (5, 1)" drives to both.
+
+`plan_task` checks each drive in the plan against the policy without moving:
+a target in a no-go zone, a target outside every allowed area, and a straight
+route that crosses a zone or leaves the allowed areas (from where the robot is,
+then from each earlier target). Any of these gives `can_proceed: false` and a
+reason in the same words `move_to` would refuse with. It used to say
+`can_proceed: true` and `risk_level: low` for such a target. On an adapter that
+plans its own route, such as `ros2://` through Nav2, only the target is checked
+here; the route is checked when the move runs. Battery and people nearby are
+checked only when the move runs.
 
 ## Options
 

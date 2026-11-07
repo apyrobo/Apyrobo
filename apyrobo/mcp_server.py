@@ -651,7 +651,32 @@ class RobotToolbox:
 
     def _plan_task(self, args: dict[str, Any]) -> dict[str, Any]:
         _, plan = self._plan(_str(args, "task"))
+        if plan.get("can_proceed") and not plan.get("reason"):
+            refusal = self._plan_refusal(plan["steps"])
+            if refusal is not None:
+                plan.update(can_proceed=False, reason=refusal)
         return plan
+
+    def _plan_refusal(self, steps: list[dict[str, Any]]) -> str | None:
+        """The refusal the first drive in *steps* would get, checked without moving."""
+        check = getattr(self.enforcer, "move_problem", None)
+        if check is None:
+            return None
+        start: tuple[float, float] | None = None
+        for number, step in enumerate(steps, start=1):
+            if not step["skill_id"].startswith("navigate_to"):
+                continue
+            x = float(step["parameters"].get("x", 0.0))
+            y = float(step["parameters"].get("y", 0.0))
+            problem = check(x, y, start)
+            if problem is not None:
+                return (
+                    f"REFUSED by safety policy '{self.enforcer.policy.name}' at step "
+                    f"{number}: {problem}. Nothing was moved; execute_task would be "
+                    "refused at this step. Choose a different target."
+                )
+            start = (x, y)
+        return None
 
     def _execute_task(self, args: dict[str, Any]) -> dict[str, Any]:
         from apyrobo.skills.executor import SkillExecutor
