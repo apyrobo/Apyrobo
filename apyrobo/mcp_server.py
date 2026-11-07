@@ -379,8 +379,31 @@ class RobotToolbox:
     def has_tool(self, name: str) -> bool:
         return name in self._tools
 
+    def check_arguments(self, name: str, arguments: dict[str, Any]) -> None:
+        """Refuse argument names a motion tool's schema does not list.
+
+        A caller that writes ``velocity`` or ``max_speed`` for ``speed`` would
+        otherwise get the default speed and a success reply. Only motion tools
+        are checked, so a host that adds its own arguments to read-only calls
+        keeps working.
+        """
+        if name not in MOTION_TOOLS:
+            return
+        spec, _ = self._tools[name]
+        known = spec["inputSchema"]["properties"]
+        unknown = sorted(str(key) for key in arguments if key not in known)
+        if unknown:
+            names = ", ".join(f"'{key}'" for key in unknown)
+            allowed = ", ".join(f"'{key}'" for key in known)
+            plural = "s" if len(unknown) > 1 else ""
+            raise ToolError(
+                f"Unknown argument{plural} {names} for {name}; it takes {allowed}. "
+                "The robot did not move."
+            )
+
     def call(self, name: str, arguments: dict[str, Any]) -> Any:
         _, handler = self._tools[name]
+        self.check_arguments(name, arguments)
         return handler(arguments)
 
     def confirmation_prompt(self, name: str, arguments: dict[str, Any]) -> str | None:
@@ -396,6 +419,7 @@ class RobotToolbox:
         hands it to ``approved_plan`` on a yes, and that plan is the one run.
         Raises ToolError for invalid arguments.
         """
+        self.check_arguments(name, arguments)
         p = self.enforcer.policy
         if name == "move_to":
             x, y = _num(arguments, "x"), _num(arguments, "y")

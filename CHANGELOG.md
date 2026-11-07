@@ -193,6 +193,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo mcp`: `move_to`, `rotate` and `execute_task` refuse an argument
+  their schema does not list (their schemas already said `additionalProperties:
+  false`). A caller that sent `velocity` or `max_speed` instead of `speed` used
+  to get the default speed and a success reply. Read-only tools still ignore
+  extra arguments, so a host that adds its own keeps working.
 - `apyrobo mcp --confirm-moves` now asks about the plan of an `execute_task`, not its words. The question showed only the task text, so with `--no-go 2,2,4,4` a yes to "go to (3,3)" was refused after the yes, and a task the planner misread drove where the user never saw. The question now lists each step that will run, with each drive's target and the speed the policy allows; a task whose plan the policy refuses is refused without asking, before any step runs; and a yes runs the plan it was shown, without planning again. Through Nav2 the `move_to` and `execute_task` questions no longer name a speed the robot does not get.
 - `apyrobo mcp` `plan_task` no longer says `can_proceed: true` and `risk_level: low` for a plan the safety policy refuses. With `--no-go 2,2,4,4`, "go to (3,3)" was planned as safe and then refused by `move_to` and `execute_task`. Each drive in the plan is now checked against the no-go zones and allowed areas without moving, and a refused one gives `can_proceed: false` with the same reason a move gets. On adapters that plan their own route (`ros2://` through Nav2) only the target is checked before the move.
 - `apyrobo mcp` `execute_task` and `plan_task` with the rule planner now use the speed a task names. "go to (1, 2) at speed 0.1" planned the default 0.5 m/s and, under `--max-speed 0.2`, drove at 0.2, twice what was asked, with the reply naming 0.5. "at speed N", "speed: N", "at a speed of N" and "at N m/s" now set every drive's speed; the policy limit still clamps it. `plan_task` adds `speed_notes` when a drive will not run at the speed shown (clamped, or through Nav2, which takes no speed). A task with two different speeds, a negative speed, or a speed but no drive is refused with a "Not planned:" reason.

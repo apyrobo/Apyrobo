@@ -258,6 +258,12 @@ missing from your map: a zone you never wrote down looks like free space.
 | `execute_task(task)` | yes | Plan and run; stops at the first refused step and says why |
 | `safety_report()` | no | Every clamp and refusal since the server started |
 
+The tools that move the robot (`move_to`, `rotate`, `execute_task`) refuse an
+argument their schema does not list, such as `velocity` or `max_speed` in place
+of `speed`, with an error naming the arguments they take; the robot does not
+move. They used to drop it and run at the default speed. Read-only tools still
+ignore extra arguments.
+
 `plan_task` and `execute_task` use the built-in rule planner by default, so no
 API key is needed. The MCP client's own model does the reasoning; APYROBO
 checks and executes.
