@@ -200,10 +200,25 @@ def _num(args: dict[str, Any], key: str, *, required: bool = True) -> float | No
 
 
 def _move_speed(args: dict[str, Any]) -> float | None:
-    """The optional linear ``speed`` of a move: finite and not negative."""
+    """The optional linear ``speed`` of a move: finite and above 0."""
     speed = _num(args, "speed", required=False)
-    if speed is not None and speed < 0:
-        raise ToolError(f"Argument 'speed' must be 0 or more m/s, got {speed!r}.")
+    if speed is not None and speed <= 0:
+        # 0 used to run the move at the default speed and report it moved.
+        raise ToolError(
+            f"Argument 'speed' must be more than 0 m/s, got {speed!r}. "
+            "Leave it out for the default speed; call stop to stop."
+        )
+    return speed
+
+
+def _turn_speed(args: dict[str, Any]) -> float | None:
+    """The optional angular ``speed`` of a rotate: finite and not 0."""
+    speed = _num(args, "speed", required=False)
+    if speed == 0:
+        raise ToolError(
+            f"Argument 'speed' must be a turn rate other than 0 rad/s, got {speed!r}. "
+            "Leave it out for the default speed; call stop to stop."
+        )
     return speed
 
 
@@ -438,7 +453,7 @@ class RobotToolbox:
             return f"Allow the robot to move to x={x}, y={y} at {self._drive_speed_text(speed)}?"
         if name == "rotate":
             angle = _num(arguments, "angle_rad")
-            speed = _num(arguments, "speed", required=False)
+            speed = _turn_speed(arguments)
             return f"Allow the robot to rotate by {angle} rad at {self._turn_speed_text(speed)}?"
         task = _str(arguments, "task")
         self.last_plan = self.last_refusal = None
@@ -601,7 +616,7 @@ class RobotToolbox:
 
     def _rotate(self, args: dict[str, Any]) -> dict[str, Any]:
         angle = _num(args, "angle_rad")
-        speed = _num(args, "speed", required=False)
+        speed = _turn_speed(args)
         if not self.rotate_available():
             adapter = type(getattr(self.robot, "_adapter", None)).__name__
             raise ToolError(

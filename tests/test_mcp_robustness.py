@@ -241,7 +241,7 @@ def test_negative_linear_speed_is_refused(speed):
     replies, server = serve_lines([json.dumps(INIT), move])
     result = replies[-1]["result"]
     assert result["isError"] is True
-    assert "0 or more" in result["content"][0]["text"]
+    assert "more than 0 m/s" in result["content"][0]["text"]
     assert_not_moved(server)
 
 
