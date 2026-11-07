@@ -463,7 +463,7 @@ def main(
     stderr: TextIO | None = None,
 ) -> int:
     """Entry point for ``apyrobo mcp selftest``. Returns the exit code."""
-    from apyrobo.mcp_server import build_server, parse_zone
+    from apyrobo.mcp_server import _check_provider_installed, build_server, parse_zone
 
     out = stdout or sys.stdout
     err = stderr or sys.stderr
@@ -487,6 +487,9 @@ def main(
         max_speed = getattr(args, "max_speed", None)
 
     try:
+        # The checks plan with the rule planner, but the server the config
+        # starts would not come up without the planner it names.
+        _check_provider_installed(getattr(args, "provider", None) or "rule")
         server = build_server(
             robot_uri=robot,
             policy=getattr(args, "st_policy", None) or getattr(args, "policy", None),
