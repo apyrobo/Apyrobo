@@ -100,6 +100,12 @@ _NOT_UNDERSTOOD = (
     "'rotate 90 degrees', 'stop' and 'report status'. For other tasks, use "
     "move_to and rotate directly, or start the server with --provider llm."
 )
+_MANY_TARGETS = (
+    "Not planned: this task names more than one place to drive, and the rule "
+    "planner would drive to only some of them and drop the rest, so the robot will "
+    "not move. Send one target per call, like 'go to (1, 1)', then 'go to (3, 3)'. "
+    "A delivery may name two: 'deliver from (1, 1) to (5, 1)'."
+)
 _NO_ANGLE = (
     "Not planned: this task asks to turn but gives no angle with a unit, and the "
     "robot will not guess one. Give it, like 'rotate 90 degrees' or 'turn right "
@@ -588,6 +594,25 @@ class RobotToolbox:
             if unreadable is not None:
                 plan.update(steps=[], confidence=0.0, can_proceed=False, reason=unreadable)
                 return graph, plan
+            # It drives to one place per step and keeps one coordinate for each:
+            # every place the task names must be a step's target, or the rest
+            # would be dropped with no word.
+            named = RuleBasedProvider._extract_coordinates(_rule_coordinates_text(text))
+            distinct = {(c["x"], c["y"]) for c in named}
+            if len(distinct) > 1:
+                driven = {
+                    (
+                        float(s["parameters"].get("x", 0.0)),
+                        float(s["parameters"].get("y", 0.0)),
+                    )
+                    for s in steps
+                    if s["skill_id"].startswith("navigate_to")
+                }
+                if not distinct <= driven:
+                    plan.update(
+                        steps=[], confidence=0.0, can_proceed=False, reason=_MANY_TARGETS
+                    )
+                    return graph, plan
             # Its last resort is a status report: for a task that did not ask
             # for one, that would end in "completed" with nothing done.
             ids = [step["skill_id"].rsplit("_", 1)[0] for step in steps]
@@ -611,7 +636,6 @@ class RobotToolbox:
                 return graph, plan
             # A plan from the rule planner: its templates hold placeholder
             # targets, so every drive must go to a point the task named.
-            named = RuleBasedProvider._extract_coordinates(_rule_coordinates_text(text))
             for step in steps:
                 if step["skill_id"].startswith("navigate_to"):
                     target = {
