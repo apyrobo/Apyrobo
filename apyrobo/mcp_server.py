@@ -111,6 +111,12 @@ _NO_ANGLE = (
     "robot will not guess one. Give it, like 'rotate 90 degrees' or 'turn right "
     "45 degrees', or call rotate with angle_rad."
 )
+_SPEED_NO_DRIVE = (
+    "Not planned: this task names a speed, but the plan has no drive to apply it "
+    "to, and the robot will not drop it with no word. A speed in a task sets the "
+    "drive speed, like 'go to (1, 2) at 0.2 m/s'; to turn at a set speed, call "
+    "rotate with speed."
+)
 # How often the stop is repeated while a motion call is still unwinding.
 HALT_REPEAT_S = 0.2
 # --audit-log: longest "detail" kept on a line.
@@ -602,6 +608,11 @@ class RobotToolbox:
         ):
             here = self._position()
             text = f"from ({here['x']:.6f}, {here['y']:.6f}) {text}"
+        # The coordinates text drops a speed so it is not read as a target;
+        # hand each one back to the planner in the form it reads as a speed.
+        for found in RuleBasedProvider._SPEED.finditer(task.lower()):
+            number = found.group(1) if found.group(1) is not None else found.group(2)
+            text = f"{text} at speed {number}"
         return text
 
     def _plan(self, task: str) -> tuple[Any, dict[str, Any]]:
@@ -629,7 +640,9 @@ class RobotToolbox:
             "can_proceed": bool(report.can_proceed),
         }
         if isinstance(getattr(self.agent, "planned_by", None), RuleBasedProvider):
-            unreadable = RuleBasedProvider.cannot_read(text)
+            # The task as sent too: rewriting it drops a speed, and with it
+            # the sign that the speed was not a number it could read.
+            unreadable = RuleBasedProvider.cannot_read(text) or RuleBasedProvider.cannot_read(task)
             if unreadable is not None:
                 plan.update(steps=[], confidence=0.0, can_proceed=False, reason=unreadable)
                 return graph, plan
@@ -673,6 +686,13 @@ class RobotToolbox:
                     ),
                 )
                 return graph, plan
+            # A speed applies to drives only: a turn or a status report would
+            # drop it with no word.
+            if RuleBasedProvider.extract_speed(text) is not None and not any(
+                step["skill_id"].startswith("navigate_to") for step in steps
+            ):
+                plan.update(steps=[], confidence=0.0, can_proceed=False, reason=_SPEED_NO_DRIVE)
+                return graph, plan
             # A plan from the rule planner: its templates hold placeholder
             # targets, so every drive must go to a point the task named.
             for step in steps:
@@ -694,7 +714,24 @@ class RobotToolbox:
             refusal = self._plan_refusal(plan["steps"])
             if refusal is not None:
                 plan.update(can_proceed=False, reason=refusal)
+        notes = self._speed_notes(plan["steps"])
+        if notes:
+            plan["speed_notes"] = notes
         return plan
+
+    def _speed_notes(self, steps: list[dict[str, Any]]) -> list[str]:
+        """Say which drives will not run at the speed the plan shows."""
+        notes = []
+        for number, step in enumerate(steps, start=1):
+            if not step["skill_id"].startswith("navigate_to"):
+                continue
+            speed = step["parameters"].get("speed")
+            speed = float(speed) if speed is not None else None
+            if not self.speed_limit_applies() or (
+                speed is not None and speed > self.enforcer.policy.max_speed
+            ):
+                notes.append(f"Step {number} drives at {self._drive_speed_text(speed)}.")
+        return notes
 
     def _plan_refusal(
         self,

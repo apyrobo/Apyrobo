@@ -132,6 +132,26 @@ class RuleBasedProvider(AgentProvider):
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
 
+    # A drive speed in the task: "at speed 0.1", "speed: 0.3", "at a speed of
+    # 0.2 m/s", "at 0.1 m/s". The number must stand whole ("speed 1e3" is not
+    # read as 1).
+    _SPEED = re.compile(
+        r"\bspeed\s*(?:of\s+|[:=]\s*)?(-?\d+(?:\.\d+)?)(?![\d.]|\s*e\s*[+-]?\d)"
+        r"|\bat\s+(-?\d+(?:\.\d+)?)\s*m/s\b"
+    )
+
+    @classmethod
+    def extract_speed(cls, task: str) -> float | None:
+        """The drive speed ``task`` names, in m/s, or None.
+
+        Only the first one counts; :meth:`cannot_read` refuses a task that
+        names two different speeds or a negative one.
+        """
+        found = cls._SPEED.search(task.lower())
+        if found is None:
+            return None
+        return float(found.group(1) if found.group(1) is not None else found.group(2))
+
     @classmethod
     def cannot_read(cls, task: str) -> str | None:
         """Say why this planner cannot plan ``task`` as written, or None.
@@ -160,6 +180,21 @@ class RuleBasedProvider(AgentProvider):
                 "target, and the rule planner reads only x and y, so the robot "
                 "will not guess which to drop. Give one (x, y) pair, like "
                 "'go to (1, 2)'."
+            )
+        speeds = {
+            float(m.group(1) if m.group(1) is not None else m.group(2))
+            for m in cls._SPEED.finditer(text)
+        }
+        if len(speeds) > 1:
+            return (
+                "Not planned: this task names more than one speed, and the rule "
+                "planner would use only one, so the robot will not guess which. "
+                "Give one speed, like 'go to (1, 2) at 0.2 m/s'."
+            )
+        if speeds and min(speeds) < 0:
+            return (
+                "Not planned: this task names a negative speed. Give a speed of 0 "
+                "or more m/s, like 'go to (1, 2) at 0.2 m/s'."
             )
         return None
 
@@ -223,8 +258,9 @@ class RuleBasedProvider(AgentProvider):
                 )
                 return [{"skill_id": skill_id, "parameters": {}}]
 
-        # Try to extract coordinates from the task
-        coords = self._extract_coordinates(task_lower)
+        # Try to extract coordinates from the task; a speed is not one.
+        coords = self._extract_coordinates(self._SPEED.sub(" ", task_lower))
+        speed = self.extract_speed(task)
 
         for keywords, plan_template in self.TASK_PATTERNS:
             if any(kw in task_lower for kw in keywords):
@@ -243,6 +279,12 @@ class RuleBasedProvider(AgentProvider):
                             nav_steps[0]["parameters"].update(coords[0])
                     elif nav_steps and coords:
                         nav_steps[-1]["parameters"].update(coords[-1])
+
+                # A speed the task names is the speed of every drive.
+                if speed is not None:
+                    for step in plan:
+                        if step["skill_id"] == "navigate_to":
+                            step["parameters"]["speed"] = speed
 
                 # Extract room references
                 rooms = self._extract_rooms(task_lower)
