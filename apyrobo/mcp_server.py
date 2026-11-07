@@ -249,6 +249,12 @@ class RobotToolbox:
         self.robot_uri = robot_uri
         # Set while a motion call is being stopped: why execute_task ends early.
         self.stop_reason: str | None = None
+        # --confirm-moves on execute_task: the plan the last question showed,
+        # and the plan the user said yes to, which execute_task then runs
+        # instead of planning again.
+        self.last_plan: tuple[str, Any, dict[str, Any]] | None = None
+        self.approved_plan: tuple[str, Any, dict[str, Any]] | None = None
+        self.last_refusal: str | None = None
         self._tools: dict[str, tuple[dict[str, Any], Callable[[dict[str, Any]], Any]]] = {}
         self._register()
 
@@ -374,11 +380,14 @@ class RobotToolbox:
     def confirmation_prompt(self, name: str, arguments: dict[str, Any]) -> str | None:
         """What the user is asked to confirm under --confirm-moves.
 
-        Shows the target and the speed the policy will actually allow.
-        Returns None for a move the policy refuses anyway (target in a
-        no-go zone or outside the allowed areas, or a route that crosses a
-        zone or leaves the areas), so the user is not asked
-        to approve a refused move.
+        Shows the target and the speed the policy will actually allow; for
+        execute_task, each step of the plan that will run. Returns None for
+        a move or a plan the policy refuses anyway (a target in a no-go zone
+        or outside the allowed areas, or a route that crosses a zone or
+        leaves the areas) and for a task that cannot be planned, so the user
+        is not asked to approve something that will be refused.
+        For execute_task the plan shown is kept in ``last_plan``: the server
+        hands it to ``approved_plan`` on a yes, and that plan is the one run.
         Raises ToolError for invalid arguments.
         """
         p = self.enforcer.policy
@@ -396,30 +405,60 @@ class RobotToolbox:
                     return None
             except SafetyViolation:
                 return None
-            if speed is None:
-                speed_text = f"default speed (policy limit {p.max_speed} m/s)"
-            elif speed > p.max_speed:
-                speed_text = f"{p.max_speed} m/s (requested {speed}, clamped to the policy limit)"
-            else:
-                speed_text = f"{speed} m/s"
-            return f"Allow the robot to move to x={x}, y={y} at {speed_text}?"
+            return f"Allow the robot to move to x={x}, y={y} at {self._drive_speed_text(speed)}?"
         if name == "rotate":
             angle = _num(arguments, "angle_rad")
             speed = _num(arguments, "speed", required=False)
-            limit = p.max_angular_speed
-            if speed is None:
-                speed_text = f"default speed (policy limit {limit} rad/s)"
-            elif abs(speed) > limit:
-                speed_text = f"{limit} rad/s (requested {speed}, clamped to the policy limit)"
-            else:
-                speed_text = f"{speed} rad/s"
-            return f"Allow the robot to rotate by {angle} rad at {speed_text}?"
+            return f"Allow the robot to rotate by {angle} rad at {self._turn_speed_text(speed)}?"
         task = _str(arguments, "task")
-        return (
-            f"Allow the robot to carry out the task {task!r}? Each step stays within "
-            f"the safety policy '{p.name}' (max {p.max_speed} m/s, "
-            f"{len(p.collision_zones)} no-go zone(s))."
-        )
+        self.last_plan = self.last_refusal = None
+        graph, plan = self._plan(task)
+        if plan.get("reason") or not plan["steps"]:
+            return None  # execute_task refuses it without moving
+        self.last_refusal = self._plan_refusal(plan["steps"], "The robot did not move.")
+        if self.last_refusal is not None:
+            return None
+        self.last_plan = (task, graph, plan)
+        lines = [f"Allow the robot to carry out the task {task!r}? It will run this plan:"]
+        for number, step in enumerate(plan["steps"], start=1):
+            lines.append(f"{number}. {self._step_text(step)}")
+        return "\n".join(lines)
+
+    def _drive_speed_text(self, speed: float | None) -> str:
+        limit = self.enforcer.policy.max_speed
+        if not self.speed_limit_applies():
+            return (
+                "the speed Nav2's controller is configured for (on this robot the "
+                f"{limit} m/s policy limit does not reach the drive)"
+            )
+        if speed is None:
+            return f"default speed (policy limit {limit} m/s)"
+        if speed > limit:
+            return f"{limit} m/s (requested {speed}, clamped to the policy limit)"
+        return f"{speed} m/s"
+
+    def _turn_speed_text(self, speed: float | None) -> str:
+        limit = self.enforcer.policy.max_angular_speed
+        if speed is None:
+            return f"default speed (policy limit {limit} rad/s)"
+        if abs(speed) > limit:
+            return f"{limit} rad/s (requested {speed}, clamped to the policy limit)"
+        return f"{speed} rad/s"
+
+    def _step_text(self, step: dict[str, Any]) -> str:
+        """One plan step as the user reads it in a confirmation question."""
+        params = step.get("parameters") or {}
+        if step["skill_id"].startswith("navigate_to"):
+            x = float(params.get("x", 0.0))
+            y = float(params.get("y", 0.0))
+            return f"Drive to x={x}, y={y} at {self._drive_speed_text(params.get('speed'))}"
+        if step["skill_id"].startswith("rotate"):
+            return (
+                f"Turn by {params.get('angle_rad')} rad at "
+                f"{self._turn_speed_text(params.get('speed'))}"
+            )
+        shown = ", ".join(f"{k}={v}" for k, v in params.items() if v is not None)
+        return f"{step['name']} ({shown})" if shown else str(step["name"])
 
     # -- helpers -------------------------------------------------------
 
@@ -657,7 +696,11 @@ class RobotToolbox:
                 plan.update(can_proceed=False, reason=refusal)
         return plan
 
-    def _plan_refusal(self, steps: list[dict[str, Any]]) -> str | None:
+    def _plan_refusal(
+        self,
+        steps: list[dict[str, Any]],
+        tail: str = "Nothing was moved; execute_task would be refused at this step.",
+    ) -> str | None:
         """The refusal the first drive in *steps* would get, checked without moving."""
         check = getattr(self.enforcer, "move_problem", None)
         if check is None:
@@ -672,8 +715,7 @@ class RobotToolbox:
             if problem is not None:
                 return (
                     f"REFUSED by safety policy '{self.enforcer.policy.name}' at step "
-                    f"{number}: {problem}. Nothing was moved; execute_task would be "
-                    "refused at this step. Choose a different target."
+                    f"{number}: {problem}. {tail} Choose a different target."
                 )
             start = (x, y)
         return None
@@ -681,7 +723,13 @@ class RobotToolbox:
     def _execute_task(self, args: dict[str, Any]) -> dict[str, Any]:
         from apyrobo.skills.executor import SkillExecutor
 
-        graph, plan = self._plan(_str(args, "task"))
+        task = _str(args, "task")
+        approved, self.approved_plan = self.approved_plan, None
+        if approved is not None and approved[0] == task:
+            # The user said yes to this plan: run it, never a new one.
+            graph, plan = approved[1], approved[2]
+        else:
+            graph, plan = self._plan(task)
         if plan.get("reason"):
             raise ToolError(plan["reason"])
         if not plan["steps"]:
@@ -757,6 +805,9 @@ class MCPServer:
         # yes runs its move once, and a resend of the same state is refused
         # until it would have expired anyway.
         self._spent_states: dict[str, int] = {}
+        # execute_task plans shown in a question, by its requestState, so a
+        # yes runs the plan the user saw and the planner runs once.
+        self._asked_plans: dict[str, tuple[str, Any, dict[str, Any]]] = {}
         # Capabilities the client declared in initialize (legacy sessions).
         self._client_caps: dict[str, Any] = {}
         # Set by serve(): the stdio channel used to send a legacy client an
@@ -1018,6 +1069,9 @@ class MCPServer:
         for old, issued in list(self._spent_states.items()):
             if now - issued > CONFIRM_TTL_S:
                 del self._spent_states[old]
+        for old in list(self._asked_plans):
+            if now - int(old.split(".", 1)[0]) > CONFIRM_TTL_S:
+                del self._asked_plans[old]
         self._spent_states[state] = int(state.split(".", 1)[0])
 
     def _confirm_gate(
@@ -1032,6 +1086,7 @@ class MCPServer:
         name = params.get("name")
         if not self.confirm_moves or name not in MOTION_TOOLS:
             return None
+        self.toolbox.approved_plan = None  # only a yes in this call sets it
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
             return None  # _tools_call reports the bad arguments
@@ -1044,15 +1099,35 @@ class MCPServer:
                 "elicitation. The robot did not move.",
                 is_error=True,
             )
+        responses = params.get("inputResponses")
+        if responses is not None and name == "execute_task":
+            # The answer to a question about a plan: run that plan, not a new one.
+            state = params.get("requestState")
+            planned = self._asked_plans.pop(state, None) if isinstance(state, str) else None
+            if planned is None or not self._state_ok(state, name, arguments):
+                return _error(
+                    msg_id, INVALID_PARAMS,
+                    "Invalid or expired requestState: call the tool again without "
+                    "inputResponses to ask for a new confirmation",
+                )
+            self._spend_state(state)
+            answer = responses.get(CONFIRM_INPUT_KEY) if isinstance(responses, dict) else None
+            if isinstance(answer, dict) and answer.get("action") == "accept":
+                self.toolbox.approved_plan = planned
+                return None
+            action = answer.get("action") if isinstance(answer, dict) else None
+            return _declined(msg_id, name, action)
         try:
             prompt = self.toolbox.confirmation_prompt(name, arguments)
         except ToolError as exc:
             return _tool_result(msg_id, str(exc), is_error=True)
         if prompt is None:
-            return None  # the policy refuses it anyway; no need to ask
+            return self._refused_unasked(msg_id, name)
 
-        responses = params.get("inputResponses")
         if responses is None:
+            state = self._seal(name, arguments, int(time.time()))
+            if name == "execute_task" and self.toolbox.last_plan is not None:
+                self._asked_plans[state] = self.toolbox.last_plan
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -1068,7 +1143,7 @@ class MCPServer:
                             },
                         }
                     },
-                    "requestState": self._seal(name, arguments, int(time.time())),
+                    "requestState": state,
                 },
             }
         if not self._state_ok(params.get("requestState"), name, arguments):
@@ -1086,6 +1161,18 @@ class MCPServer:
         action = answer.get("action") if isinstance(answer, dict) else None
         return _declined(msg_id, name, action)
 
+    def _refused_unasked(self, msg_id: Any, name: str) -> dict[str, Any] | None:
+        """No question for a call the policy refuses anyway.
+
+        A move or a task that cannot be planned is refused when it runs,
+        before anything moves. A task whose plan the policy refuses is
+        refused here, so its earlier steps never run without a yes.
+        """
+        refusal = self.toolbox.last_refusal if name == "execute_task" else None
+        if refusal is None:
+            return None
+        return _tool_result(msg_id, refusal, is_error=True)
+
     def _legacy_confirm(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any] | None:
         """Ask the user to confirm a motion command (initialize-era sessions).
 
@@ -1096,6 +1183,7 @@ class MCPServer:
         name = params.get("name")
         if not self.confirm_moves or name not in MOTION_TOOLS:
             return None
+        self.toolbox.approved_plan = None  # only a yes in this call sets it
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
             return None  # _tools_call reports the bad arguments
@@ -1120,10 +1208,12 @@ class MCPServer:
         except ToolError as exc:
             return _tool_result(msg_id, str(exc), is_error=True)
         if prompt is None:
-            return None  # the policy refuses it anyway; no need to ask
+            return self._refused_unasked(msg_id, name)
+        planned = self.toolbox.last_plan if name == "execute_task" else None
         answer = self._elicit(msg_id, prompt)
         action = answer.get("action") if isinstance(answer, dict) else None
         if action == "accept":
+            self.toolbox.approved_plan = planned
             return None
         return _declined(msg_id, name, action)
 
