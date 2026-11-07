@@ -267,7 +267,13 @@ The rule planner has no map, so a drive needs coordinates in the task: `(3, 3)`,
 kitchen", moves nothing: `execute_task` returns an error saying what to give,
 and `plan_task` returns `can_proceed: false` with the same reason. A delivery
 with one point starts from where the robot is; "deliver from (1, 1) to (5, 1)"
-names both. A speed in the task is not read, so use `move_to` to set one.
+names both. A speed in the task sets every drive's speed: "at speed 0.1",
+"speed: 0.1", "at a speed of 0.1" or "at 0.1 m/s". The policy limit still
+clamps it, and `plan_task` adds `speed_notes` for each drive that will not run
+at the speed shown (clamped, or through Nav2, which takes no speed). A task
+with two different speeds, a negative one, or a speed but no drive (such as
+"rotate 90 degrees at speed 0.3": call `rotate` with `speed` instead) is refused
+with a "Not planned:" reason.
 
 The rule planner cannot read a negation or every way of writing a number, so it
 refuses those rather than guess: a task with "don't", "do not", "never" or "not"
