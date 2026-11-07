@@ -285,6 +285,12 @@ a status report and end `completed` with the robot where it was; it now moves
 nothing and gets a "Not planned:" reason that lists what it understands. A turn
 on a robot that cannot turn in place, such as `ros2://`, is refused the same way.
 
+It plans one place per drive, so a task that names more than one place to
+drive, such as "go to (3, 3) then come back to (0, 0)", is refused with a
+"Not planned:" reason: send one target per call. It used to drive only to the
+last place and report `completed`, so a refusal for the first one never showed.
+A delivery may name two: "deliver from (1, 1) to (5, 1)" drives to both.
+
 ## Options
 
 | Flag | Default | Meaning |
