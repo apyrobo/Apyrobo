@@ -193,6 +193,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo mcp`: `move_to` and `rotate` refuse `speed` 0 with an error, and the
+  robot does not move. `move_to` with speed 0 drove at the default speed and
+  reported `moved`; `rotate` with speed 0 reported `rotated`. Leave `speed` out
+  for the default speed.
 - `apyrobo mcp`: `move_to`, `rotate` and `execute_task` refuse an argument
   their schema does not list (their schemas already said `additionalProperties:
   false`). A caller that sent `velocity` or `max_speed` instead of `speed` used

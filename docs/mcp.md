@@ -264,6 +264,12 @@ of `speed`, with an error naming the arguments they take; the robot does not
 move. They used to drop it and run at the default speed. Read-only tools still
 ignore extra arguments.
 
+`speed` 0 is refused on `move_to` and `rotate` with an error, and the robot does
+not move; leave `speed` out for the default, and call `stop` to stop. Targets have
+no range limit of their own: `move_to(1e308, 0)` is a valid number. To keep
+moves inside the space you mean, set allowed areas
+([Deny by default with allowed areas](#deny-by-default-with-allowed-areas)).
+
 `plan_task` and `execute_task` use the built-in rule planner by default, so no
 API key is needed. The MCP client's own model does the reasoning; APYROBO
 checks and executes.
