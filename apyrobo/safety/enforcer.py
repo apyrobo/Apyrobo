@@ -1083,6 +1083,57 @@ class SafetyEnforcer:
         self._record_audit("violation", violation)
         raise SafetyViolation(message)
 
+    def move_problem(
+        self, x: float, y: float, start: tuple[float, float] | None = None
+    ) -> str | None:
+        """Why move(x, y) would be refused by the zones, or None. Moves nothing.
+
+        Checks the target against the no-go zones, the allowed areas and the
+        dynamic zones, then the straight route from *start* (default: the
+        current position), with the same wording move() uses. Records no
+        violation. On an adapter that plans its own route the route is not
+        checked here: only move() asks the planner for it. Battery and human
+        proximity are not checked either.
+        """
+        for name, value in (("x", x), ("y", y)):
+            if not math.isfinite(value):
+                return f"Invalid move command: {name} must be a finite number, got {value!r}"
+        for zone in self._policy.collision_zones:
+            if self._point_in_zone(x, y, zone):
+                return f"Position ({x:g}, {y:g}) is inside collision zone {describe_area(zone)}"
+        areas = self._policy.allowed_areas
+        if self.outside_allowed_areas(x, y):
+            return f"Position ({x:g}, {y:g}) is outside every allowed area: " + ", ".join(
+                describe_area(a) for a in areas
+            )
+        zones = list(self._policy.collision_zones)
+        if self._world_state is not None:
+            dynamic = self._get_dynamic_zones()
+            for zone in dynamic:
+                if self._point_in_zone(x, y, zone):
+                    return (
+                        f"Position ({x:g}, {y:g}) blocked by dynamic obstacle zone "
+                        f"{describe_area(zone)}"
+                    )
+            zones += dynamic
+        if (not zones and not areas) or getattr(self._robot, "plans_own_path", False) is True:
+            return None
+        if start is None:
+            px, py = self._robot.get_position()
+            start = (float(px), float(py))
+        route_text = f"({start[0]:g}, {start[1]:g}) to ({x:g}, {y:g})"
+        for zone in zones:
+            if segment_enters_zone(start, (x, y), zone):
+                return f"Path from {route_text} crosses collision zone {describe_area(zone)}"
+        left_at = route_leaves_areas([start, (x, y)], areas)
+        if left_at is not None:
+            return (
+                f"Path from {route_text} leaves the allowed areas at "
+                f"({left_at[0]:g}, {left_at[1]:g}): "
+                + ", ".join(describe_area(a) for a in areas)
+            )
+        return None
+
     def _check_path(self, x: float, y: float) -> None:
         """Refuse a move whose route enters a zone or leaves the allowed areas."""
         fault = self.route_fault(x, y)
