@@ -93,6 +93,18 @@ _NO_TARGET = (
     "will not guess one. Give them, like 'go to (3, 3)' or 'deliver from (1, 1) "
     "to (5, 1)'."
 )
+_NOT_UNDERSTOOD = (
+    "Not planned: the rule planner did not recognise this task, so the robot "
+    "will not do something else and call it done. It understands: 'go to (x, y)', "
+    "'pick up the box at (x, y)', 'deliver from (x1, y1) to (x2, y2)', "
+    "'rotate 90 degrees', 'stop' and 'report status'. For other tasks, use "
+    "move_to and rotate directly, or start the server with --provider llm."
+)
+_NO_ANGLE = (
+    "Not planned: this task asks to turn but gives no angle with a unit, and the "
+    "robot will not guess one. Give it, like 'rotate 90 degrees' or 'turn right "
+    "45 degrees', or call rotate with angle_rad."
+)
 # How often the stop is repeated while a motion call is still unwinding.
 HALT_REPEAT_S = 0.2
 # --audit-log: longest "detail" kept on a line.
@@ -575,6 +587,27 @@ class RobotToolbox:
             unreadable = RuleBasedProvider.cannot_read(text)
             if unreadable is not None:
                 plan.update(steps=[], confidence=0.0, can_proceed=False, reason=unreadable)
+                return graph, plan
+            # Its last resort is a status report: for a task that did not ask
+            # for one, that would end in "completed" with nothing done.
+            ids = [step["skill_id"].rsplit("_", 1)[0] for step in steps]
+            if ids == ["report_status"] and not RuleBasedProvider.is_status_ask(text):
+                turn = RuleBasedProvider._TURN_WORD.search(text.lower())
+                reason = _NO_ANGLE if turn else _NOT_UNDERSTOOD
+                plan.update(steps=[], confidence=0.0, can_proceed=False, reason=reason)
+                return graph, plan
+            # A turn must be the one the task stated, never the 0 rad default.
+            if "rotate" in ids and RuleBasedProvider.extract_angle(text) is None:
+                plan.update(steps=[], confidence=0.0, can_proceed=False, reason=_NO_ANGLE)
+                return graph, plan
+            if "rotate" in ids and not self.rotate_available():
+                plan.update(
+                    steps=[], confidence=0.0, can_proceed=False,
+                    reason=(
+                        f"Not planned: {self.robot_uri} cannot turn in place, so the "
+                        "robot will not report a turn it did not make."
+                    ),
+                )
                 return graph, plan
             # A plan from the rule planner: its templates hold placeholder
             # targets, so every drive must go to a point the task named.
