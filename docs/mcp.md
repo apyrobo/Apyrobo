@@ -352,10 +352,18 @@ Each answer is good for one call. On 2026-07-28 a client that resends the
 same call with the same answer gets an `Invalid or expired requestState`
 error and must ask again; an unanswered question expires after 10 minutes.
 
-One limit to know. For `execute_task` the question shows the task text and
-the policy limits, not the planned steps, so a yes approves the words, not a
-route: a target in a no-go zone is refused only after the yes, and the robot
-follows what the planner made of the words.
+For `execute_task` the question lists the plan that will run, one line per
+step: each drive's target and the speed the policy allows, each turn's
+angle. A task whose plan the policy refuses (a step's target in a no-go zone
+or outside the allowed areas, or a straight route between steps that crosses
+a zone) is refused without asking, before any step runs; so is a task the
+planner cannot read. A yes runs the plan it was shown: the planner is not
+asked again, so an LLM planner cannot hand the robot a different plan. On
+`ros2://` through Nav2 only each step's target is checked before asking,
+since Nav2 picks the route, and the question says the speed comes from
+Nav2's controller, not the policy (see [Speed on `ros2://`](#speed-on-ros2)).
+Without `--confirm-moves`, `execute_task` still runs a plan step by step and
+stops at the first step the policy refuses.
 
 This works with clients that declare form elicitation, in both protocol
 eras: on 2026-07-28 through the multi-round-trip `input_required` result,
