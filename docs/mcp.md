@@ -214,8 +214,9 @@ every 5 seconds while the move runs: elapsed time, the robot's position, and for
 nothing after the move's reply. Some clients reset an idle timeout on progress
 (reported for Claude Code's stdio idle timer and the Cursor IDE); none of them
 lifts a total limit like the ones above, and none is tested here. The stop and
-cancel paths do not wait on it. This is tested on `mock://` and a slow test
-adapter.
+cancel paths do not wait on it. This is tested on `mock://` with a slow test
+adapter, with our own stdio client and with the official MCP Python client
+(`mcp` 2.3.0, its progress callback), not with a desktop host.
 
 **Stopping from a client.** Don't assume a client's stop button stops the robot
 until you have tried it: look for `cancelled` in the `--audit-log`. Reports say
