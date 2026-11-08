@@ -148,23 +148,33 @@ def test_nl_task_navigates_the_robot_via_nav2(robot):
 # Well under the controller's own top speed (0.26 m/s in nav2_bringup's DWB
 # params), so a limit that did not reach Nav2 would show in the measured peak.
 MCP_MAX_SPEED = 0.1
-# Room for odometry noise and a controller tick over the limit.
-MCP_SPEED_TOLERANCE = 0.03
+# The limit governs what Nav2's controller commands, so that is what the
+# test holds tight: the controller's output may only round over the limit.
+MCP_COMMAND_TOLERANCE = 0.01
+# /odom is wheel odometry with physics in the loop: a stall-and-recover can
+# spike a single reading over the limit (0.132 m/s seen in CI) while the
+# commands stayed under it. Odometry is checked loosely, over a short window.
+MCP_ODOM_TOLERANCE = 0.03
+MCP_ODOM_WINDOW_S = 0.5
+# Nav2's bringup remaps the controller's output to /cmd_vel_nav and feeds it
+# through the velocity smoother to /cmd_vel. Without a smoother the
+# controller publishes /cmd_vel itself.
+NAV2_CONTROLLER_TOPICS = ("/cmd_vel_nav", "/cmd_vel")
 MCP_NO_GO = (0.0, 0.0, 1.0, 1.0)
 MCP_NO_GO_TARGET = (0.5, 0.5)
 
 
 @contextlib.contextmanager
 def _odom_speeds(adapter: Any):
-    """Collect the robot's forward speed from /odom while the block runs."""
+    """Collect (time, forward speed) from /odom while the block runs."""
     from nav_msgs.msg import Odometry
 
     from apyrobo.core.ros2_bridge import _sensor_qos
 
-    speeds: list[float] = []
+    speeds: list[tuple[float, float]] = []
     sub = adapter._node.create_subscription(
         Odometry, "/odom",
-        lambda msg: speeds.append(abs(msg.twist.twist.linear.x)),
+        lambda msg: speeds.append((time.monotonic(), abs(msg.twist.twist.linear.x))),
         _sensor_qos(),
     )
     try:
@@ -172,6 +182,44 @@ def _odom_speeds(adapter: Any):
     finally:
         with contextlib.suppress(Exception):
             adapter._node.destroy_subscription(sub)
+
+
+def _controller_topic(adapter: Any) -> str:
+    """The topic Nav2's controller publishes its velocity commands on."""
+    for topic in NAV2_CONTROLLER_TOPICS:
+        if adapter._node.count_publishers(topic) > 0:
+            return topic
+    return NAV2_CONTROLLER_TOPICS[-1]
+
+
+@contextlib.contextmanager
+def _commanded_speeds(adapter: Any, topic: str):
+    """Collect the forward speed Nav2's controller commands while the block runs."""
+    from geometry_msgs.msg import Twist
+
+    speeds: list[float] = []
+    sub = adapter._node.create_subscription(
+        Twist, topic, lambda msg: speeds.append(abs(msg.linear.x)), 10,
+    )
+    try:
+        yield speeds
+    finally:
+        with contextlib.suppress(Exception):
+            adapter._node.destroy_subscription(sub)
+
+
+def _peak_moving_average(samples: list[tuple[float, float]], window_s: float) -> float:
+    """Highest mean speed over any `window_s` stretch of (time, speed) samples."""
+    peak = 0.0
+    start = 0
+    total = 0.0
+    for end, (t, v) in enumerate(samples):
+        total += v
+        while samples[start][0] < t - window_s:
+            total -= samples[start][1]
+            start += 1
+        peak = max(peak, total / (end - start + 1))
+    return peak
 
 
 class _StdioMCPClient:
@@ -232,7 +280,8 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
 
     Same Nav2 stack as above, reached over MCP instead of the Python API:
     an over-limit move is clamped, Nav2 takes the goal and the physics robot
-    gets there no faster than the limit, measured on /odom; a target in the
+    gets there no faster than the limit, measured on the controller's
+    commands and, loosely, on /odom; a target in the
     no-go zone is refused and the robot does not move.
     """
     adapter = robot._adapter
@@ -258,7 +307,9 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
             tools = {t["name"] for t in client.request("tools/list", {})["tools"]}
             assert {"move_to", "stop", "safety_report"} <= tools
 
-            with _odom_speeds(adapter) as speeds:
+            cmd_topic = _controller_topic(adapter)
+            with _odom_speeds(adapter) as speeds, \
+                    _commanded_speeds(adapter, cmd_topic) as commanded:
                 is_error, moved = client.call_tool(
                     "move_to", {"x": target[0], "y": target[1], "speed": 1.0}
                 )
@@ -273,11 +324,25 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
                 f"Nav2's controller did not take the speed limit: {moved}"
             )
             assert len(speeds) > 20, f"too few /odom samples during the move: {len(speeds)}"
-            peak = max(speeds)
-            assert peak > 0.03, f"/odom never showed the robot moving (peak {peak:.3f} m/s)"
-            assert peak <= MCP_MAX_SPEED + MCP_SPEED_TOLERANCE, (
-                f"robot drove at {peak:.3f} m/s through Nav2 under a "
+            odom_peak = max(v for _, v in speeds)
+            odom_avg_peak = _peak_moving_average(speeds, MCP_ODOM_WINDOW_S)
+            cmd_peak = max(commanded, default=0.0)
+            print(
+                f"Nav2 speed under a {MCP_MAX_SPEED} m/s limit: {cmd_topic} peak "
+                f"{cmd_peak:.3f} m/s over {len(commanded)} commands; /odom raw peak "
+                f"{odom_peak:.3f} m/s, {MCP_ODOM_WINDOW_S} s average peak {odom_avg_peak:.3f} m/s"
+            )
+            assert odom_peak > 0.03, (
+                f"/odom never showed the robot moving (peak {odom_peak:.3f} m/s)"
+            )
+            assert commanded, f"no velocity commands seen on {cmd_topic} during the move"
+            assert cmd_peak <= MCP_MAX_SPEED + MCP_COMMAND_TOLERANCE, (
+                f"Nav2's controller commanded {cmd_peak:.3f} m/s on {cmd_topic} under a "
                 f"{MCP_MAX_SPEED} m/s limit"
+            )
+            assert odom_avg_peak <= MCP_MAX_SPEED + MCP_ODOM_TOLERANCE, (
+                f"robot averaged {odom_avg_peak:.3f} m/s over {MCP_ODOM_WINDOW_S} s on /odom "
+                f"through Nav2 under a {MCP_MAX_SPEED} m/s limit (raw peak {odom_peak:.3f})"
             )
 
             mid = adapter.position
