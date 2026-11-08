@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import sys
+import time
 from unittest.mock import MagicMock, patch, call
 import pytest
 
@@ -1487,3 +1488,204 @@ class TestNav2SpeedLimit:
             )
         topics = [c.args[1] for c in node.create_publisher.call_args_list]
         assert "/robot1/speed_limit" in topics
+
+
+# ===========================================================================
+# Nav2 speed limit vs the controller's own top speed
+# ===========================================================================
+
+class _FakeParamValue:
+    """An rcl_interfaces/ParameterValue: 3 double, 4 string, 9 string array."""
+
+    def __init__(self, value):
+        self.type = 0
+        if isinstance(value, float):
+            self.type, self.double_value = 3, value
+        elif isinstance(value, str):
+            self.type, self.string_value = 4, value
+        elif isinstance(value, list):
+            self.type, self.string_array_value = 9, value
+
+
+def _fake_controller(params):
+    """A stand-in for controller_server's parameters: name -> value."""
+    return lambda names: {n: params[n] for n in names if n in params}
+
+
+CONTROLLERS = {
+    "DWB": ("dwb_core::DWBLocalPlanner", "max_speed_xy", 0.26),
+    "RPP": (
+        "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController",
+        "desired_linear_vel", 0.26,
+    ),
+    "MPPI": ("nav2_mppi_controller::MPPIController", "vx_max", 0.26),
+}
+
+
+def _controller_adapter(params):
+    adapter, pub = _speed_limit_adapter()
+    adapter._get_controller_params = _fake_controller(params)
+    adapter._controller_plugin, adapter._controller_max = adapter._read_controller_max()
+    return adapter, pub
+
+
+def _params(plugin, param, value, controller_id="FollowPath"):
+    return {
+        "controller_plugins": [controller_id],
+        f"{controller_id}.plugin": plugin,
+        f"{controller_id}.{param}": value,
+    }
+
+
+class TestNav2SpeedLimitValue:
+    @pytest.mark.parametrize("speed, top, sent", [
+        (0.1, 0.26, 0.1),
+        (0.26, 0.26, 0.0),
+        (0.5, 0.26, 0.0),
+        (0.5, None, 0.5),
+        (None, 0.26, 0.0),
+        (0.0, 0.26, 0.0),
+        (-1.0, None, 0.0),
+        (float("nan"), 0.26, 0.0),
+        (float("inf"), None, 0.0),
+    ])
+    def test_value(self, speed, top, sent):
+        assert bridge_module.nav2_speed_limit_value(speed, top) == pytest.approx(sent)
+
+    @pytest.mark.parametrize("plugin, param", [
+        ("dwb_core::DWBLocalPlanner", "max_speed_xy"),
+        ("dwb_core/DWBLocalPlanner", "max_speed_xy"),
+        ("nav2_mppi_controller::MPPIController", "vx_max"),
+        ("nav2_rotation_shim_controller::RotationShimController", None),
+        (None, None),
+    ])
+    def test_param_for_plugin(self, plugin, param):
+        assert bridge_module.nav2_controller_max_param(plugin) == param
+
+
+class TestNav2ControllerMax:
+    @pytest.mark.parametrize("name", sorted(CONTROLLERS))
+    def test_reads_the_top_speed_of_each_stock_controller(self, name):
+        plugin, param, top = CONTROLLERS[name]
+        adapter, _ = _controller_adapter(_params(plugin, param, top))
+        assert adapter._controller_plugin == plugin
+        assert adapter._controller_max == pytest.approx(top)
+        assert adapter.speed_limit_checked is True
+
+    @pytest.mark.parametrize("name", sorted(CONTROLLERS))
+    def test_a_limit_above_the_controller_is_not_sent(self, name):
+        plugin, param, top = CONTROLLERS[name]
+        adapter, pub = _controller_adapter(_params(plugin, param, top))
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=0.5)
+            adapter._move_nav2(1.0, 1.0, speed=0.2)
+            adapter._move_nav2(1.0, 1.0, speed=top)
+        assert [m.speed_limit for m in _published(pub)] == [0.0, pytest.approx(0.2), 0.0]
+
+    def test_dwb_lower_limit_does_not_stick_to_a_faster_move(self):
+        # DWB ignores a limit at or above its own max_speed_xy, so sending 0.3
+        # after 0.1 would leave the robot at 0.1; 0 restores its own speed.
+        plugin, param, top = CONTROLLERS["DWB"]
+        adapter, pub = _controller_adapter(_params(plugin, param, top))
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=0.1)
+            adapter._move_nav2(1.0, 1.0, speed=0.3)
+        assert [m.speed_limit for m in _published(pub)] == [pytest.approx(0.1), 0.0]
+
+    @pytest.mark.parametrize("params", [
+        _params("nav2_rotation_shim_controller::RotationShimController", "max_speed_xy", 0.3),
+        {"controller_plugins": ["FollowPath"]},
+        {"controller_plugins": ["FollowPath", "Fast"], "FollowPath.plugin":
+         "dwb_core::DWBLocalPlanner", "FollowPath.max_speed_xy": 0.26},
+        _params("dwb_core::DWBLocalPlanner", "max_speed_xy", 0.0),
+        {},
+    ], ids=["unknown-plugin", "no-plugin", "two-controllers", "zero-max", "no-answer"])
+    def test_unknown_or_no_answer_publishes_and_is_unchecked(self, params):
+        adapter, pub = _controller_adapter(params)
+        assert adapter._controller_max is None
+        assert adapter.speed_limit_checked is False
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=0.5)
+        assert _published(pub)[0].speed_limit == pytest.approx(0.5)
+
+    def test_reads_another_controller_id(self):
+        plugin, param, top = CONTROLLERS["MPPI"]
+        adapter, _ = _controller_adapter(_params(plugin, param, 0.4, controller_id="Main"))
+        assert adapter._controller_max == pytest.approx(0.4)
+
+    def test_off_nav2_the_limit_counts_as_checked(self):
+        adapter, _ = _build_adapter(has_nav2=False)
+        assert adapter.speed_limit_checked is True
+
+    def test_read_at_start_from_controller_server(self):
+        plugin, param, top = CONTROLLERS["RPP"]
+        params = _params(plugin, param, top)
+        node = _make_node()
+        client = MagicMock()
+        client.wait_for_service.return_value = True
+
+        def call_async(request):
+            future = MagicMock()
+            future.done.return_value = True
+            future.result.return_value.values = [
+                _FakeParamValue(params[n]) for n in request.names
+            ]
+            return future
+
+        client.call_async.side_effect = call_async
+        node.create_client.return_value = client
+        nav2_client = MagicMock()
+        nav2_client.wait_for_server.return_value = True
+
+        class _Request:
+            names: list = []
+
+        fake_srv = MagicMock()
+        fake_srv.Request = _Request
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit), \
+                patch.object(bridge_module, "GetParameters", fake_srv):
+            adapter, _ = _build_adapter(
+                has_nav2=True, node=node, nav2_client=nav2_client,
+                namespace="robot1", odom_wait_sec=0.0,
+            )
+        assert node.create_client.call_args.args[1] == "/robot1/controller_server/get_parameters"
+        assert adapter._controller_max == pytest.approx(top)
+        assert adapter._controller_plugin == plugin
+
+    def test_no_service_answer_does_not_hold_up_start(self):
+        node = _make_node()
+        client = MagicMock()
+        client.wait_for_service.return_value = True
+        never = MagicMock()
+        never.done.return_value = False
+        client.call_async.return_value = never
+        node.create_client.return_value = client
+        nav2_client = MagicMock()
+        nav2_client.wait_for_server.return_value = True
+        fake_srv = MagicMock()
+        t0 = time.time()
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit), \
+                patch.object(bridge_module, "GetParameters", fake_srv):
+            adapter, _ = _build_adapter(
+                has_nav2=True, node=node, nav2_client=nav2_client, odom_wait_sec=0.0,
+                controller_param_timeout_sec=0.1,
+            )
+        assert time.time() - t0 < 2.0
+        assert adapter._controller_max is None
+        assert adapter.speed_limit_checked is False
+        never.cancel.assert_called()
+
+    def test_no_service_means_unchecked(self):
+        node = _make_node()
+        client = MagicMock()
+        client.wait_for_service.return_value = False
+        node.create_client.return_value = client
+        nav2_client = MagicMock()
+        nav2_client.wait_for_server.return_value = True
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit), \
+                patch.object(bridge_module, "GetParameters", MagicMock()):
+            adapter, _ = _build_adapter(
+                has_nav2=True, node=node, nav2_client=nav2_client, odom_wait_sec=0.0,
+            )
+        assert adapter.speed_limit_checked is False
+        client.call_async.assert_not_called()

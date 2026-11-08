@@ -257,6 +257,16 @@ SPEED_NOT_APPLIED = (
     "for. Set the limit in Nav2's controller parameters."
 )
 
+#: Said in a reply when a Nav2 drive got the limit but the controller's own
+#: top speed could not be read to check it against.
+SPEED_NOT_CHECKED = (
+    "The speed limit was sent to Nav2 but not checked against the controller's own "
+    "top speed, which could not be read (unknown controller, several controllers, or "
+    "no answer from controller_server). On a Regulated Pure Pursuit or MPPI "
+    "controller a limit above that speed raises the robot's speed: keep --max-speed "
+    "at or below it."
+)
+
 
 class RobotToolbox:
     """The tools the MCP server exposes, bound to one robot and one policy."""
@@ -528,6 +538,19 @@ class RobotToolbox:
         adapter = getattr(self.robot, "_adapter", None)
         return getattr(adapter, "speed_limit_applies", True) is not False
 
+    def speed_limit_checked(self) -> bool:
+        """False when a Nav2 limit could not be checked against the controller's top speed."""
+        adapter = getattr(self.robot, "_adapter", None)
+        return getattr(adapter, "speed_limit_checked", True) is not False
+
+    def _drove_unchecked(self, moves_before: int) -> bool:
+        """True when a move ran since *moves_before* with a limit Nav2 got unchecked."""
+        moves = getattr(self.enforcer, "moves_sent", 0)
+        return (
+            isinstance(moves, int) and moves > moves_before
+            and self.speed_limit_applies() and not self.speed_limit_checked()
+        )
+
     def _drove_unlimited(self, moves_before: int) -> bool:
         """True when a move ran since *moves_before* and its speed limit did not apply."""
         moves = getattr(self.enforcer, "moves_sent", 0)
@@ -607,6 +630,9 @@ class RobotToolbox:
         if self._drove_unlimited(moves_before):
             result["speed_limit_applied"] = False
             result["speed_note"] = SPEED_NOT_APPLIED
+        elif self._drove_unchecked(moves_before):
+            result["speed_limit_checked"] = False
+            result["speed_note"] = SPEED_NOT_CHECKED
         return result
 
     def rotate_available(self) -> bool:
@@ -832,6 +858,9 @@ class RobotToolbox:
         if self._drove_unlimited(moves_before):
             outcome["speed_limit_applied"] = False
             outcome["speed_note"] = SPEED_NOT_APPLIED
+        elif self._drove_unchecked(moves_before):
+            outcome["speed_limit_checked"] = False
+            outcome["speed_note"] = SPEED_NOT_CHECKED
         if status != "completed":
             reason = getattr(result, "error", None) or "execution failed"
             if refusals:
@@ -1112,9 +1141,11 @@ class MCPServer:
             # Through Nav2 no speed reaches the robot, so nothing was clamped.
             self._audit_after(name, arguments, "not_limited", detail=SPEED_NOT_APPLIED)
         else:
+            unchecked = self.toolbox._drove_unchecked(before[2])
             self._audit_after(
                 name, arguments, "clamped" if clamped else "ran",
                 enforced_speed=enforcer.last_speed,
+                detail=SPEED_NOT_CHECKED if unchecked else None,
             )
 
     # -- --confirm-moves ---------------------------------------------------
