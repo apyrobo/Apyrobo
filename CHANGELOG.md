@@ -13,9 +13,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `apyrobo mcp` sends `notifications/progress` every 5 seconds during a motion
   call whose request carries a `progressToken`: elapsed time, position, and for
   `move_to` the distance left. Nothing is sent without a token, and a stop or
-  cancel does not wait on it. Tested with APYROBO's own stdio client on
-  `mock://` and a slow test adapter, not yet with the official MCP client or a
-  desktop host.
+  cancel does not wait on it. Tested on `mock://` with a slow test adapter,
+  with APYROBO's own stdio client and with the official MCP Python client
+  (`mcp` 2.3.0, both protocol eras); not yet with a desktop host.
 
 - `apyrobo mcp` answers `robot_status` during a move, so a client that sends
   requests while one is running can watch the robot drive. Motion stays one call
