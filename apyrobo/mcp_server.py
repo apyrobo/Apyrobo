@@ -709,9 +709,9 @@ class RobotToolbox:
             "can_proceed": bool(report.can_proceed),
         }
         if isinstance(getattr(self.agent, "planned_by", None), RuleBasedProvider):
-            # The task as sent too: rewriting it drops a speed, and with it
+            # The task as sent first: rewriting it drops a speed, and with it
             # the sign that the speed was not a number it could read.
-            unreadable = RuleBasedProvider.cannot_read(text) or RuleBasedProvider.cannot_read(task)
+            unreadable = RuleBasedProvider.cannot_read(task) or RuleBasedProvider.cannot_read(text)
             if unreadable is not None:
                 plan.update(steps=[], confidence=0.0, can_proceed=False, reason=unreadable)
                 return graph, plan

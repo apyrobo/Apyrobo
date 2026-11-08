@@ -39,6 +39,8 @@ def position(server):
         ("go to (1, 2) at 0.1 m/s", 0.1),
         ("move to 1 2 at speed 0.1", 0.1),
         ("go to x=1 y=2 at speed 0.1", 0.1),
+        ("go to (1, 2) at speed 0.1.", 0.1),
+        ("Go to (1, 2) at 0.1 m/s.", 0.1),
     ],
 )
 def test_execute_task_drives_at_the_speed_the_task_names(task, speed):
@@ -112,6 +114,19 @@ def test_no_speed_in_the_task_keeps_the_default():
         ("go to (1, 2) at speed 0.1 then at speed 0.3", "names more than one speed"),
         ("go to (1, 2) at speed -1", "names a negative speed"),
         ("go to (1, 2) at speed 1e3", "exponent form"),
+        ("go to (1, 2) at speed 0", "names a speed of 0"),
+        ("go to (1, 2) at 0 m/s", "names a speed of 0"),
+        ("go to (1, 2) at speed .1", "starts with a decimal point"),
+        ("go to (1, 2) at .1 m/s", "starts with a decimal point"),
+        ("go to (1, 2) at speed 1/10", "a fraction"),
+        ("go to (1, 2) at speed 0,1", "decimal comma"),
+        ("go to (1, 2) at 0,1 m/s", "decimal comma"),
+        ("go to (1, 2) at 0.1 meters per second", "reads m/s only"),
+        ("go to (1, 2) at 0.1 metres per second", "reads m/s only"),
+        ("go to (1, 2) at 1 km/h", "reads m/s only"),
+        ("go to (1, 2) at 1 mph", "reads m/s only"),
+        ("go to (1, 2) at 10 cm/s", "reads m/s only"),
+        ("go to (1, 2) at 0.1 m/sec", "reads m/s only"),
         ("rotate 90 degrees at speed 0.3", "names a speed, but the plan has no drive"),
     ],
 )

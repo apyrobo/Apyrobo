@@ -1,7 +1,8 @@
 """The rule planner refuses a task it would misread, instead of guessing.
 
 A negation ("don't go to (3, 3)") used to plan a drive to (3, 3); "(1e3, 2)"
-drove to (3, 2); "(1, 2, 3)" dropped the 3. Each is now refused, in the
+drove to (3, 2); "(1, 2, 3)" dropped the 3; "(.5, 1)" and "(-.5, 1)" drove to
+(5, 1). Each is now refused, in the
 planner and through MCP, and the robot stays put.
 """
 
@@ -27,6 +28,10 @@ UNREADABLE = [
     "go to (2, 1E-2)",
     "go to (1,2,3)",
     "go to 1, 2, 3",
+    "go to (.5, 1)",
+    "go to (-.5, 1)",
+    "go to x=.5 y=1",
+    "move to 1 .5",
 ]
 READABLE = [
     "go to (3, 3)",
@@ -35,6 +40,8 @@ READABLE = [
     "navigate to (0.5, 0.25) then stop",
     "report status",
     "go to the note at (1, 1)",
+    "go to (5., 1)",
+    "go to (1, 2) at speed 0.2.",
 ]
 
 
@@ -99,3 +106,12 @@ def test_execute_task_still_drives_a_plain_target():
     is_error, _ = call(server, "execute_task", {"task": "go to (1, 2)"})
     assert not is_error
     assert position(server) == {"x": 1.0, "y": 2.0}
+
+
+@pytest.mark.parametrize("task", ["go to (.5, 1)", "go to (-.5, 1)"])
+def test_leading_point_is_refused_not_read_as_ten_times_further(task):
+    server = build_server("mock://turtlebot4")
+    is_error, text = call(server, "execute_task", {"task": task})
+    assert is_error
+    assert "starts with a decimal point" in text
+    assert position(server) == {"x": 0.0, "y": 0.0}
