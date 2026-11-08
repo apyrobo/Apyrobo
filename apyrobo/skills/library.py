@@ -74,6 +74,9 @@ class SkillLibrary:
             def _make_handler(f: Any, ok: set) -> Any:
                 def _handler(robot: Any, params: dict) -> bool:
                     filtered = {k: v for k, v in params.items() if k in ok}
+                    if "robot" in ok:
+                        # @skill leaves robot out of the parameters; pass it in.
+                        filtered["robot"] = robot
                     result = f(**filtered)
                     return bool(result) if result is not None else True
                 return _handler

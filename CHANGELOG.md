@@ -193,6 +193,17 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo init <name>` generates a skill package that works: its `skills.py`
+  used to crash on import (an unknown `@skill` argument) and `register()` called
+  a method that does not exist, so both generated tests failed. `register()` now
+  takes no arguments, like the packages under `packages/`. The printed next steps
+  and the generated README drop `apyrobo test-skill` and `apyrobo execute`, which
+  do not find the new skill, and docs/skill_packaging.md no longer promises
+  `SkillLibrary.from_plugins()`: APYROBO does not load the `apyrobo.skills`
+  entry point automatically yet, so call `register()` after importing.
+- An `@skill` function that takes a `robot` argument now receives the robot when
+  run through `SkillLibrary.from_decorated()` or `apyrobo test-skill`; it used to
+  fail with a missing-argument error.
 - `apyrobo mcp --provider llm` (and `tool_calling`) without litellm installed
   exits at start with the install line. It used to start, and every
   `plan_task` and `execute_task` used the rule planner, said only on stderr.

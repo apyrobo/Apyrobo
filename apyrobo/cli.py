@@ -1108,6 +1108,8 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
 
             def handler(robot: Any, p: dict) -> bool:  # type: ignore[misc]
                 filtered = {k: v for k, v in p.items() if k in accepted}
+                if "robot" in accepted:
+                    filtered["robot"] = robot
                 result = fn(**filtered)
                 return bool(result) if result is not None else True
         else:
@@ -2374,18 +2376,22 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
         @skill(
-            name="{skill_fn_name}_hello",
             description="Example skill — say hello from {raw_name}",
-            required_capabilities=[],
+            capability="custom",
         )
         def {skill_fn_name}_hello(robot, message: str = "hello") -> bool:
             print(f"[{raw_name}] {{message}}")
             return True
 
 
-        def register(library: SkillLibrary) -> None:
-            \"\"\"Entry-point called by APYROBO on startup.\"\"\"
-            library.register_decorated()
+        def register() -> None:
+            \"\"\"Wire this package's @skill functions into APYROBO's skill registry.
+
+            Call it after importing the package. The apyrobo.skills entry point
+            in pyproject.toml names this function, but APYROBO does not load
+            that entry point automatically yet.
+            \"\"\"
+            SkillLibrary.from_decorated()
     """))
 
     # tests/__init__.py
@@ -2422,15 +2428,16 @@ def cmd_init(args: argparse.Namespace) -> None:
         ## Quick start
 
         ```bash
-        pip install -e .
-        apyrobo execute "{skill_fn_name} hello" --robot mock://turtlebot4
+        pip install -e . pytest
+        pytest
         ```
 
-        ## Development
+        ```python
+        import {module_name}
+        from apyrobo.core.robot import Robot
 
-        ```bash
-        pip install -e ".[dev]"
-        pytest
+        {module_name}.register()
+        {module_name}.skills.{skill_fn_name}_hello(Robot.discover("mock://test"))
         ```
     """))
 
@@ -2462,9 +2469,8 @@ def cmd_init(args: argparse.Namespace) -> None:
     print()
     print("Next steps:")
     print(f"  cd {out_dir}")
-    print(f"  pip install -e .")
-    print(f"  apyrobo test-skill {skill_fn_name}_hello --robot mock://turtlebot4")
-    print(f"  pytest")
+    print("  pip install -e . pytest")
+    print("  pytest")
 
 
 # ---------------------------------------------------------------------------
