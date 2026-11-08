@@ -107,6 +107,13 @@ _MANY_TARGETS = (
     "not move. Send one target per call, like 'go to (1, 1)', then 'go to (3, 3)'. "
     "A delivery may name two: 'deliver from (1, 1) to (5, 1)'."
 )
+_MANY_MOTIONS = (
+    "Not planned: this task asks for a turn together with a drive, more than one "
+    "turn, or a turn repeated, and the rule planner would make only one of them "
+    "and drop the rest, so the robot will not move. Send one motion per call, like "
+    "'rotate 90 degrees', then 'go to (1, 1)', or call rotate and move_to directly."
+)
+_REPEAT_WORD = re.compile(r"\b(?:twice|thrice|again|times)\b")
 _NO_ANGLE = (
     "Not planned: this task asks to turn but gives no angle with a unit, and the "
     "robot will not guess one. Give it, like 'rotate 90 degrees' or 'turn right "
@@ -732,6 +739,21 @@ class RobotToolbox:
                 if not distinct <= driven:
                     plan.update(
                         steps=[], confidence=0.0, can_proceed=False, reason=_MANY_TARGETS
+                    )
+                    return graph, plan
+            # It plans one turn, or drives, never both: a second turn, a repeat
+            # or a turn next to a drive would be dropped with no word.
+            lowered = text.lower()
+            if RuleBasedProvider._TURN_WORD.search(lowered):
+                ids = [step["skill_id"].rsplit("_", 1)[0] for step in steps]
+                if (
+                    "navigate_to" in ids
+                    or len(RuleBasedProvider._ANGLE.findall(lowered)) > 1
+                    or len(RuleBasedProvider._TURN_WORD.findall(lowered)) > 1
+                    or _REPEAT_WORD.search(lowered)
+                ):
+                    plan.update(
+                        steps=[], confidence=0.0, can_proceed=False, reason=_MANY_MOTIONS
                     )
                     return graph, plan
             # Its last resort is a status report: for a task that did not ask
