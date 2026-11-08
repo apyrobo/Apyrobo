@@ -372,6 +372,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - docs/mcp.md covers `apyrobo mcp` on `ros2://` robots (Nav2, the
   Gazebo end-to-end test CI runs) and protocol 2026-07-28 clients; a test
   keeps the page in step with the server's supported versions and methods.
+- The LeRobot wrapper in docs/policy_skills.md and
+  `examples/04_learned_policy_safety.py` handles LeRobot 0.7's `PolicyOutput`:
+  when `select_action` returns a dict, it takes the action from `"action"`.
+  The example's stand-in policy returns that shape once so the example test
+  covers it; no real LeRobot install runs in CI.
 
 ## [4.1.0] - 2026-07-12
 
