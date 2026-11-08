@@ -129,6 +129,9 @@ STDIN_SETTLE_POLL_S = 0.001
 HALT_JOIN_S = 1.0
 # How long exit waits for a status read that a move left running.
 STATUS_JOIN_S = 1.0
+# How often a motion call whose request carries a progressToken reports
+# progress. Clients reset their idle timeout on each notification.
+PROGRESS_INTERVAL_S = 5.0
 
 INSTRUCTIONS = (
     "These tools control a robot through APYROBO's safety enforcer. "
@@ -918,6 +921,9 @@ class MCPServer:
         self._status_thread: threading.Thread | None = None
         self._status_running = False
         self._write_lock = threading.Lock()
+        # notifications/progress during a motion call, for a request that
+        # carries a progressToken. Its own thread: it never touches the stop.
+        self.progress_interval = PROGRESS_INTERVAL_S
 
     # -- dispatch ------------------------------------------------------
 
@@ -1417,6 +1423,9 @@ class MCPServer:
                     f"REFUSED: could not write the audit log, so {name} did not run: {exc}",
                     is_error=True,
                 )
+        done = threading.Event()
+        if moves:
+            self._start_progress(params, name, arguments, done)
         try:
             payload = self.toolbox.call(name, arguments)
             text = json.dumps(_jsonable(payload), indent=2)
@@ -1429,6 +1438,10 @@ class MCPServer:
         finally:
             if moves:
                 self._motion_running = False
+                # Under the write lock: a progress notification already being
+                # written goes out first, and none follows the reply.
+                with self._write_lock:
+                    done.set()
         interrupted = self._interrupted if moves else None
         if interrupted is not None:
             text = self._interrupted_text(name, interrupted, text if is_error else None)
@@ -1444,6 +1457,74 @@ class MCPServer:
             "id": msg_id,
             "result": {"content": [{"type": "text", "text": text}], "isError": is_error},
         }
+
+    def _start_progress(
+        self,
+        params: dict[str, Any],
+        name: str,
+        arguments: dict[str, Any],
+        done: threading.Event,
+    ) -> None:
+        """Report progress on this motion call if the client asked for it."""
+        meta = params.get("_meta")
+        token = meta.get("progressToken") if isinstance(meta, dict) else None
+        if isinstance(token, bool) or not isinstance(token, (str, int)):
+            return
+        out = self._out
+        if out is None:
+            return
+        threading.Thread(
+            target=self._report_progress, args=(out, token, name, arguments, done),
+            name="apyrobo-mcp-progress", daemon=True,
+        ).start()
+
+    def _report_progress(
+        self,
+        out: IO[str],
+        token: str | int,
+        name: str,
+        arguments: dict[str, Any],
+        done: threading.Event,
+    ) -> None:
+        """Send notifications/progress until the motion call returns.
+
+        Reads the position only; a failed read or write ends the reports and
+        nothing else. The client losing stdout is noticed by the stdin side.
+        """
+        started = time.monotonic()
+        count = 0
+        while not done.wait(self.progress_interval):
+            count += 1
+            message = self._progress_message(name, arguments, time.monotonic() - started)
+            notification = {
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": {"progressToken": token, "progress": count, "message": message},
+            }
+            line = json.dumps(notification, separators=(",", ":")) + "\n"
+            try:
+                with self._write_lock:
+                    if done.is_set():
+                        return
+                    out.write(line)
+                    out.flush()
+            except (OSError, ValueError) as exc:
+                logger.warning("MCP: could not send a progress notification: %s", exc)
+                return
+
+    def _progress_message(self, name: str, arguments: dict[str, Any], elapsed: float) -> str:
+        text = f"{name} running for {elapsed:.0f} s"
+        try:
+            here = self.toolbox._position()
+        except Exception:
+            return text
+        text += f", at ({here['x']:.2f}, {here['y']:.2f})"
+        if name == "move_to":
+            x, y = _finite(arguments.get("x")), _finite(arguments.get("y"))
+            if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                left = math.hypot(float(x) - here["x"], float(y) - here["y"])
+                text += f", {left:.2f} m from the target"
+        return text
 
     def _interrupted_text(self, name: str, interrupted: str, error: str | None) -> str:
         """Say how a motion call ended after a stop or a cancel reached it."""

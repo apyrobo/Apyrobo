@@ -207,6 +207,16 @@ November 2026:
 None of these is tested here. Try your own client on `mock://` with a slow move
 before you trust a limit.
 
+**Progress during a move.** When a client sends a `progressToken` in the
+`tools/call` request's `_meta`, the server sends a `notifications/progress`
+every 5 seconds while the move runs: elapsed time, the robot's position, and for
+`move_to` the distance left to the target. Nothing is sent without a token, and
+nothing after the move's reply. Some clients reset an idle timeout on progress
+(reported for Claude Code's stdio idle timer and the Cursor IDE); none of them
+lifts a total limit like the ones above, and none is tested here. The stop and
+cancel paths do not wait on it. This is tested on `mock://` and a slow test
+adapter.
+
 **Stopping from a client.** Don't assume a client's stop button stops the robot
 until you have tried it: look for `cancelled` in the `--audit-log`. Reports say
 Claude Code moves a call to the background after 2 minutes, and Esc no longer
