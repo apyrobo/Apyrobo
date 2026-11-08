@@ -128,6 +128,22 @@ class RuleBasedProvider(AgentProvider):
     _EXPONENT_NUMBER = re.compile(r"\d(?:\.\d*)?\s*e\s*[+-]?\d")
     # Three or more numbers in one coordinate group ("(1, 2, 3)"): only two
     # would be read and the rest dropped.
+    # A number with no digit before its point (".5", "-.5"): the coordinate
+    # reader drops the point, so "(.5, 1)" became (5, 1).
+    _LEADING_POINT = re.compile(r"(?<![\w.])\.\d")
+    # A fraction ("1/2"), read as its first number.
+    _FRACTION = re.compile(r"\d\s*/\s*\d")
+    # A speed with a decimal comma ("speed 0,2", "0,2 m/s"), read as 0.
+    _DECIMAL_COMMA_SPEED = re.compile(
+        r"\bspeed\s*(?:of\s+|[:=]\s*)?-?\d+,\d|\d,\d+\s*m/s"
+    )
+    # A speed in a unit other than m/s, which would be ignored for the
+    # default speed.
+    _OTHER_SPEED_UNIT = re.compile(
+        r"\d\s*(?:(?:met(?:er|re)s?|m)\s+(?:per|a|an)\s+sec(?:ond)?s?\b"
+        r"|m\s*/\s*sec\b|km\s*/\s*h\b|kph\b|kmh\b|mph\b|cm\s*/\s*s\b"
+        r"|mm\s*/\s*s\b|ft\s*/\s*s\b|(?:feet|foot)\s+per\s+second\b|knots?\b)"
+    )
     _NUMBER_TRIPLE = re.compile(
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
@@ -135,8 +151,9 @@ class RuleBasedProvider(AgentProvider):
     # A drive speed in the task: "at speed 0.1", "speed: 0.3", "at a speed of
     # 0.2 m/s", "at 0.1 m/s". The number must stand whole ("speed 1e3" is not
     # read as 1).
+    # A full stop after the number ends the sentence ("at speed 0.2.").
     _SPEED = re.compile(
-        r"\bspeed\s*(?:of\s+|[:=]\s*)?(-?\d+(?:\.\d+)?)(?![\d.]|\s*e\s*[+-]?\d)"
+        r"\bspeed\s*(?:of\s+|[:=]\s*)?(-?\d+(?:\.\d+)?)(?!\d|\.\d|\s*e\s*[+-]?\d)"
         r"|\bat\s+(-?\d+(?:\.\d+)?)\s*m/s\b"
     )
 
@@ -174,6 +191,31 @@ class RuleBasedProvider(AgentProvider):
                 "that the rule planner cannot read whole, so the robot will not "
                 "guess a target. Write it out, like 'go to (1000, 2)'."
             )
+        if cls._LEADING_POINT.search(text):
+            return (
+                "Not planned: this task has a number that starts with a decimal "
+                "point (like .5), which the rule planner would read without the "
+                "point, so the robot will not guess. Write a 0 before the point, "
+                "like 'go to (0.5, 1)'."
+            )
+        if cls._FRACTION.search(text):
+            return (
+                "Not planned: this task has a fraction (like 1/2) that the rule "
+                "planner cannot read, so the robot will not guess. Write it as a "
+                "decimal, like 'at 0.5 m/s'."
+            )
+        if cls._DECIMAL_COMMA_SPEED.search(text):
+            return (
+                "Not planned: this task writes a speed with a decimal comma (like "
+                "0,2), which the rule planner would read as 0, so the robot will "
+                "not guess. Use a decimal point, like 'at 0.2 m/s'."
+            )
+        if cls._OTHER_SPEED_UNIT.search(text):
+            return (
+                "Not planned: this task gives a speed in a unit the rule planner "
+                "does not read (it reads m/s only), so the robot will not guess. "
+                "Give it in m/s, like 'at 0.2 m/s'."
+            )
         if cls._NUMBER_TRIPLE.search(text):
             return (
                 "Not planned: this task gives three or more numbers for one "
@@ -193,8 +235,16 @@ class RuleBasedProvider(AgentProvider):
             )
         if speeds and min(speeds) < 0:
             return (
-                "Not planned: this task names a negative speed. Give a speed of 0 "
-                "or more m/s, like 'go to (1, 2) at 0.2 m/s'."
+                "Not planned: this task names a negative speed. Give a speed above "
+                "0 m/s, like 'go to (1, 2) at 0.2 m/s'."
+            )
+        if speeds and min(speeds) == 0:
+            # A drive at 0 m/s is refused by move_to; here it used to plan the
+            # drive and run it, and on Nav2 a limit of 0 means no limit.
+            return (
+                "Not planned: this task names a speed of 0, which does not stop "
+                "the robot. Give a speed above 0 m/s, like 'go to (1, 2) at 0.2 "
+                "m/s', or ask it to stop."
             )
         return None
 
