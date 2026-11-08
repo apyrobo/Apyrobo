@@ -73,12 +73,17 @@ def test_the_enforcer_reads_no_live_sensors_as_the_docs_say():
     assert "human-proximity check does not run" in text
 
 
-def test_docs_say_the_speed_limit_does_not_reach_a_nav2_drive():
+def test_docs_say_how_the_speed_limit_reaches_a_nav2_drive():
     text = _doc()
     assert "### Speed on `ros2://`" in text
-    assert "do not limit a Nav2 drive" in text
+    assert "`speed_limit` topic" in text
+    # The fallback when nothing takes the limit stays documented, and so do
+    # the limits of what CI checks.
+    assert '"speed_limit_applied": false' in text
+    assert "Humble with DWB" in text
     assert "Clamps and no-go refusals happen" not in text
     llms = (DOC.parent.parent / "llms.txt").read_text(encoding="utf-8")
-    assert "Nav2's controller parameters" in llms
+    assert "`speed_limit` topic" in llms
+    assert "not applied" in llms
     robot = (DOC.parent / "first-real-robot.md").read_text(encoding="utf-8")
     assert "mcp.md#speed-on-ros2" in robot

@@ -25,8 +25,9 @@ uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp config claude-desk
 
 What it does:
 
-- A speed above the limit is clamped, and the result says so. A Nav2 drive on `ros2://`
-  ignores it and runs at the speed set in Nav2's controller parameters.
+- A speed above the limit is clamped, and the result says so. On `ros2://` the limit
+  goes to Nav2's controller on its `speed_limit` topic (tested on Humble with DWB); if
+  nothing subscribes, the result says the limit was not applied.
 - A target inside a no-go zone is refused, and so is a straight line that crosses one.
   On `ros2://` with Nav2, the planned route is checked before the goal is sent.
 - `stop` is always allowed, and it acts during a running move. A client cancel or lost

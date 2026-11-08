@@ -37,6 +37,7 @@ Architecture:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import os
@@ -150,6 +151,13 @@ try:
     _HAS_TF2 = True
 except ImportError:
     _HAS_TF2 = False
+
+# nav2_msgs/SpeedLimit caps the speed of a Nav2 drive (controller_server reads
+# it on the speed_limit topic). Without it, Nav2 drives stay unlimited.
+try:
+    from nav2_msgs.msg import SpeedLimit
+except Exception:  # ImportError, or a partial nav2_msgs install
+    SpeedLimit = None
 
 
 # ---------------------------------------------------------------------------
@@ -288,8 +296,21 @@ if _HAS_ROS2:
 
         @property
         def speed_limit_applies(self) -> bool:
-            """False while moves go through Nav2: a NavigateToPose goal has no speed."""
-            return not self._has_nav2
+            """Whether the speed a move is sent reaches the robot.
+
+            The /cmd_vel fallback drives at it. Through Nav2 it holds only
+            when something (Nav2's controller_server) listens on the
+            speed_limit topic this adapter publishes before each goal.
+            """
+            if not self._has_nav2:
+                return True
+            pub = getattr(self, "_speed_limit_pub", None)
+            if pub is None:
+                return False
+            try:
+                return int(pub.get_subscription_count()) > 0
+            except Exception:
+                return False
 
         # Default topic/action mappings (TurtleBot4-compatible)
         DEFAULT_CONFIG = {
@@ -300,6 +321,7 @@ if _HAS_ROS2:
             "depth": "/oakd/stereo/image_raw",
             "imu": "/imu",
             "nav2_action": "navigate_to_pose",
+            "speed_limit": "speed_limit",
             "nav2_plan_action": "compute_path_to_pose",
         }
 
@@ -338,7 +360,7 @@ if _HAS_ROS2:
             if isinstance(yaml_cfg, dict):
                 self._config.update(yaml_cfg.get("topics", {}))
                 for key in (
-                    "nav2_action", "nav2_plan_action",
+                    "nav2_action", "nav2_plan_action", "speed_limit",
                     "cmd_vel", "odom", "scan", "camera", "depth", "imu",
                 ):
                     if key in yaml_cfg:
@@ -428,6 +450,30 @@ if _HAS_ROS2:
                 logger.warning("Could not create Nav2 action client: %s", e)
                 self._nav2_client = None
                 self._has_nav2 = False
+
+            # --- Nav2 speed limit, published before each goal ---
+            # Reliable + transient local: matches Nav2's subscriber whether it
+            # is volatile or transient local.
+            self._speed_limit_pub: Any = None
+            if self._has_nav2 and SpeedLimit is not None:
+                try:
+                    self._speed_limit_pub = self._node.create_publisher(
+                        SpeedLimit,
+                        self._config["speed_limit"],
+                        QoSProfile(
+                            reliability=ReliabilityPolicy.RELIABLE,
+                            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                            depth=1,
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning("Could not create the Nav2 speed limit publisher: %s", e)
+                    self._speed_limit_pub = None
+            elif self._has_nav2:
+                logger.warning(
+                    "nav2_msgs/SpeedLimit is not available: Nav2 drives run at "
+                    "the controller's configured speed"
+                )
 
             # --- Nav2 planner client, used to check a route before driving it ---
             self._plan_client: Any = None
@@ -767,12 +813,10 @@ if _HAS_ROS2:
             )
             goal_msg.pose.pose.orientation = self._yaw_to_quat(target_yaw)
 
-            # TODO: Nav2 doesn't have a direct speed parameter.
-            # To control speed, you'd configure Nav2's controller server
-            # max_vel parameter dynamically via a ROS 2 parameter service.
-            # For now we log the requested speed for future implementation.
-            if speed is not None:
-                logger.info("Requested speed %.2f m/s (Nav2 speed control pending)", speed)
+            # A NavigateToPose goal has no speed: cap the drive through
+            # Nav2's speed_limit topic instead. The limit stays set in Nav2
+            # until the next one, so a move without a speed clears it.
+            self._publish_nav2_speed_limit(speed)
 
             self._nav_state = NavState.NAVIGATING
             logger.info(
@@ -814,6 +858,34 @@ if _HAS_ROS2:
                     return
 
             logger.info("Nav2: navigation finished — state=%s", self._nav_state.value)
+
+        def _publish_nav2_speed_limit(self, speed: float | None) -> None:
+            """Publish *speed* (m/s) as Nav2's speed limit; None or 0 lifts it."""
+            pub = getattr(self, "_speed_limit_pub", None)
+            if pub is None or SpeedLimit is None:
+                if speed is not None:
+                    logger.warning(
+                        "Requested speed %.2f m/s is not applied: no Nav2 speed "
+                        "limit publisher", speed,
+                    )
+                return
+            value = float(speed) if speed and speed > 0 and math.isfinite(speed) else 0.0
+            msg = SpeedLimit()
+            msg.percentage = False
+            msg.speed_limit = value
+            with contextlib.suppress(Exception):
+                msg.header.stamp = self._node.get_clock().now().to_msg()
+            pub.publish(msg)
+            if not self.speed_limit_applies:
+                logger.warning(
+                    "Nav2 speed limit %.2f m/s published, but nothing listens on "
+                    "%s: the drive runs at the controller's configured speed",
+                    value, self._config["speed_limit"],
+                )
+            elif value:
+                logger.info("Nav2 speed limit set to %.2f m/s", value)
+            else:
+                logger.info("Nav2 speed limit lifted")
 
         def _send_nav2_goal(self, goal_msg: Any) -> None:
             """Send one NavigateToPose goal; only the latest send's answer counts."""

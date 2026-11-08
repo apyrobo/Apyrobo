@@ -69,9 +69,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - **`apyrobo mcp` — MCP server** (`apyrobo/mcp_server.py`, no extra
   dependencies): lets Claude, Cursor or any MCP client inspect, plan and
   drive a robot over stdio, with every motion command passed through the
-  `SafetyEnforcer`. Over-limit speeds are clamped and reported, though a Nav2
-  drive on `ros2://` runs at its controller's speed whatever the limit, and
-  `rotate` does nothing on `ros2://`; targets in a
+  `SafetyEnforcer`. Over-limit speeds are clamped and reported (on a Nav2
+  drive on `ros2://`, through Nav2's `speed_limit` topic; see Fixed), and
+  `rotate` is not available on `ros2://`; targets in a
   no-go zone (`--no-go x_min,y_min,x_max,y_max`) are refused with a readable
   tool error. Defaults to `mock://turtlebot4`. Try it without installing:
   `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp`. See
@@ -193,6 +193,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `--max-speed` and a policy's `max_speed` now limit a Nav2 drive on `ros2://`. A `navigate_to_pose` goal carries no speed, so the robot drove as fast as Nav2's controller allowed; before each goal `ros2://` now publishes the move's speed as a `nav2_msgs/SpeedLimit` (m/s) on Nav2's `speed_limit` topic, and a move without a speed lifts it. The Nav2-in-Gazebo test measures the robot's speed on `/odom` under `--max-speed 0.1` (Humble, DWB). When nothing subscribes to the topic, replies still say `speed_limit_applied: false` and the audit log `not_limited`. The limit stays set in Nav2 after `apyrobo mcp` exits.
 - `apyrobo init <name>` generates a skill package that works: its `skills.py`
   used to crash on import (an unknown `@skill` argument) and `register()` called
   a method that does not exist, so both generated tests failed. `register()` now
