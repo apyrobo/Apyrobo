@@ -49,8 +49,10 @@ where = ["."]
 include = ["apyrobo_skills_myrobot*"]
 ```
 
-The `[project.entry-points."apyrobo.skills"]` section is what makes `SkillLibrary.from_plugins()`
-discover and load your package automatically after installation.
+The `[project.entry-points."apyrobo.skills"]` section names your `register` function. APYROBO
+does not load this entry point automatically yet, so users import your package and call
+`register()` themselves (see section 7). Declaring it now means nothing changes for your users
+when automatic loading lands.
 
 ---
 
@@ -92,7 +94,7 @@ from apyrobo_skills_myrobot.navigation import go_to_waypoint
 __all__ = ["go_to_waypoint", "register"]
 
 def register() -> None:
-    """Called automatically by SkillLibrary.from_plugins()."""
+    """Wire this package's @skill functions into APYROBO's skill registry."""
     from apyrobo.skills.library import SkillLibrary
     from apyrobo.skills.decorators import get_decorated_skills
 
@@ -161,11 +163,11 @@ Users install your package:
 pip install apyrobo-skills-myrobot
 ```
 
-And load it automatically:
+And load it by importing it and calling `register()`:
 ```python
-from apyrobo.skills.library import SkillLibrary
+import apyrobo_skills_myrobot
 
-lib = SkillLibrary.from_plugins()   # discovers all apyrobo.skills entry-points
+apyrobo_skills_myrobot.register()   # wires its @skill functions into the skill registry
 ```
 
 Or by name:
