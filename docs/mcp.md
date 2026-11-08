@@ -326,6 +326,10 @@ drive, such as "go to (3, 3) then come back to (0, 0)", is refused with a
 "Not planned:" reason: send one target per call. It used to drive only to the
 last place and report `completed`, so a refusal for the first one never showed.
 A delivery may name two: "deliver from (1, 1) to (5, 1)" drives to both.
+A turn is planned only on its own: a task with a turn and a drive ("go to
+(3, 3) and rotate 90 degrees"), two turns, or a repeated turn ("rotate 90
+degrees twice") is refused the same way. It used to make one of them, drop the
+rest and report `completed`.
 
 `plan_task` checks each drive in the plan against the policy without moving:
 a target in a no-go zone, a target outside every allowed area, and a straight
