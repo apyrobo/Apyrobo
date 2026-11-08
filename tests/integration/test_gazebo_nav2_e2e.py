@@ -145,9 +145,33 @@ def test_nl_task_navigates_the_robot_via_nav2(robot):
 # The MCP leg drives the robot back to its spawn pose through `apyrobo mcp`,
 # the way Claude, Cursor or any MCP client would, with a speed limit and a
 # no-go zone set on the command line. The zone sits away from the route.
-MCP_MAX_SPEED = 0.22
+# Well under the controller's own top speed (0.26 m/s in nav2_bringup's DWB
+# params), so a limit that did not reach Nav2 would show in the measured peak.
+MCP_MAX_SPEED = 0.1
+# Room for odometry noise and a controller tick over the limit.
+MCP_SPEED_TOLERANCE = 0.03
 MCP_NO_GO = (0.0, 0.0, 1.0, 1.0)
 MCP_NO_GO_TARGET = (0.5, 0.5)
+
+
+@contextlib.contextmanager
+def _odom_speeds(adapter: Any):
+    """Collect the robot's forward speed from /odom while the block runs."""
+    from nav_msgs.msg import Odometry
+
+    from apyrobo.core.ros2_bridge import _sensor_qos
+
+    speeds: list[float] = []
+    sub = adapter._node.create_subscription(
+        Odometry, "/odom",
+        lambda msg: speeds.append(abs(msg.twist.twist.linear.x)),
+        _sensor_qos(),
+    )
+    try:
+        yield speeds
+    finally:
+        with contextlib.suppress(Exception):
+            adapter._node.destroy_subscription(sub)
 
 
 class _StdioMCPClient:
@@ -207,10 +231,9 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
     """An MCP client drives the Gazebo robot through `apyrobo mcp --robot ros2://`.
 
     Same Nav2 stack as above, reached over MCP instead of the Python API:
-    an over-limit move runs and says the speed limit was not applied (a Nav2
-    goal carries no speed), Nav2 takes the
-    goal and the physics robot gets there; a target in the no-go zone is
-    refused and the robot does not move.
+    an over-limit move is clamped, Nav2 takes the goal and the physics robot
+    gets there no faster than the limit, measured on /odom; a target in the
+    no-go zone is refused and the robot does not move.
     """
     adapter = robot._adapter
     start = adapter.position
@@ -235,19 +258,27 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
             tools = {t["name"] for t in client.request("tools/list", {})["tools"]}
             assert {"move_to", "stop", "safety_report"} <= tools
 
-            is_error, moved = client.call_tool(
-                "move_to", {"x": target[0], "y": target[1], "speed": 1.0}
-            )
+            with _odom_speeds(adapter) as speeds:
+                is_error, moved = client.call_tool(
+                    "move_to", {"x": target[0], "y": target[1], "speed": 1.0}
+                )
             assert not is_error, f"move_to failed over MCP: {moved}"
             assert moved["safety_interventions"], (
                 f"1.0 m/s against a {MCP_MAX_SPEED} m/s limit was not reported as clamped: {moved}"
             )
-            # A Nav2 goal carries no speed: the reply must not pass the
-            # lowered number off as a limit on this drive.
-            assert moved.get("speed_limit_applied") is False, (
-                f"a Nav2 drive did not say the speed limit was not applied: {moved}"
+            # The limit reaches Nav2's controller through its speed_limit
+            # topic, so the reply reports a limited drive, and the robot
+            # really drove no faster than the limit.
+            assert moved.get("speed_limit_applied") is not False, (
+                f"Nav2's controller did not take the speed limit: {moved}"
             )
-            assert "not applied" in moved.get("speed_note", ""), moved
+            assert len(speeds) > 20, f"too few /odom samples during the move: {len(speeds)}"
+            peak = max(speeds)
+            assert peak > 0.03, f"/odom never showed the robot moving (peak {peak:.3f} m/s)"
+            assert peak <= MCP_MAX_SPEED + MCP_SPEED_TOLERANCE, (
+                f"robot drove at {peak:.3f} m/s through Nav2 under a "
+                f"{MCP_MAX_SPEED} m/s limit"
+            )
 
             mid = adapter.position
             reported = (moved["position"]["x"], moved["position"]["y"])
@@ -286,6 +317,9 @@ def test_mcp_client_drives_the_robot_via_nav2(robot):
     assert "Nav2: sending goal" in server_log, (
         "apyrobo mcp did not send the move through Nav2 (fell back to cmd_vel?). "
         "Server log tail:\n" + server_log[-2000:]
+    )
+    assert f"Nav2 speed limit set to {MCP_MAX_SPEED:.2f} m/s" in server_log, (
+        "apyrobo mcp did not set Nav2's speed limit. Server log tail:\n" + server_log[-2000:]
     )
 
 

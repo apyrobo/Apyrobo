@@ -1373,3 +1373,117 @@ class TestPositionFrame:
     def test_capabilities_report_the_frame(self):
         adapter = self._adapter(None)
         assert adapter.get_capabilities().metadata["position_frame"] == "odom"
+
+
+# ===========================================================================
+# Nav2 speed limit (nav2_msgs/SpeedLimit on the speed_limit topic)
+# ===========================================================================
+
+class _FakeSpeedLimit:
+    def __init__(self):
+        self.header = MagicMock()
+        self.percentage = True
+        self.speed_limit = -1.0
+
+
+def _speed_limit_adapter(subscribers=1):
+    """A Nav2 adapter whose speed limit publisher has *subscribers* listeners."""
+    with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+        adapter, node = _build_adapter(has_nav2=True, odom_wait_sec=0.0)
+    pub = MagicMock()
+    pub.get_subscription_count.return_value = subscribers
+    adapter._speed_limit_pub = pub
+    adapter._goal_accept_timeout_sec = 0.0
+    adapter._nav2_client.send_goal_async.return_value = MagicMock()
+    return adapter, pub
+
+
+def _published(pub):
+    return [c.args[0] for c in pub.publish.call_args_list]
+
+
+class TestNav2SpeedLimit:
+    def test_publisher_created_on_speed_limit_topic_when_nav2_found(self):
+        node = _make_node()
+        nav2_client = MagicMock()
+        nav2_client.wait_for_server.return_value = True
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter, _ = _build_adapter(
+                has_nav2=True, node=node, nav2_client=nav2_client, odom_wait_sec=0.0
+            )
+        topics = [c.args[1] for c in node.create_publisher.call_args_list]
+        assert "speed_limit" in topics
+        assert adapter._speed_limit_pub is not None
+
+    def test_no_publisher_without_nav2(self):
+        node = _make_node()
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter, _ = _build_adapter(has_nav2=False, node=node)
+        topics = [c.args[1] for c in node.create_publisher.call_args_list]
+        assert "speed_limit" not in topics
+        assert adapter._speed_limit_pub is None
+        assert adapter.speed_limit_applies is True
+
+    def test_move_publishes_the_speed_in_m_s_before_the_goal(self):
+        adapter, pub = _speed_limit_adapter()
+        order = []
+        pub.publish.side_effect = lambda m: order.append("limit")
+        adapter._nav2_client.send_goal_async.side_effect = (
+            lambda *a, **k: order.append("goal") or MagicMock()
+        )
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=0.12)
+        msg = _published(pub)[0]
+        assert msg.percentage is False
+        assert msg.speed_limit == pytest.approx(0.12)
+        assert order[:2] == ["limit", "goal"]
+
+    def test_move_without_speed_lifts_an_earlier_limit(self):
+        adapter, pub = _speed_limit_adapter()
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=0.1)
+            adapter._move_nav2(1.0, 1.0)
+        assert [m.speed_limit for m in _published(pub)] == [pytest.approx(0.1), 0.0]
+
+    def test_non_finite_speed_is_never_published_as_a_limit(self):
+        adapter, pub = _speed_limit_adapter()
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=float("nan"))
+        assert _published(pub)[0].speed_limit == 0.0
+
+    def test_applies_only_when_something_listens(self):
+        adapter, pub = _speed_limit_adapter(subscribers=1)
+        assert adapter.speed_limit_applies is True
+        pub.get_subscription_count.return_value = 0
+        assert adapter.speed_limit_applies is False
+
+    def test_does_not_apply_without_a_publisher(self):
+        adapter, _ = _speed_limit_adapter()
+        adapter._speed_limit_pub = None
+        assert adapter.speed_limit_applies is False
+        # and a move still goes through, logging that the speed is not applied
+        adapter._move_nav2(1.0, 1.0, speed=0.2)
+        assert adapter._nav2_client.send_goal_async.called
+
+    def test_no_publisher_when_speed_limit_message_missing(self):
+        node = _make_node()
+        nav2_client = MagicMock()
+        nav2_client.wait_for_server.return_value = True
+        with patch.object(bridge_module, "SpeedLimit", None):
+            adapter, _ = _build_adapter(
+                has_nav2=True, node=node, nav2_client=nav2_client, odom_wait_sec=0.0
+            )
+        assert adapter._speed_limit_pub is None
+        assert adapter.speed_limit_applies is False
+
+    def test_speed_limit_topic_follows_the_namespace(self):
+        node = _make_node()
+        nav2_client = MagicMock()
+        nav2_client.wait_for_server.return_value = True
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            _build_adapter(
+                has_nav2=True, node=node, nav2_client=nav2_client,
+                namespace="robot1", odom_wait_sec=0.0,
+            )
+        topics = [c.args[1] for c in node.create_publisher.call_args_list]
+        assert "/robot1/speed_limit" in topics
