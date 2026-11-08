@@ -13,7 +13,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `apyrobo mcp` sends `notifications/progress` every 5 seconds during a motion
   call whose request carries a `progressToken`: elapsed time, position, and for
   `move_to` the distance left. Nothing is sent without a token, and a stop or
-  cancel does not wait on it.
+  cancel does not wait on it. Tested with APYROBO's own stdio client on
+  `mock://` and a slow test adapter, not yet with the official MCP client or a
+  desktop host.
 
 - `apyrobo mcp` answers `robot_status` during a move, so a client that sends
   requests while one is running can watch the robot drive. Motion stays one call
@@ -21,8 +23,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - `apyrobo mcp keepout` (experimental) writes a Nav2 keepout mask from the same
   `--no-go` and `--policy-file` zones the server refuses, and prints the Nav2
-  parameters to paste. Loaded by Nav2's map server on Jazzy and Humble; no test
-  has Nav2 route around a zone with it yet.
+  parameters to paste. Nav2's map server on Jazzy and Humble loads the mask. In
+  a one-off Gazebo run on Humble, Nav2 planned around a zone but the robot
+  stuck at its edge; no CI test covers routing with it.
 
 - `apyrobo mcp --audit-log PATH` appends one JSON line for each motion decision
   (time, tool, arguments, decision, enforced speed, policy), synced before the
@@ -63,8 +66,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - **Deny by default with allowed areas.** `apyrobo mcp --allow-area
   X_MIN,Y_MIN,X_MAX,Y_MAX` (repeatable) and `allowed_areas` in a policy file:
   with at least one set, a move target outside all of them is refused, and so
-  is a route that leaves them. Unset keeps today's behaviour.
-  `apyrobo mcp selftest` tests it, and `apyrobo mcp config` passes it through.
+  is a route that leaves them, so two separate areas do not let a robot cross
+  the space between them. Areas that touch or overlap count as one space, and
+  a robot that starts outside every area may still drive in. Unset keeps
+  today's behaviour. On `ros2://` with areas set, the adapter asks Nav2 for a
+  plan even with no zones and refuses the move if none comes back.
+  `apyrobo mcp selftest` tests it (a crossing move too when more than one area
+  is set), and `apyrobo mcp config` passes it through.
   `SafetyPolicy` gains `allowed_areas`. Zones given as NaN or infinity are now
   a readable error at start; a NaN zone used to refuse nothing.
 - **`apyrobo mcp selftest` warns about what the policy leaves unset**: no
@@ -196,6 +204,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   2026), in place of advice to raise a timeout that Claude Desktop does not
   offer, and a note that a client's stop button is unproven until you see
   `cancelled` in the audit log.
+- `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
+  and what APYROBO does not protect against. It says `ros2://` needs no rosbridge
+  and how to set `ROS_DOMAIN_ID` over `--ssh`.
+- The README shows the MCP safety demo as an animated terminal SVG, drawn by
+  `scripts/make_safety_demo_svg.py` from the demo's real output; a test fails
+  if the committed file no longer matches a fresh run.
 
 ### Fixed
 - `--max-speed` and a policy's `max_speed` now limit a Nav2 drive on `ros2://`. A `navigate_to_pose` goal carries no speed, so the robot drove as fast as Nav2's controller allowed; before each goal `ros2://` now publishes the move's speed as a `nav2_msgs/SpeedLimit` (m/s) on Nav2's `speed_limit` topic, and a move without a speed lifts it. The Nav2-in-Gazebo test checks the controller's commanded speed under `--max-speed 0.1`, with `/odom` as a looser check (Humble, DWB). When nothing subscribes to the topic, replies still say `speed_limit_applied: false` and the audit log `not_limited`. The limit stays set in Nav2 after `apyrobo mcp` exits.
@@ -226,21 +240,16 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   extra arguments, so a host that adds its own keeps working.
 - `apyrobo mcp --confirm-moves` now asks about the plan of an `execute_task`, not its words. The question showed only the task text, so with `--no-go 2,2,4,4` a yes to "go to (3,3)" was refused after the yes, and a task the planner misread drove where the user never saw. The question now lists each step that will run, with each drive's target and the speed the policy allows; a task whose plan the policy refuses is refused without asking, before any step runs; and a yes runs the plan it was shown, without planning again. Through Nav2 the `move_to` and `execute_task` questions no longer name a speed the robot does not get.
 - `apyrobo mcp` `plan_task` no longer says `can_proceed: true` and `risk_level: low` for a plan the safety policy refuses. With `--no-go 2,2,4,4`, "go to (3,3)" was planned as safe and then refused by `move_to` and `execute_task`. Each drive in the plan is now checked against the no-go zones and allowed areas without moving, and a refused one gives `can_proceed: false` with the same reason a move gets. On adapters that plan their own route (`ros2://` through Nav2) only the target is checked before the move.
-- `apyrobo mcp` `execute_task` and `plan_task` with the rule planner now use the speed a task names. "go to (1, 2) at speed 0.1" planned the default 0.5 m/s and, under `--max-speed 0.2`, drove at 0.2, twice what was asked, with the reply naming 0.5. "at speed N", "speed: N", "at a speed of N" and "at N m/s" now set every drive's speed; the policy limit still clamps it. `plan_task` adds `speed_notes` when a drive will not run at the speed shown (clamped, or through Nav2, which takes no speed). A task with two different speeds, a negative speed, or a speed but no drive is refused with a "Not planned:" reason.
+- `apyrobo mcp` `execute_task` and `plan_task` with the rule planner now use the speed a task names. "go to (1, 2) at speed 0.1" planned the default 0.5 m/s and, under `--max-speed 0.2`, drove at 0.2, twice what was asked, with the reply naming 0.5. "at speed N", "speed: N", "at a speed of N" and "at N m/s" now set every drive's speed; the policy limit still clamps it. `plan_task` adds `speed_notes` when a drive will not run at the speed shown (clamped, or through Nav2 when the limit does not reach the controller). A task with two different speeds, a negative speed, or a speed but no drive is refused with a "Not planned:" reason.
 - `apyrobo mcp` `execute_task` and `plan_task` with the rule planner no longer drop all but one of the places a task names. "go to (3, 3) then come back to (0, 0)" drove only to (0, 0) and reported `completed`, so a no-go zone over (3, 3) was never refused in the reply. A task that names more than one place to drive is now refused with a "Not planned:" reason asking for one target per call; a delivery from one point to another still drives to both.
 - `apyrobo mcp` `execute_task` with the rule planner no longer reports `completed` for a task it did not recognise. "dock", "go forward 1 metre" and "turn left" planned a single status report, the robot stayed put and the reply said completed; such a task is now refused with a "Not planned:" reason listing what the planner understands, and `plan_task` says `can_proceed: false`. "rotate 90 degrees" turned 0 rad; a turn now uses the angle the task states, in degrees or radians, and is refused without one or on a robot that cannot turn in place.
 - `apyrobo mcp` `execute_task` and `plan_task` with the rule planner no longer do the opposite of "don't": "don't go to (3, 3)" planned and drove to (3, 3). A task with a negation, a number in exponent form (`(1e3, 2)` drove to (3, 2)) or three numbers for one target (`(1, 2, 3)` dropped the 3) is now refused with a reason starting "Not planned:", and the robot does not move.
 - `apyrobo mcp` `rotate` now returns an error on an adapter that cannot turn in place, such as `ros2://`, and sends nothing. It did nothing there and still reported `rotated`; the audit log records the call as `failed`.
 - `apyrobo mcp selftest` now checks `--audit-log PATH`, given before or after `selftest`. It passed with a log path the server cannot open, so the server then exited at start in the client; the check now fails, naming the path. Nothing is written to the log.
-- `apyrobo mcp` on `ros2://` through Nav2 no longer says a speed was clamped as if that limited the drive. A Nav2 goal carries no speed, so `move_to` and `execute_task` replies now carry `speed_limit_applied: false` and a note, and the audit log's decision is `not_limited` with no enforced speed. `mock://` and the `/cmd_vel` fallback still report `clamped` and `ran`.
 - A move sent with no speed, or speed 0, now stays within the policy's `max_speed`. On the `ros2://` `/cmd_vel` fallback it drove at 0.5 m/s under any limit; the safety layer now hands the robot its default speed or the limit, whichever is lower, and an adapter that leaves the speed to the robot gets the limit. Adapters can declare `default_speed`.
 - `apyrobo mcp --confirm-moves` on protocol 2026-07-28: a yes now runs its move once. Resending the same answer ran the move again for up to 10 minutes without a new question; it now gets an `Invalid or expired requestState` error, and a no cannot be resent as a yes.
 - `--profile` with `--provider llm` now passes a provider-qualified model such as `ollama/llama3.2:3b` to `apyrobo plan`, `execute` and `serve`. LiteLLM could not route the bare Ollama names, so a profile on Ollama could not reach its model.
 - The README's compute profiles section ran code that does not exist (`apyrobo exec`, `apyrobo.compute_profiles`, `default_llm`) and listed the wrong models; it now matches the code, as do the `apyrobo policy check` examples, the custom adapter example in `docs/concepts/adapter_pattern.md` and the memory names in `MIGRATION.md`. `tests/test_docs_code.py` checks documented imports and commands.
-
-- `llms.txt` now leads with `apyrobo mcp`, its one-line try-out, the config
-  command and what it doesn't guarantee. It no longer says safety cannot be
-  bypassed by any agent, which went further than the code does.
 
 - `apyrobo mcp`: a `stop` call or a client's `notifications/cancelled` now reaches
   the robot during a move; before, neither was acted on until the move ended.
@@ -249,22 +258,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   before the stop does not start, and later moves run as usual. The audit log
   gains `stopped` and `cancelled`. A client that gives up on a long move now stops
   the robot. Tested on `mock://`, a slow test adapter and the official SDK client,
-  not yet on a real Nav2 goal.
+  and in the Nav2-in-Gazebo test, where a cancel and then a stop each halt a
+  running Nav2 goal short of it.
 
 - `apyrobo mcp --max-speed` refuses at start any value that isn't finite and
   positive. `nan` and `inf` used to turn the speed limit off, and `0` or `-1`
   started a server. A policy file's `max_speed` and `max_angular_speed` refuse
   `.nan` and `.inf` too.
-
-- Allowed areas now hold along the route, not only at the target. A straight
-  line, or a Nav2 plan on `ros2://`, that leaves the areas on the way to an
-  allowed target is refused, so two separate areas no longer let a robot cross
-  the space between them. **Behaviour change:** with areas that do not touch,
-  such a move used to run. Areas that touch or overlap count as one space, and
-  a robot that starts outside every area may still drive in. `ros2://` now asks
-  Nav2 for a plan when areas are set, even with no zones, and refuses the move
-  if none comes back. `apyrobo mcp selftest` tries such a move when more than
-  one area is set.
 
 - `execute_task` refusals are written as a sentence, not a Python dict, and match
   `move_to`: `Position (3, 3) is inside collision zone (x 2 to 4, y 2 to 4)`, with
@@ -360,19 +360,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   FATAL error fails it on the first state that shows it. Tested against a
   simulated AGV, not hardware.
 
-- `docs/first-real-robot.md`: the path from `mock://` to a real robot, in order,
-  and what APYROBO does not protect against. It says `ros2://` needs no rosbridge
-  and how to set `ROS_DOMAIN_ID` over `--ssh`.
+### Changed
+
+- `llms.txt` now leads with `apyrobo mcp`, its one-line try-out, the config
+  command and what it doesn't guarantee. It no longer says safety cannot be
+  bypassed by any agent, which went further than the code does.
 - docs/mcp.md says plainly that `apyrobo mcp` checks policy, not live sensors:
   no move is refused because of what a scanner or camera sees now, and the
   human-proximity check does not run. It also says the tool list is fixed, with
   no raw ROS topic, service or action call.
-- The README shows the MCP safety demo as an animated terminal SVG, drawn by
-  `scripts/make_safety_demo_svg.py` from the demo's real output; a test fails
-  if the committed file no longer matches a fresh run.
-
-### Changed
-
 - docs/mcp.md covers `apyrobo mcp` on `ros2://` robots (Nav2, the
   Gazebo end-to-end test CI runs) and protocol 2026-07-28 clients; a test
   keeps the page in step with the server's supported versions and methods.
