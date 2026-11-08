@@ -18,6 +18,7 @@ import contextlib
 import errno
 import hashlib
 import hmac
+import importlib.util
 import json
 import logging
 import math
@@ -1933,6 +1934,21 @@ def load_policy_file(path: str | Path) -> dict[str, Any]:
     return out
 
 
+# Providers that plan through litellm. Without it they would fall back to
+# the rule planner on every call, and only a stderr line would say so.
+_LITELLM_PROVIDERS = ("llm", "tool_calling")
+
+
+def _check_provider_installed(provider: str) -> None:
+    """Refuse to start with an LLM planner that cannot be imported."""
+    if provider in _LITELLM_PROVIDERS and importlib.util.find_spec("litellm") is None:
+        raise ImportError(
+            f"--provider {provider} needs litellm, which is not installed. "
+            "Install it with: pip install 'apyrobo[llm]', "
+            "or use --provider rule (the default)"
+        )
+
+
 def build_server(
     robot_uri: str = "mock://turtlebot4",
     policy: str | None = None,
@@ -1959,6 +1975,8 @@ def build_server(
 
     if max_speed is not None:
         max_speed = _positive(max_speed, "--max-speed")
+    if agent is None:
+        _check_provider_installed(provider)
     log = AuditLog(audit_log) if audit_log is not None else None
     file_cfg = load_policy_file(policy_file) if policy_file is not None else {}
     base_name = policy or file_cfg.get("base") or "default"

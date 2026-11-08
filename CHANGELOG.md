@@ -193,6 +193,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `cancelled` in the audit log.
 
 ### Fixed
+- `apyrobo mcp --provider llm` (and `tool_calling`) without litellm installed
+  exits at start with the install line. It used to start, and every
+  `plan_task` and `execute_task` used the rule planner, said only on stderr.
+  `apyrobo mcp selftest` fails the same way.
 - `apyrobo mcp`: `move_to` and `rotate` refuse `speed` 0 with an error, and the
   robot does not move. `move_to` with speed 0 drove at the default speed and
   reported `moved`; `rotate` with speed 0 reported `rotated`. Leave `speed` out

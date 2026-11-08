@@ -331,7 +331,7 @@ checked only when the move runs.
 | `--allow-area X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangle move targets may be in; with any set, a target outside all of them is refused; repeat for more |
 | `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
 | `--audit-log PATH` | off | Append one JSON line per motion decision to `PATH`; if a line cannot be written, motion is refused (see below) |
-| `--provider` | `rule` | Planner for `plan_task` / `execute_task` |
+| `--provider` | `rule` | Planner for `plan_task` / `execute_task`; `llm` needs `pip install 'apyrobo[llm]'`, and without it the server does not start |
 
 For a starting point, copy a commented policy from
 [`examples/policies/`](../examples/policies/) (warehouse aisle, lab bench, home
