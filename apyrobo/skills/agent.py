@@ -144,6 +144,24 @@ class RuleBasedProvider(AgentProvider):
         r"|m\s*/\s*sec\b|km\s*/\s*h\b|kph\b|kmh\b|mph\b|cm\s*/\s*s\b"
         r"|mm\s*/\s*s\b|ft\s*/\s*s\b|(?:feet|foot)\s+per\s+second\b|knots?\b)"
     )
+    # A turn speed ("at 0.5 rad/s", "30 degrees per second", "10 rpm"): the
+    # rule planner sets no turn speed, so it used to turn at the default.
+    _TURN_SPEED = re.compile(
+        r"\d\s*(?:rad(?:ian)?s?|deg(?:ree)?s?|\u00b0)\s*"
+        r"(?:/\s*s(?:ec(?:ond)?)?\b|per\s+sec(?:ond)?\b|a\s+second\b)"
+        r"|\d\s*rpm\b"
+    )
+    # A choice or range of speeds ("speed 0.1 or 0.2", "at 0.1-0.2 m/s"):
+    # only the first number used to be read.
+    _SPEED_CHOICE = re.compile(
+        r"\bspeed\s*(?:of\s+|[:=]\s*)?-?\d+(?:\.\d+)?\s*(?:m/s\s*)?"
+        r"(?:or|-|\u2013|\u2014)\s*-?\d"
+        r"|\bat\s+-?\d+(?:\.\d+)?\s*(?:m/s\s*)?(?:or|to|-|\u2013|\u2014)\s*"
+        r"-?\d+(?:\.\d+)?\s*m/s\b"
+    )
+    # A digit group separator ("1_0"), which the coordinate reader splits:
+    # "(1_0, 1)" drove to (0, 1).
+    _UNDERSCORE_NUMBER = re.compile(r"\d_\d")
     _NUMBER_TRIPLE = re.compile(
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
@@ -215,6 +233,26 @@ class RuleBasedProvider(AgentProvider):
                 "Not planned: this task gives a speed in a unit the rule planner "
                 "does not read (it reads m/s only), so the robot will not guess. "
                 "Give it in m/s, like 'at 0.2 m/s'."
+            )
+        if cls._UNDERSCORE_NUMBER.search(text):
+            return (
+                "Not planned: this task has a number with an underscore (like "
+                "1_0), which the rule planner would read in part, so the robot "
+                "will not guess. Write it without one, like 'go to (10, 1)'."
+            )
+        if cls._TURN_SPEED.search(text):
+            return (
+                "Not planned: this task gives a turn speed (like 0.5 rad/s), "
+                "which the rule planner does not set, so the robot will not turn "
+                "at a speed nobody asked for. Call rotate with angle_rad and "
+                "speed instead."
+            )
+        if cls._SPEED_CHOICE.search(text):
+            return (
+                "Not planned: this task gives a choice or range of speeds (like "
+                "'0.1 or 0.2'), and the rule planner would use only one, so the "
+                "robot will not guess which. Give one speed, like 'go to (1, 2) "
+                "at 0.2 m/s'."
             )
         if cls._NUMBER_TRIPLE.search(text):
             return (

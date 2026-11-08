@@ -128,6 +128,18 @@ def test_no_speed_in_the_task_keeps_the_default():
         ("go to (1, 2) at 10 cm/s", "reads m/s only"),
         ("go to (1, 2) at 0.1 m/sec", "reads m/s only"),
         ("rotate 90 degrees at speed 0.3", "names a speed, but the plan has no drive"),
+        ("go to (1, 2) at speed 0.1 or 0.2", "choice or range of speeds"),
+        ("go to (1, 2) at speed 0.1-0.2", "choice or range of speeds"),
+        ("go to (1, 2) at speed 0.1 m/s or 0.2", "choice or range of speeds"),
+        ("go to (1, 2) at 0.1 or 0.2 m/s", "choice or range of speeds"),
+        ("go to (1, 2) at 0.1 to 0.2 m/s", "choice or range of speeds"),
+        ("go to (1, 2) at 0.1\u20130.2 m/s", "choice or range of speeds"),
+        ("go to (1, 2) at speed 1_0", "underscore"),
+        ("rotate 90 degrees at 0.1 rad/s", "turn speed"),
+        ("turn right 45 degrees at 10 deg/s", "turn speed"),
+        ("rotate 1.5 rad at 0.2 radians per second", "turn speed"),
+        ("turn left 90 degrees at 30 degrees per second", "turn speed"),
+        ("rotate 90 degrees at 5 rpm", "turn speed"),
     ],
 )
 def test_a_speed_the_planner_cannot_use_is_refused_and_moves_nothing(task, reason):
@@ -160,3 +172,29 @@ def test_confirm_question_shows_the_named_speed():
         "execute_task", {"task": "go to (1, 1) at speed 0.1"}
     )
     assert "1. Drive to x=1.0, y=1.0 at 0.1 m/s" in question
+
+
+def test_a_turn_speed_in_a_task_does_not_turn_the_robot():
+    # It used to turn at the default speed, dropping the 0.1 rad/s asked for.
+    server = build_server("mock://turtlebot4")
+    before = json.loads(call(server, "robot_status")[1])["heading_rad"]
+    is_error, text = call(server, "execute_task", {"task": "rotate 90 degrees at 0.1 rad/s"})
+    assert is_error
+    assert "turn speed" in text
+    assert json.loads(call(server, "robot_status")[1])["heading_rad"] == before
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "pick up the box at 1 -2",
+        "go to (1, -2) at speed 0.2",
+        "go to (1, 2) at 0.2 m/s to be safe",
+        "go at speed 0.2 to 3 3",
+        "rotate 90 degrees",
+        "turn right 45 deg",
+    ],
+)
+def test_one_speed_and_plain_turns_still_plan(task):
+    assert RuleBasedProvider.cannot_read(task) is None
+    assert RuleBasedProvider().plan(task, [], [])

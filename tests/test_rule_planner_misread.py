@@ -32,6 +32,8 @@ UNREADABLE = [
     "go to (-.5, 1)",
     "go to x=.5 y=1",
     "move to 1 .5",
+    "go to (1_0, 1)",
+    "pick up the box at (2_0, 1)",
 ]
 READABLE = [
     "go to (3, 3)",
