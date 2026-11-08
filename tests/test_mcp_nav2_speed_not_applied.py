@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from apyrobo.mcp_server import SPEED_NOT_APPLIED, build_server
+from apyrobo.mcp_server import SPEED_NOT_APPLIED, SPEED_NOT_CHECKED, build_server
 from apyrobo.skills.agent import Agent
 
 
@@ -111,3 +111,49 @@ def test_without_an_audit_log_the_reply_still_says_so():
     server.toolbox.robot._adapter.speed_limit_applies = False
     moved = reply_payload(server.handle(call("move_to", x=1.0, y=0.0, speed=1.0)))
     assert moved["speed_limit_applied"] is False
+
+
+# A Nav2 limit sent but not checked against the controller's top speed.
+
+def make_unchecked(tmp_path, agent=None):
+    server, log = make(tmp_path, nav2=False, agent=agent)
+    server.toolbox.robot._adapter.speed_limit_checked = False
+    return server, log
+
+
+def test_an_unchecked_nav2_limit_is_said_in_the_reply_and_audit(tmp_path):
+    server, log = make_unchecked(tmp_path)
+    moved = reply_payload(server.handle(call("move_to", x=1.0, y=0.0, speed=0.1)))
+    assert moved["status"] == "moved"
+    assert moved["speed_limit_checked"] is False
+    assert moved["speed_note"] == SPEED_NOT_CHECKED
+    assert "speed_limit_applied" not in moved
+    line = last_line(log)
+    assert line["decision"] == "ran"
+    assert line["enforced_speed"] == pytest.approx(0.1)
+    assert "not checked" in line["detail"]
+
+
+def test_execute_task_with_an_unchecked_nav2_limit_says_so(tmp_path):
+    server, log = make_unchecked(tmp_path, agent=Agent(provider="rule"))
+    done = reply_payload(server.handle(call("execute_task", task="go to (1, 1)")))
+    assert done["status"] == "completed"
+    assert done["speed_limit_checked"] is False
+    assert done["speed_note"] == SPEED_NOT_CHECKED
+
+
+def test_not_applied_wins_over_not_checked(tmp_path):
+    server, log = make(tmp_path, nav2=True)
+    server.toolbox.robot._adapter.speed_limit_checked = False
+    moved = reply_payload(server.handle(call("move_to", x=1.0, y=0.0)))
+    assert moved["speed_note"] == SPEED_NOT_APPLIED
+    assert "speed_limit_checked" not in moved
+
+
+def test_a_checked_limit_adds_nothing(tmp_path):
+    server, log = make(tmp_path, nav2=False)
+    server.toolbox.robot._adapter.speed_limit_checked = True
+    moved = reply_payload(server.handle(call("move_to", x=1.0, y=0.0, speed=0.1)))
+    assert "speed_limit_checked" not in moved
+    assert "speed_note" not in moved
+    assert "detail" not in last_line(log)

@@ -159,6 +159,64 @@ try:
 except Exception:  # ImportError, or a partial nav2_msgs install
     SpeedLimit = None
 
+try:
+    from rcl_interfaces.srv import GetParameters
+except Exception:
+    GetParameters = None
+
+
+#: Nav2 controller plugins whose own top speed ``ros2://`` reads, and the
+#: parameter (under the controller's id, e.g. ``FollowPath.max_speed_xy``)
+#: that holds it. Names from Nav2 humble and jazzy: DWB
+#: dwb_plugins/src/kinematic_parameters.cpp, Regulated Pure Pursuit
+#: ``desired_linear_vel``, MPPI optimizer.cpp ``vx_max``.
+NAV2_CONTROLLER_MAX_PARAM = {
+    "dwb_core::DWBLocalPlanner": "max_speed_xy",
+    "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController": (
+        "desired_linear_vel"
+    ),
+    "nav2_mppi_controller::MPPIController": "vx_max",
+}
+
+
+def nav2_controller_max_param(plugin: Any) -> str | None:
+    """The parameter holding *plugin*'s top speed, or None for other plugins."""
+    if not isinstance(plugin, str):
+        return None
+    return NAV2_CONTROLLER_MAX_PARAM.get(plugin.strip().replace("/", "::"))
+
+
+def _parameter_value(value: Any) -> Any:
+    """A Python value from an rcl_interfaces/ParameterValue; None if unset."""
+    kind = getattr(value, "type", None)
+    if kind == 1:
+        return bool(value.bool_value)
+    if kind == 2:
+        return int(value.integer_value)
+    if kind == 3:
+        return float(value.double_value)
+    if kind == 4:
+        return str(value.string_value)
+    if kind == 9:
+        return [str(v) for v in value.string_array_value]
+    return None
+
+
+def nav2_speed_limit_value(speed: float | None, controller_max: float | None) -> float:
+    """The m/s value to publish on Nav2's speed_limit topic for a move.
+
+    0 lifts the limit (Nav2's NO_SPEED_LIMIT), so the controller runs at its
+    own configured speed. A limit at or above the controller's own top speed
+    is never published: Regulated Pure Pursuit and MPPI would raise their
+    target to it, and DWB would ignore it and keep an earlier, lower limit.
+    With *controller_max* unknown the speed is published as is.
+    """
+    if speed is None or not math.isfinite(speed) or speed <= 0:
+        return 0.0
+    if controller_max is not None and speed >= controller_max:
+        return 0.0
+    return float(speed)
+
 
 # ---------------------------------------------------------------------------
 # Navigation state
@@ -323,6 +381,7 @@ if _HAS_ROS2:
             "nav2_action": "navigate_to_pose",
             "speed_limit": "speed_limit",
             "nav2_plan_action": "compute_path_to_pose",
+            "nav2_controller_server": "controller_server",
         }
 
         # Navigation tuning
@@ -335,6 +394,8 @@ if _HAS_ROS2:
         # answer. Compared with the message stamp so sim time works.
         MAP_TF_MAX_AGE_SEC = 2.0
         GOAL_ACCEPT_TIMEOUT_SEC = 10.0
+        # Reading the controller's top speed at start, per service call.
+        CONTROLLER_PARAM_TIMEOUT_SEC = 1.0
         # Resend an unanswered goal after this long. The first goal from a
         # freshly started node can be lost: Nav2 logs "Failed to send goal
         # response (timeout)" when it has not yet discovered our response
@@ -361,6 +422,7 @@ if _HAS_ROS2:
                 self._config.update(yaml_cfg.get("topics", {}))
                 for key in (
                     "nav2_action", "nav2_plan_action", "speed_limit",
+                    "nav2_controller_server",
                     "cmd_vel", "odom", "scan", "camera", "depth", "imu",
                 ):
                     if key in yaml_cfg:
@@ -474,6 +536,32 @@ if _HAS_ROS2:
                     "nav2_msgs/SpeedLimit is not available: Nav2 drives run at "
                     "the controller's configured speed"
                 )
+
+            # --- The controller's own top speed, read once ---
+            self._controller_param_timeout_sec = float(
+                kwargs.get("controller_param_timeout_sec", self.CONTROLLER_PARAM_TIMEOUT_SEC)
+            )
+            self._controller_plugin: str | None = None
+            self._controller_max: float | None = None
+            if self._speed_limit_pub is not None:
+                try:
+                    self._controller_plugin, self._controller_max = (
+                        self._read_controller_max()
+                    )
+                except Exception as e:
+                    logger.warning("Could not read Nav2's controller parameters: %s", e)
+                if self._controller_max is not None:
+                    logger.info(
+                        "Nav2 controller %s tops out at %.2f m/s; speed limits at or "
+                        "above it are not sent", self._controller_plugin, self._controller_max,
+                    )
+                else:
+                    logger.warning(
+                        "Nav2 speed limits are not checked against the controller's "
+                        "own top speed (controller %s): a limit above it can raise "
+                        "a Regulated Pure Pursuit or MPPI robot's speed",
+                        self._controller_plugin or "unknown",
+                    )
 
             # --- Nav2 planner client, used to check a route before driving it ---
             self._plan_client: Any = None
@@ -859,8 +947,74 @@ if _HAS_ROS2:
 
             logger.info("Nav2: navigation finished — state=%s", self._nav_state.value)
 
+        @property
+        def speed_limit_checked(self) -> bool:
+            """Whether a Nav2 speed limit is checked against the controller's top speed.
+
+            True off Nav2 (the /cmd_vel fallback drives at the speed itself).
+            """
+            if not self._has_nav2:
+                return True
+            return getattr(self, "_controller_max", None) is not None
+
+        def _read_controller_max(self) -> tuple[str | None, float | None]:
+            """Nav2's controller plugin and its top speed in m/s, from controller_server.
+
+            Only a single configured controller is read; with several, any
+            unknown plugin or no answer, the top speed is None.
+            """
+            got = self._get_controller_params(["controller_plugins"])
+            plugins = got.get("controller_plugins")
+            if not (isinstance(plugins, list) and len(plugins) == 1
+                    and isinstance(plugins[0], str)):
+                return None, None
+            controller_id = plugins[0]
+            plugin = self._get_controller_params([f"{controller_id}.plugin"]).get(
+                f"{controller_id}.plugin"
+            )
+            param = nav2_controller_max_param(plugin)
+            if param is None:
+                return (plugin if isinstance(plugin, str) else None), None
+            name = f"{controller_id}.{param}"
+            value = self._get_controller_params([name]).get(name)
+            if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value) and value > 0):
+                return plugin, float(value)
+            return plugin, None
+
+        def _get_controller_params(self, names: list[str]) -> dict[str, Any]:
+            """Read *names* from Nav2's controller_server; {} on no answer."""
+            if GetParameters is None:
+                return {}
+            service = f"{self._config['nav2_controller_server']}/get_parameters"
+            client = getattr(self, "_controller_param_client", None)
+            if client is None:
+                client = self._node.create_client(GetParameters, service)
+                self._controller_param_client = client
+            timeout = self._controller_param_timeout_sec
+            if not client.wait_for_service(timeout_sec=timeout):
+                return {}
+            request = GetParameters.Request()
+            request.names = list(names)
+            future = client.call_async(request)
+            t0 = time.time()
+            while not future.done():
+                if time.time() - t0 > timeout:
+                    with contextlib.suppress(Exception):
+                        future.cancel()
+                    return {}
+                time.sleep(0.02)
+            response = future.result()
+            values = list(getattr(response, "values", None) or [])
+            return {
+                name: _parameter_value(value) for name, value in zip(names, values, strict=False)
+            }
+
         def _publish_nav2_speed_limit(self, speed: float | None) -> None:
-            """Publish *speed* (m/s) as Nav2's speed limit; None or 0 lifts it."""
+            """Publish *speed* (m/s) as Nav2's speed limit; None or 0 lifts it.
+
+            A speed at or above the controller's own top speed lifts it too.
+            """
             pub = getattr(self, "_speed_limit_pub", None)
             if pub is None or SpeedLimit is None:
                 if speed is not None:
@@ -869,7 +1023,13 @@ if _HAS_ROS2:
                         "limit publisher", speed,
                     )
                 return
-            value = float(speed) if speed and speed > 0 and math.isfinite(speed) else 0.0
+            controller_max = getattr(self, "_controller_max", None)
+            value = nav2_speed_limit_value(speed, controller_max)
+            if value == 0.0 and speed and controller_max is not None and speed >= controller_max:
+                logger.info(
+                    "Requested speed %.2f m/s is at or above the controller's own "
+                    "%.2f m/s: lifting Nav2's speed limit instead", speed, controller_max,
+                )
             msg = SpeedLimit()
             msg.percentage = False
             msg.speed_limit = value

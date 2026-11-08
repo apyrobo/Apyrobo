@@ -502,10 +502,27 @@ Other controllers (Regulated Pure Pursuit, MPPI) and ROS 2 Jazzy are not
 tested here. The topic name can be changed with `speed_limit` in the adapter
 config.
 
+A speed limit is never sent at or above the controller's own top speed:
+Regulated Pure Pursuit and MPPI would take it as a new, higher target, and DWB
+would ignore it and keep an earlier, lower limit. So at start `ros2://` reads,
+from `controller_server`'s parameters, the one configured controller's plugin
+and its top speed: `max_speed_xy` for DWB, `desired_linear_vel` for Regulated
+Pure Pursuit, `vx_max` for MPPI (parameter names checked in Nav2's Humble and
+Jazzy source). A move's speed at or above it lifts the limit instead, so the
+controller drives at its own speed. With any other controller (a rotation
+shim, for one), several controllers, or no answer within about a second, the
+speed is sent as is: the reply then carries `"speed_limit_checked": false`
+and a `speed_note`, and the audit log line a `detail` saying so. Keep
+`--max-speed` at or below the controller's speed in that case. The
+`controller_server` node name can be changed with `nav2_controller_server` in
+the adapter config. The decision is unit-tested with a stand-in for each of
+the three controllers; only DWB is driven in CI.
+
 The limit stays set in Nav2 after the move, also after `apyrobo mcp` exits,
 until the next goal from `ros2://` sets another one or a move sent without a
 speed lifts it. It caps the controller only: Nav2's recovery behaviours (back
-up, spin) use their own speeds.
+up, spin) use their own speeds; Jazzy's default behaviour tree backs up at
+0.15 m/s, above a 0.1 m/s limit.
 
 If nothing subscribes to that topic (an older Nav2, or `controller_server`
 remapped), the drive runs at whatever Nav2's controller is configured for. The
