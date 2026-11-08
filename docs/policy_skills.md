@@ -56,6 +56,8 @@ by default (override with `observe=`). Actions are position deltas
 Torch stays **your** dependency — APYROBO core never imports it:
 
 ```python
+from collections.abc import Mapping
+
 class LeRobotBasePolicy:
     def __init__(self, lerobot_policy, to_tensor, from_tensor):
         self._p = lerobot_policy
@@ -63,11 +65,23 @@ class LeRobotBasePolicy:
     def reset(self):
         self._p.reset()
     def select_action(self, obs):
-        return self._from(self._p.select_action(self._to(obs)))
+        out = self._p.select_action(self._to(obs))
+        if isinstance(out, Mapping):   # LeRobot >= 0.7 PolicyOutput
+            out = out["action"]
+        return self._from(out)
 ```
 
 `to_tensor`/`from_tensor` are your observation/action mappings (camera
-tensors in, base deltas out). Run it in sim first: the same `PolicyRunner`
+tensors in, base deltas out). Since LeRobot 0.7.0, `select_action` returns
+either a bare action tensor or, for a policy that predicts more than actions
+(a subtask, boxes, a future frame), a `PolicyOutput` dict with the action
+under `"action"` and the rest under `"prediction"`. The wrapper takes the
+action out either way (`from collections.abc import Mapping`); LeRobot's own
+`lerobot.processor.policy_output_to_transition` does the same if you use its
+processor pipeline. The wrapper and example are written against
+`lerobot>=0.7,<0.8`; the stand-in policy in the example returns the
+`PolicyOutput` shape on its first tick so the test covers it, but no real
+LeRobot install runs in CI. Run it in sim first: the same `PolicyRunner`
 drives `mock://` and the Gazebo stack unchanged.
 
 Runnable version: [`examples/04_learned_policy_safety.py`](../examples/04_learned_policy_safety.py)

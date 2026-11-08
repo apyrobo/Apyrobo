@@ -17,8 +17,11 @@ three episodes:
 
 The stand-in policy speaks LeRobot's interface (``reset()`` and
 ``select_action(batch) -> action``, a batch of named features in, a
-flat action vector out). Plain lists replace torch tensors so the example
-runs anywhere. To use a real checkpoint, load it with LeRobot and pass it
+flat action vector out). Since LeRobot 0.7, a policy that predicts more
+than actions returns a ``PolicyOutput`` dict instead, with the action
+under ``"action"``; the stand-in does that on its first tick so the
+wrapper is shown handling both. Plain lists replace torch tensors so the
+example runs anywhere. To use a real checkpoint, load it with LeRobot and pass it
 to ``LeRobotBasePolicy`` with your own observation/action mappings; the
 runner, bounds and enforcer stay exactly the same.
 
@@ -28,7 +31,7 @@ Run from the repo root (no ROS 2, GPU or torch needed):
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from apyrobo import Robot
@@ -45,8 +48,10 @@ class StandInPolicy:
     """Stand-in for a trained policy: same calls as a LeRobot policy.
 
     ``select_action`` takes a batch dict (``"observation.state"`` is the
-    robot's [x, y]) and returns a flat [dx, dy] action. ``mode`` picks the
-    failure we want to demonstrate.
+    robot's [x, y]) and returns a flat [dx, dy] action. On its first tick it
+    returns LeRobot 0.7's ``PolicyOutput`` shape instead (the action under
+    ``"action"`` plus a ``"prediction"``), as a policy with prediction on
+    does. ``mode`` picks the failure we want to demonstrate.
     """
 
     def __init__(self, goal: tuple[float, float], mode: str = "nominal") -> None:
@@ -57,7 +62,7 @@ class StandInPolicy:
     def reset(self) -> None:
         self._t = 0
 
-    def select_action(self, batch: dict[str, list[float]]) -> list[float]:
+    def select_action(self, batch: dict[str, list[float]]) -> Any:
         x, y = batch["observation.state"]
         self._t += 1
         if self.mode == "runaway" and self._t == 2:
@@ -67,7 +72,11 @@ class StandInPolicy:
         dx, dy = self.goal[0] - x, self.goal[1] - y
         dist = math.hypot(dx, dy)
         step = min(0.4, dist)
-        return [dx / dist * step, dy / dist * step] if dist else [0.0, 0.0]
+        action = [dx / dist * step, dy / dist * step] if dist else [0.0, 0.0]
+        if self._t == 1:
+            # LeRobot >= 0.7 PolicyOutput: {"action": ..., "prediction": {...}}
+            return {"action": action, "prediction": {"language": {"subtask": ["drive to goal"]}}}
+        return action
 
 
 # ── The adapter: LeRobot interface → APYROBO Policy ────────────────────
@@ -75,8 +84,11 @@ class LeRobotBasePolicy:
     """Wrap any object with LeRobot's ``select_action``/``reset``.
 
     ``to_batch`` maps APYROBO's observation dict to the policy's input;
-    ``from_action`` maps its output to ``{"dx": ..., "dy": ...}``. With a
+    ``from_action`` maps its action to ``{"dx": ..., "dy": ...}``. With a
     real checkpoint these are where tensors and camera frames come in.
+    LeRobot >= 0.7 may return a ``PolicyOutput`` dict (action under
+    ``"action"``) instead of a bare action; the wrapper takes the action
+    out before ``from_action`` sees it.
     """
 
     def __init__(
@@ -92,7 +104,10 @@ class LeRobotBasePolicy:
         self._p.reset()
 
     def select_action(self, obs: dict[str, Any]) -> dict[str, float]:
-        return self._from(self._p.select_action(self._to(obs)))
+        out = self._p.select_action(self._to(obs))
+        if isinstance(out, Mapping):    # LeRobot >= 0.7 PolicyOutput
+            out = out["action"]
+        return self._from(out)
 
 
 def to_batch(obs: dict[str, Any]) -> dict[str, list[float]]:

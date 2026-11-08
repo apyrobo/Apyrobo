@@ -49,8 +49,10 @@ dependency; APYROBO core never imports it)::
         def reset(self):
             self._p.reset()
         def select_action(self, obs):
-            action = self._p.select_action(self._to(obs))
-            return self._from(action)   # → {"dx": ..., "dy": ...}
+            out = self._p.select_action(self._to(obs))
+            if isinstance(out, Mapping):  # LeRobot >= 0.7 PolicyOutput
+                out = out["action"]
+            return self._from(out)   # → {"dx": ..., "dy": ...}
 
 Status: verified with deterministic mock policies (including an
 adversarial runaway policy that the bounds must contain). Not yet run

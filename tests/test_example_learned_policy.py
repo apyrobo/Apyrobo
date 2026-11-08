@@ -67,3 +67,26 @@ def test_adapter_wraps_lerobot_interface(example):
     action = policy.select_action({"x": 0.0, "y": 0.0})
     assert set(action) == {"dx", "dy"}
     assert action["dx"] == pytest.approx(0.4)
+
+
+def test_adapter_takes_action_out_of_policy_output(example):
+    # LeRobot >= 0.7: select_action may return a PolicyOutput dict
+    # ({"action": ..., "prediction": ...}) instead of a bare action.
+    inner = example.StandInPolicy(example.GOAL)
+    inner.reset()
+    first = inner.select_action({"observation.state": [0.0, 0.0]})
+    assert set(first) == {"action", "prediction"}
+    second = inner.select_action({"observation.state": [0.4, 0.0]})
+    assert isinstance(second, list)
+
+    policy = example.LeRobotBasePolicy(inner, example.to_batch, example.from_action)
+    policy.reset()
+    assert policy.select_action({"x": 0.0, "y": 0.0}) == pytest.approx({"dx": 0.4, "dy": 0.0})
+    assert policy.select_action({"x": 0.4, "y": 0.0}) == pytest.approx({"dx": 0.4, "dy": 0.0})
+
+
+def test_episodes_ran_through_the_policy_output_tick(results):
+    # every episode's first tick came back as a PolicyOutput and still moved
+    for r, _ in results.values():
+        assert r.steps >= 2
+        assert r.trajectory[1][0] == pytest.approx(0.4)
