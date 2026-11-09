@@ -43,6 +43,22 @@ Available commands:
   quit / exit                   Exit the REPL"""
 
 
+def _through_enforcer(robot: Any, safety_policy: Any = None) -> Any:
+    """Return *robot* wrapped in a SafetyEnforcer, unless it already is one.
+
+    ``run`` and ``test`` drive the robot like every other command, so they go
+    through the enforcer: a step's speed is clamped to the policy's max speed
+    and no-go zones are checked. *safety_policy* is a SafetyPolicy or a
+    registered name; None means "default".
+    """
+    from apyrobo.safety.enforcer import SafetyEnforcer
+
+    if isinstance(robot, SafetyEnforcer):
+        return robot
+    policy = safety_policy if safety_policy is not None else "default"
+    return SafetyEnforcer(robot, policy=policy)
+
+
 # ---------------------------------------------------------------------------
 # Parameter parsing
 # ---------------------------------------------------------------------------
@@ -88,6 +104,10 @@ class ComposeREPL:
         library:    ``SkillLibrary`` with the skills to compose from.
                     Defaults to a library containing only built-in skills.
         output_fn:  Output sink; defaults to ``print``.  Override in tests.
+        safety_policy: SafetyPolicy or registered policy name that ``run``,
+                    ``test`` and a robot switched to with ``robot <uri>`` are
+                    enforced with (None = "default"); a robot that is already
+                    a SafetyEnforcer is used as it is.
     """
 
     def __init__(
@@ -95,8 +115,11 @@ class ComposeREPL:
         robot: Any,
         library: SkillLibrary | None = None,
         output_fn: Callable[[str], None] | None = None,
+        safety_policy: Any = None,
     ) -> None:
-        self._robot = robot
+        # Every skill runs through a SafetyEnforcer (see _through_enforcer).
+        self._safety_policy = safety_policy
+        self._robot = _through_enforcer(robot, safety_policy)
         self._library = library or SkillLibrary()
         self._plan: list[tuple[str, dict[str, Any]]] = []
         self._output: Callable[[str], None] = output_fn or print
@@ -388,7 +411,7 @@ class ComposeREPL:
         uri = rest[0]
         try:
             from apyrobo.core.robot import Robot
-            self._robot = Robot.discover(uri)
+            self._robot = _through_enforcer(Robot.discover(uri), self._safety_policy)
             self._out(f"Switched to robot: {uri}")
         except Exception as exc:
             self._out(f"Failed to connect to {uri!r}: {exc}")
