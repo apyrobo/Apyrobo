@@ -164,6 +164,7 @@ class OrchestrationServer:
         checkpoint_store: Any = None,
         default_robot_uri: str = "mock://turtlebot4",
         execute_tasks: bool = False,
+        safety_policy: Any = None,
     ) -> None:
         self.adapter = adapter
         self.agent = agent
@@ -171,6 +172,10 @@ class OrchestrationServer:
         self.default_robot_uri = default_robot_uri
         self.max_iterations = max_iterations
         self.execute_tasks = execute_tasks
+        # Execute mode runs every task through a SafetyEnforcer with this
+        # policy (a SafetyPolicy or a registered name; None = "default").
+        self.safety_policy = safety_policy
+        self._enforcers: dict[int, Any] = {}
         self._checkpoint_store = checkpoint_store
         self._iterations = 0
         # Discovered robots per URI, so repeated tasks against the same
@@ -244,6 +249,7 @@ class OrchestrationServer:
             if robot is self.default_robot:
                 continue
             del self._robot_cache[uri]
+            self._enforcers.pop(id(robot), None)
             try:
                 robot.disconnect()
             except Exception as exc:
@@ -333,7 +339,7 @@ class OrchestrationServer:
         from apyrobo.skills.executor import SkillExecutor
 
         try:
-            result = SkillExecutor(robot).execute_graph(graph)
+            result = SkillExecutor(self._enforcer_for(robot)).execute_graph(graph)
             status = getattr(result.status, "value", None) or str(result.status)
             execution: dict[str, Any] = {
                 "status": status,
@@ -345,6 +351,25 @@ class OrchestrationServer:
         except Exception as exc:
             logger.warning("OrchestrationServer._execute error: %s", exc)
             return {"status": "failed", "error": str(exc)}
+
+    def _enforcer_for(self, robot: Any) -> Any:
+        """Return the SafetyEnforcer that execute mode drives *robot* through.
+
+        A robot that is already a SafetyEnforcer is used as it is. Otherwise
+        one enforcer per robot is kept, so its clamps and refusals add up
+        across tasks.
+        """
+        from apyrobo.safety.enforcer import SafetyEnforcer
+
+        if isinstance(robot, SafetyEnforcer):
+            return robot
+        held = self._enforcers.get(id(robot))
+        if held is not None and held[0] is robot:
+            return held[1]
+        policy = self.safety_policy if self.safety_policy is not None else "default"
+        enforcer = SafetyEnforcer(robot, policy=policy)
+        self._enforcers[id(robot)] = (robot, enforcer)
+        return enforcer
 
     def _resolve_robot(self, robot_uri: str) -> Any:
         """Return the robot for *robot_uri*, discovering and caching it."""

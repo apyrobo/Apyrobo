@@ -1542,6 +1542,10 @@ def cmd_serve(args: argparse.Namespace) -> None:
     ws_port: int = getattr(args, "ws_port", 8765)
     slack_port: int = getattr(args, "slack_port", 3000)
     slack_command: str = getattr(args, "slack_command", "/apyrobo")
+    max_speed = getattr(args, "max_speed", 1.5)
+    if not (isinstance(max_speed, (int, float)) and math.isfinite(max_speed) and max_speed > 0):
+        print(f"Error: --max-speed must be a positive number, got {max_speed!r}", file=sys.stderr)
+        sys.exit(2)
 
     if profile_name:
         from apyrobo.profiles import get_profile as _gp
@@ -1558,7 +1562,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     robot = Robot.discover(robot_uri)
-    mode_note = " execute=on" if execute_tasks else ""
+    mode_note = f" execute=on max_speed={max_speed:g}" if execute_tasks else ""
 
     if transport == "websocket":
         try:
@@ -1597,6 +1601,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     server = OrchestrationServer(
         adapter, agent, default_robot=robot, default_robot_uri=robot_uri,
         execute_tasks=execute_tasks,
+        safety_policy=SafetyPolicy(max_speed=max_speed),
     )
     server.run()
 
@@ -3025,8 +3030,13 @@ def main() -> None:
     )
     p_serve.add_argument(
         "--execute", action="store_true",
-        help="Execute each planned task on the robot before responding "
-             "(outcome reported in metadata.execution; default: plan only)",
+        help="Execute each planned task on the robot, through the safety "
+             "enforcer, before responding (outcome reported in "
+             "metadata.execution; default: plan only)",
+    )
+    p_serve.add_argument(
+        "--max-speed", dest="max_speed", type=float, default=1.5, metavar="M_S",
+        help="Speed limit for --execute, in m/s (default: 1.5)",
     )
     p_serve.add_argument(
         "--ws-port", dest="ws_port", type=int, default=8765, metavar="PORT",
