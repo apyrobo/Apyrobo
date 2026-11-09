@@ -167,23 +167,38 @@ except Exception:
 
 #: Nav2 controller plugins whose own top speed ``ros2://`` reads, and the
 #: parameter (under the controller's id, e.g. ``FollowPath.max_speed_xy``)
-#: that holds it. Names from Nav2 humble and jazzy: DWB
-#: dwb_plugins/src/kinematic_parameters.cpp, Regulated Pure Pursuit
-#: ``desired_linear_vel``, MPPI optimizer.cpp ``vx_max``.
-NAV2_CONTROLLER_MAX_PARAM = {
-    "dwb_core::DWBLocalPlanner": "max_speed_xy",
+#: that holds it. Names from Nav2's source: DWB
+#: dwb_plugins/src/kinematic_parameters.cpp ``max_speed_xy``, MPPI
+#: optimizer.cpp ``vx_max`` (humble to lyrical). Regulated Pure Pursuit reads
+#: ``desired_linear_vel`` up to kilted; lyrical renamed it ``max_linear_vel``
+#: (parameter_handler.cpp keeps the old name, with a deprecation warning, when
+#: it is set, and only then leaves the new one undeclared), so both are tried,
+#: the old name first.
+NAV2_CONTROLLER_MAX_PARAMS: dict[str, tuple[str, ...]] = {
+    "dwb_core::DWBLocalPlanner": ("max_speed_xy",),
     "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController": (
-        "desired_linear_vel"
+        "desired_linear_vel", "max_linear_vel",
     ),
-    "nav2_mppi_controller::MPPIController": "vx_max",
+    "nav2_mppi_controller::MPPIController": ("vx_max",),
+}
+
+#: The first parameter name of each plugin above (kept for callers of 4.1).
+NAV2_CONTROLLER_MAX_PARAM = {
+    plugin: names[0] for plugin, names in NAV2_CONTROLLER_MAX_PARAMS.items()
 }
 
 
-def nav2_controller_max_param(plugin: Any) -> str | None:
-    """The parameter holding *plugin*'s top speed, or None for other plugins."""
+def nav2_controller_max_params(plugin: Any) -> tuple[str, ...]:
+    """The parameters that may hold *plugin*'s top speed, in the order to try."""
     if not isinstance(plugin, str):
-        return None
-    return NAV2_CONTROLLER_MAX_PARAM.get(plugin.strip().replace("/", "::"))
+        return ()
+    return NAV2_CONTROLLER_MAX_PARAMS.get(plugin.strip().replace("/", "::"), ())
+
+
+def nav2_controller_max_param(plugin: Any) -> str | None:
+    """The first parameter holding *plugin*'s top speed, or None for other plugins."""
+    names = nav2_controller_max_params(plugin)
+    return names[0] if names else None
 
 
 def _parameter_value(value: Any) -> Any:
@@ -972,14 +987,20 @@ if _HAS_ROS2:
             plugin = self._get_controller_params([f"{controller_id}.plugin"]).get(
                 f"{controller_id}.plugin"
             )
-            param = nav2_controller_max_param(plugin)
-            if param is None:
+            params = nav2_controller_max_params(plugin)
+            if not params:
                 return (plugin if isinstance(plugin, str) else None), None
-            name = f"{controller_id}.{param}"
-            value = self._get_controller_params([name]).get(name)
-            if (isinstance(value, (int, float)) and not isinstance(value, bool)
-                    and math.isfinite(value) and value > 0):
-                return plugin, float(value)
+            for param in params:
+                # One name per request: controller_server answers nothing at all
+                # when a request names a parameter it has not declared.
+                name = f"{controller_id}.{param}"
+                value = self._get_controller_params([name]).get(name)
+                if value is None:
+                    continue
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and math.isfinite(value) and value > 0):
+                    return plugin, float(value)
+                return plugin, None
             return plugin, None
 
         def _get_controller_params(self, names: list[str]) -> dict[str, Any]:
