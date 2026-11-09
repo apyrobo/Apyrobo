@@ -963,6 +963,29 @@ if _HAS_ROS2:
             logger.info("Nav2: navigation finished — state=%s", self._nav_state.value)
 
         @property
+        def speed_limit_shared(self) -> bool:
+            """Whether another node also publishes on the speed_limit topic.
+
+            A Nav2 costmap SpeedFilter publishes there by default, whenever the
+            zone under the robot changes, and its message replaces the limit
+            this adapter sent for the rest of the goal. Checked live, since
+            such a node can start after this one.
+            """
+            if not self._has_nav2:
+                return False
+            pub = getattr(self, "_speed_limit_pub", None)
+            if pub is None:
+                return False
+            topic = getattr(pub, "topic_name", None)
+            if not isinstance(topic, str) or not topic:
+                topic = self._config["speed_limit"]
+            try:
+                # count_publishers counts this adapter's own publisher too.
+                return int(self._node.count_publishers(topic)) > 1
+            except Exception:
+                return False
+
+        @property
         def speed_limit_checked(self) -> bool:
             """Whether a Nav2 speed limit is checked against the controller's top speed.
 
@@ -1067,6 +1090,12 @@ if _HAS_ROS2:
                 logger.info("Nav2 speed limit set to %.2f m/s", value)
             else:
                 logger.info("Nav2 speed limit lifted")
+            if self.speed_limit_shared:
+                logger.warning(
+                    "Another node also publishes on %s (a costmap speed filter, "
+                    "for one): its next message replaces this limit mid-drive",
+                    self._config["speed_limit"],
+                )
 
         def _send_nav2_goal(self, goal_msg: Any) -> None:
             """Send one NavigateToPose goal; only the latest send's answer counts."""
