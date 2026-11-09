@@ -33,10 +33,14 @@ export class ApyroboClient {
     transport.onClose((reason) => this.handleClose(reason));
   }
 
-  /** Connect to a server over WebSocket, e.g. `ws://localhost:8765`. */
+  /**
+   * Connect to a server over WebSocket, e.g. `ws://localhost:8765`.
+   * Rejects if the socket closes or errors before opening, or does not open
+   * within `options.timeoutMs` (default 10 s; 0 waits forever).
+   */
   static async connect(
     url: string,
-    options?: { webSocket?: new (url: string) => WebSocket }
+    options?: { webSocket?: new (url: string) => WebSocket; timeoutMs?: number }
   ): Promise<ApyroboClient> {
     return new ApyroboClient(await WebSocketTransport.connect(url, options));
   }

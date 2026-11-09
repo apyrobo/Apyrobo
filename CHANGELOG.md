@@ -10,6 +10,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- On `ros2://` through Nav2, `apyrobo mcp` checks before each drive whether
+  another node also publishes on the `speed_limit` topic (a costmap speed
+  filter, for one). If so, the reply carries `speed_limit_shared: true` and a
+  `speed_note`, the audit line says so too, and the adapter logs a warning:
+  that node's next message replaces the limit mid-drive. Unit-tested with a
+  faked publisher count; not yet run against a live speed filter.
+
 - `apyrobo mcp` sends `notifications/progress` every 5 seconds during a motion
   call whose request carries a `progressToken`: elapsed time, position, and for
   `move_to` the distance left. Nothing is sent without a token, and a stop or

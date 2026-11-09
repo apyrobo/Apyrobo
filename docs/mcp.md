@@ -557,9 +557,13 @@ same `speed_limit` topic by default, so it replaces the limit `ros2://` sent,
 mid-drive. It publishes only when the zone under the robot changes: entering a
 speed zone sets that zone's limit, even one above the policy's, and leaving it
 publishes "no limit", so the controller drives at its own top speed for the
-rest of the goal. `ros2://` does not detect this. If your robot uses a speed
-filter, keep every zone's limit and the controller's own top speed at or below
-what you would allow. (Read in Nav2's `speed_filter.cpp` on Humble, Jazzy,
+rest of the goal. `ros2://` cannot stop this. Before each drive it counts the
+publishers on that topic; when another node publishes there, the `move_to` and
+`execute_task` replies carry `"speed_limit_shared": true` and a `speed_note`,
+and the audit log line a `detail` saying the limit can be replaced mid-drive
+(unit-tested with faked publisher counts, not against a running speed filter).
+If your robot uses a speed filter, keep every zone's limit and the controller's
+own top speed at or below what you would allow. (Read in Nav2's `speed_filter.cpp` on Humble, Jazzy,
 Kilted and main; not run here.)
 
 If nothing subscribes to that topic (an older Nav2, or `controller_server`

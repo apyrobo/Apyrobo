@@ -22,6 +22,9 @@ export interface Transport {
  * global WebSocket; pass a constructor (e.g. from the "ws" package) for
  * older Node versions.
  */
+/** Default time `WebSocketTransport.connect` waits for the socket to open. */
+export const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+
 export class WebSocketTransport implements Transport {
   private handler: (text: string) => void = () => {};
   private closeHandler: (reason: string) => void = () => {};
@@ -37,10 +40,20 @@ export class WebSocketTransport implements Transport {
     });
   }
 
+  /**
+   * Open a WebSocket and resolve once it is open. Rejects if the socket
+   * errors or closes before opening, or if it has not opened within
+   * `timeoutMs` (default 10 s; 0 waits forever). A server that accepts TCP
+   * but never answers the handshake would otherwise leave this pending.
+   */
   static connect(
     url: string,
-    options?: { webSocket?: new (url: string) => WebSocket }
+    options?: { webSocket?: new (url: string) => WebSocket; timeoutMs?: number }
   ): Promise<WebSocketTransport> {
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+      throw new Error(`timeoutMs must be a finite number >= 0, got ${timeoutMs}`);
+    }
     const WebSocketImpl =
       options?.webSocket ??
       (globalThis as { WebSocket?: new (url: string) => WebSocket }).WebSocket;
@@ -52,11 +65,34 @@ export class WebSocketTransport implements Transport {
     }
     const socket = new WebSocketImpl(url);
     return new Promise((resolve, reject) => {
-      socket.addEventListener("open", () =>
-        resolve(new WebSocketTransport(socket))
-      );
-      socket.addEventListener("error", () =>
-        reject(new Error(`could not connect to ${url}`))
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const fail = (why: string) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        try {
+          socket.close();
+        } catch {
+          // closing a socket that never opened may throw; nothing to clean up
+        }
+        reject(new Error(`could not connect to ${url}: ${why}`));
+      };
+      if (timeoutMs > 0) {
+        timer = setTimeout(
+          () => fail(`no answer within ${timeoutMs} ms`),
+          timeoutMs
+        );
+      }
+      socket.addEventListener("open", () => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(new WebSocketTransport(socket));
+      });
+      socket.addEventListener("error", () => fail("connection error"));
+      socket.addEventListener("close", (event: CloseEvent) =>
+        fail(`closed before opening (code ${event.code})`)
       );
     });
   }
