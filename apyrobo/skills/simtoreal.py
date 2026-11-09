@@ -12,6 +12,23 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _through_enforcer(robot: Any, safety_policy: Any = None) -> Any:
+    """Return *robot* wrapped in a SafetyEnforcer, unless it already is one.
+
+    Both the simulation run and the real deployment go through the enforcer,
+    so a plan's speeds are clamped to the policy's max speed and no-go zones
+    are checked on the real robot, and the simulation checks the same limits.
+    *safety_policy* is a SafetyPolicy or a registered name; None means
+    "default".
+    """
+    from apyrobo.safety.enforcer import SafetyEnforcer
+
+    if isinstance(robot, SafetyEnforcer):
+        return robot
+    policy = safety_policy if safety_policy is not None else "default"
+    return SafetyEnforcer(robot, policy=policy)
+
+
 @dataclass
 class SimulationResult:
     """Outcome of running a plan against a simulator."""
@@ -31,15 +48,19 @@ class SimToRealTransfer:
         sim_adapter_uri:  URI of the simulation robot (e.g. ``"gazebo://robot"``).
         real_adapter_uri: URI of the real robot.  May be ``None`` if deployment
                           is not needed.
+        safety_policy:    SafetyPolicy or registered policy name that both
+                          robots are driven through (None = "default").
     """
 
     def __init__(
         self,
         sim_adapter_uri: str = "gazebo://robot",
         real_adapter_uri: str | None = None,
+        safety_policy: Any = None,
     ) -> None:
         self._sim_uri = sim_adapter_uri
         self._real_uri = real_adapter_uri
+        self._safety_policy = safety_policy
 
     # ------------------------------------------------------------------
     # Public API
@@ -64,7 +85,7 @@ class SimToRealTransfer:
         try:
             from apyrobo.core.robot import Robot
             from apyrobo.core.schemas import TaskStatus
-            sim_robot = Robot.discover(self._sim_uri)
+            sim_robot = _through_enforcer(Robot.discover(self._sim_uri), self._safety_policy)
 
             if agent is not None:
                 task = str(plan) if not hasattr(plan, "get_execution_order") else "sim_task"
@@ -131,7 +152,7 @@ class SimToRealTransfer:
         try:
             from apyrobo.core.robot import Robot
             from apyrobo.core.schemas import TaskStatus
-            real_robot = Robot.discover(self._real_uri)
+            real_robot = _through_enforcer(Robot.discover(self._real_uri), self._safety_policy)
 
             if agent is not None:
                 if hasattr(plan, "get_execution_order"):
