@@ -142,7 +142,7 @@ from apyrobo import SafetyEnforcer
 | `escalate()` | `(reason, context=None) -> bool` | Trigger human escalation |
 | `acknowledge_escalation()` | `()` | Human ACK |
 | `swap_policy()` | `(new_policy) -> SafetyPolicy` | Hot-swap policy |
-| `add_collision_zone()` | `(zone: dict)` | Add zone at runtime |
+| `add_collision_zone()` | `(zone: dict)` | Add zone at runtime; `ValueError` if min > max or a bound is not a number |
 | `check_battery()` | `(distance_m=0) -> dict` | Battery status |
 
 **Properties:** `violations`, `interventions`, `audit_log`, `policy`, `robot_id`
@@ -160,7 +160,7 @@ from apyrobo import SafetyPolicy
 | `name` | `str` | `"default"` | Policy name |
 | `max_speed` | `float` | `1.5` | Speed cap (m/s) |
 | `max_angular_speed` | `float` | `2.0` | Angular speed cap (rad/s) |
-| `collision_zones` | `list[dict]` | `[]` | No-go rectangles |
+| `collision_zones` | `list[dict]` | `[]` | No-go rectangles (`x_min`, `x_max`, `y_min`, `y_max`; a bound left out is open); `ValueError` if min > max or a bound is not a number |
 | `human_proximity_limit` | `float` | `0.5` | Min human distance (m) |
 | `move_timeout` | `float` | `120.0` | Auto-stop after (s) |
 | `watchdog_tolerance` | `float` | `2.0` | Max odometry divergence (m) |
