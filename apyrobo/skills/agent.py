@@ -192,6 +192,13 @@ class RuleBasedProvider(AgentProvider):
     _PARTLY_READ_NUMBER = re.compile(
         r"\b0[xbo][0-9a-f]|\d\.\d*\.\d|\d\s*:\s*\d"
     )
+    # A coordinate pair as _extract_coordinates reads it, and a digit or an
+    # arithmetic sign glued to either of its numbers: "(1 000, 2)" drove to
+    # (0, 2), "(3+1, 3)" to (1, 3), "(3-1, 3)" to (-1, 3) and "(2, 3+1)" to
+    # (2, 3), because the reader takes only the number next to the comma.
+    _COORD_PAIR = re.compile(r"\(?\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)?")
+    _GLUED_BEFORE = re.compile(r"\d\s*[-+*/x\u00d7^%\u00b7]?\s*$")
+    _GLUED_AFTER = re.compile(r"\s*[-+*/x\u00d7^%\u00b7]?\s*\d")
     # A speed with a plus sign ("at speed +0.2", "at +0.2 m/s"): the speed
     # reader skips it, so the drive ran at the default speed.
     _PLUS_SPEED = re.compile(
@@ -222,6 +229,21 @@ class RuleBasedProvider(AgentProvider):
         if found is None:
             return None
         return float(found.group(1) if found.group(1) is not None else found.group(2))
+
+    @classmethod
+    def _glued_coordinate(cls, text: str) -> bool:
+        """True when a coordinate pair has a digit or sign glued to it.
+
+        Checked on the text the coordinate reader sees (speeds taken out).
+        """
+        seen = cls._SPEED.sub(" ", text)
+        for m in cls._COORD_PAIR.finditer(seen):
+            if cls._GLUED_BEFORE.search(seen[: m.start(1)]):
+                return True
+            rest = seen[m.end(2):]
+            if not rest.lstrip().startswith(")") and cls._GLUED_AFTER.match(rest):
+                return True
+        return False
 
     @classmethod
     def cannot_read(cls, task: str) -> str | None:
@@ -303,6 +325,13 @@ class RuleBasedProvider(AgentProvider):
                 "only in part (like 0x10, 1.5.2 or 2:30), so the robot will not "
                 "guess a target. Write it as a plain decimal, like "
                 "'go to (1.5, 2)'."
+            )
+        if cls._glued_coordinate(text):
+            return (
+                "Not planned: this task has a target number the rule planner "
+                "would read only in part (like 1 000, 3+1 or 3*2), so the robot "
+                "will not guess a target. Write each coordinate as one plain "
+                "number, like 'go to (4, 3)'."
             )
         if cls._PLUS_SPEED.search(text):
             return (

@@ -307,7 +307,9 @@ to (5, 1)), a fraction such as `1/2`, a number with an underscore such as `1_0`,
 a minus written as another dash such as `−` or `–` (`(−5, 0)` used to drive to
 (5, 0); use `-`),
 a number it would read in part, such as `0x10`, `1.5.2` or `2:30` (`(0x10, 1)`
-used to drive to (10, 1)),
+used to drive to (10, 1)), a coordinate with a digit or an arithmetic sign next
+to it, such as `(1 000, 2)`, `(3+1, 3)` or `(3*2, 3)` (`(3+1, 3)` used to drive
+to (1, 3); write each coordinate as one plain number),
 three or more numbers for one target such as `(1, 2, 3)`, and a speed it cannot
 use: written with a decimal comma (`0,2`), in a unit other than m/s (`meters per
 second`, `km/h`, `mph`, `cm/s`, `m/min`, `in/s`, `mps`; `speed 0.2 m/min` used
