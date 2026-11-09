@@ -1139,6 +1139,10 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # Safety: the skill drives the robot through the enforcer, so --robot can
+    # name a real robot without bypassing the speed limit or no-go zones.
+    enforced = robot if isinstance(robot, SafetyEnforcer) else SafetyEnforcer(robot)
+
     # Merge default params from skill metadata with user-supplied params
     merged_params: dict[str, Any] = {}
     if skill_meta is not None:
@@ -1189,7 +1193,7 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         exc_info: str | None = None
         retval: Any = None
         try:
-            retval = handler(robot, merged_params)
+            retval = handler(enforced, merged_params)
             ok = bool(retval) if retval is not None else True
         except Exception as exc:
             ok = False
