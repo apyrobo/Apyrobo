@@ -113,6 +113,12 @@ _MANY_MOTIONS = (
     "and drop the rest, so the robot will not move. Send one motion per call, like "
     "'rotate 90 degrees', then 'go to (1, 1)', or call rotate and move_to directly."
 )
+_TWO_DIRECTIONS = (
+    "Not planned: this turn names both directions (left and right, or clockwise "
+    "and anticlockwise), and the rule planner would turn one way only, so the "
+    "robot will not move. Send one turn per call with one direction, like 'turn "
+    "right 90 degrees', or call rotate with angle_rad (positive turns left)."
+)
 _REPEAT_WORD = re.compile(r"\b(?:twice|thrice|again|times)\b")
 _NO_ANGLE = (
     "Not planned: this task asks to turn but gives no angle with a unit, and the "
@@ -754,6 +760,13 @@ class RobotToolbox:
                 ):
                     plan.update(
                         steps=[], confidence=0.0, can_proceed=False, reason=_MANY_MOTIONS
+                    )
+                    return graph, plan
+                # One turn, one way: with both directions named it would
+                # pick one and drop the other with no word.
+                if len(RuleBasedProvider.turn_directions(lowered)) > 1:
+                    plan.update(
+                        steps=[], confidence=0.0, can_proceed=False, reason=_TWO_DIRECTIONS
                     )
                     return graph, plan
             # Its last resort is a status report: for a task that did not ask
