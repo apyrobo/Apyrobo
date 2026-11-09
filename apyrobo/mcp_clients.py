@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shlex
 import shutil
@@ -79,7 +80,7 @@ def server_args(
     ``remote`` the server runs on another machine, so the paths are the
     robot's: they cannot be checked here and must already be absolute.
     """
-    from apyrobo.mcp_server import parse_zone
+    from apyrobo.mcp_server import load_policy_file, parse_zone
 
     out: list[str] = []
     if robot:
@@ -92,9 +93,11 @@ def server_args(
         path = Path(policy_file).expanduser().resolve()
         if not path.is_file():
             raise ValueError(f"policy file not found: {policy_file}")
+        load_policy_file(path)  # the server reads it the same way at start
         out += ["--policy-file", str(path)]
     if max_speed is not None:
-        if max_speed <= 0:
+        # NaN and inf pass a plain "> 0" test, and the server refuses both.
+        if not math.isfinite(max_speed) or max_speed <= 0:
             raise ValueError(f"--max-speed must be positive, got {max_speed}")
         out += ["--max-speed", f"{max_speed:g}"]
     for zone in no_go or []:
