@@ -534,11 +534,12 @@ Regulated Pure Pursuit and MPPI would take it as a new, higher target, and DWB
 would ignore it and keep an earlier, lower limit. So at start `ros2://` reads,
 from `controller_server`'s parameters, the one configured controller's plugin
 and its top speed: `max_speed_xy` for DWB, `desired_linear_vel` for Regulated
-Pure Pursuit, `vx_max` for MPPI (parameter names checked in Nav2's Humble and
-Jazzy source). A move's speed at or above it lifts the limit instead, so the
-controller drives at its own speed. With any other controller (a rotation
-shim, for one), several controllers, or no answer within about a second, the
-speed is sent as is: the reply then carries `"speed_limit_checked": false`
+Pure Pursuit (or `max_linear_vel`, its name from Nav2 Lyrical on, when
+`desired_linear_vel` is not set), `vx_max` for MPPI (parameter names checked
+in Nav2's Humble, Jazzy, Kilted, Lyrical and main source). A move's speed at
+or above it lifts the limit instead, so the controller drives at its own
+speed. With any other controller (a rotation shim, for one), several
+controllers, or no answer within about a second, the speed is sent as is: the reply then carries `"speed_limit_checked": false`
 and a `speed_note`, and the audit log line a `detail` saying so. Keep
 `--max-speed` at or below the controller's speed in that case. The
 `controller_server` node name can be changed with `nav2_controller_server` in
@@ -550,6 +551,16 @@ until the next goal from `ros2://` sets another one or a move sent without a
 speed lifts it. It caps the controller only: Nav2's recovery behaviours (back
 up, spin) use their own speeds; Jazzy's default behaviour tree backs up at
 0.15 m/s, above a 0.1 m/s limit.
+
+A Nav2 costmap speed filter (`nav2_costmap_2d::SpeedFilter`) publishes on the
+same `speed_limit` topic by default, so it replaces the limit `ros2://` sent,
+mid-drive. It publishes only when the zone under the robot changes: entering a
+speed zone sets that zone's limit, even one above the policy's, and leaving it
+publishes "no limit", so the controller drives at its own top speed for the
+rest of the goal. `ros2://` does not detect this. If your robot uses a speed
+filter, keep every zone's limit and the controller's own top speed at or below
+what you would allow. (Read in Nav2's `speed_filter.cpp` on Humble, Jazzy,
+Kilted and main; not run here.)
 
 If nothing subscribes to that topic (an older Nav2, or `controller_server`
 remapped), the drive runs at whatever Nav2's controller is configured for. The
