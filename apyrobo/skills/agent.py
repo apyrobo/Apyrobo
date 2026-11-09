@@ -185,6 +185,11 @@ class RuleBasedProvider(AgentProvider):
     # hyphen-minus): the coordinate reader skips it, so "(\u22125, 0)" drove
     # to (5, 0).
     _DASH_SIGN = re.compile(r"[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]\s*\d")
+    # A minus or plus sign with a space before its number ("- 1", "+ 2"): the
+    # coordinate reader skips the sign, so "(- 1, 2)" drove to (1, 2). A sign
+    # right after a digit or a closing bracket is arithmetic, which
+    # _glued_coordinate refuses on its own.
+    _SPACED_SIGN = re.compile(r"(?<![\w.)\]}])[-+]\s+\d")
     # A number the coordinate reader would read in part: a base prefix
     # ("0x10", "0b11", "0o7"), two decimal points ("1.5.2", "1..5") or a
     # colon between digits ("2:30"). "(0x10, 1)" drove to (10, 1) and
@@ -318,6 +323,13 @@ class RuleBasedProvider(AgentProvider):
                 "does not read (like \u2212 or \u2013), so it would drop the sign "
                 "and the robot will not guess. Use the plain hyphen-minus, like "
                 "'go to (-5, 0)'."
+            )
+        if cls._SPACED_SIGN.search(text):
+            return (
+                "Not planned: this task has a minus or plus sign with a space "
+                "before its number (like '- 1'), which the rule planner would "
+                "drop, so the robot will not guess. Write the sign next to the "
+                "number, like 'go to (-1, 2)'."
             )
         if cls._PARTLY_READ_NUMBER.search(text):
             return (
