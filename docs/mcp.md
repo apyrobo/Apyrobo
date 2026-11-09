@@ -305,7 +305,8 @@ refuses those rather than guess: a task with "don't", "do not", "never" or "not"
 `1e3`, a number with no 0 before its point such as `.5` (`(.5, 1)` used to drive
 to (5, 1)), a fraction such as `1/2`, a number with an underscore such as `1_0`,
 a minus written as another dash such as `−` or `–` (`(−5, 0)` used to drive to
-(5, 0); use `-`),
+(5, 0); use `-`), a sign with a space before its number such as `- 1`
+(`(- 1, 2)` used to drive to (1, 2); write `-1`),
 a number it would read in part, such as `0x10`, `1.5.2` or `2:30` (`(0x10, 1)`
 used to drive to (10, 1)), a coordinate with a digit or an arithmetic sign next
 to it, such as `(1 000, 2)`, `(3+1, 3)` or `(3*2, 3)` (`(3+1, 3)` used to drive
