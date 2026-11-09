@@ -1,7 +1,10 @@
 """Natural language safety policies for APYROBO.
 
-Allows operators to express safety constraints in plain English and have
-them automatically enforced by the ``SafetyEnforcer``.
+Allows operators to express safety constraints in plain English, store
+them, and check a written action against them before it runs
+(``check_compliance`` / ``apyrobo policy check``). The policies are not
+applied to motion by ``SafetyEnforcer``, ``apyrobo execute`` or
+``apyrobo mcp``; use those components' own limits for that.
 
 Quick start::
 
@@ -14,8 +17,8 @@ Quick start::
     policy = parser.parse("never exceed 0.5 m/s near humans")
     store.add(policy)
 
-    # Enforcement happens in SafetyEnforcer automatically when store is wired:
-    store.get_active_policies()  # → list[NLSafetyPolicy]
+    # Check an action before running it (a pre-flight check on text):
+    parser.check_compliance("navigate at 2.0 m/s", store.get_active_policies())
 
 CLI usage::
 
@@ -70,6 +73,29 @@ _BATTERY_RE = re.compile(
     r"(?:always\s+keep|maintain|reserve)\s+(?:at\s+least\s+)?([0-9]+(?:\.[0-9]+)?)\s*%\s*battery",
     re.IGNORECASE,
 )
+# Speeds in an action description. Only m/s is read; any other way of
+# writing a speed is reported as unreadable rather than skipped.
+_NUM = r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)"
+_MPS = r"(?:m/s|m\s*s(?:\^?-1|⁻¹)|mps|m(?:eter|etre)s?\s*(?:/|per)\s*s(?:ec(?:ond)?)?)\b"
+_ACTION_MPS_RE = re.compile(rf"(?<![0-9.])({_NUM})\s*{_MPS}", re.IGNORECASE)
+_ACTION_OTHER_SPEED_RE = re.compile(
+    rf"(?<![0-9.]){_NUM}\s*(?:km/h|kmh|kph|km\s*per\s*h(?:our)?|kilomet(?:er|re)s?\s*(?:/|per)\s*h(?:our)?"
+    r"|mph|miles?\s*(?:/|per)\s*h(?:our)?|knots?|kn\b|ft/s|fps|feet\s*(?:/|per)\s*s(?:ec(?:ond)?)?"
+    r"|in/s|cm/s|mm/s|cent(?:i)?met(?:er|re)s?\s*(?:/|per)\s*s(?:ec(?:ond)?)?|m/min|m/h\b"
+    r"|m(?:eter|etre)s?\s*(?:/|per)\s*(?:min(?:ute)?|h(?:our)?))",
+    re.IGNORECASE,
+)
+_ACTION_SPEED_WORD_RE = re.compile(
+    rf"\b(?:speed|velocity|pace)\b(?:\s+(?:of|is|at|to|=|:|limit|up\s+to|about|around))*\s*[:=]?\s*({_NUM})(?!\s*[0-9.])",
+    re.IGNORECASE,
+)
+_ACTION_GLUED_MPS_RE = re.compile(
+    rf"([0-9][0-9.,eE+_]*|[.,][0-9][0-9.,eE+_]*)\s*{_MPS}", re.IGNORECASE
+)
+_ACTION_PER_SECOND_RE = re.compile(
+    rf"(?<![0-9.]){_NUM}\s*\w*\s*(?:/|per)\s*s(?:ec(?:ond)?)?\b", re.IGNORECASE
+)
+
 _NOGO_RE = re.compile(
     r"(?:never\s+enter|do\s+not\s+enter|avoid)\s+(?:the\s+)?(.+)",
     re.IGNORECASE,
@@ -301,8 +327,13 @@ class NLPolicyParser:
     def check_compliance(self, action_description: str, policies: list[NLSafetyPolicy]) -> list[str]:
         """Check whether *action_description* would violate any active policy.
 
-        Performs a lightweight textual check against each policy.  For
-        hard enforcement, use ``NLPolicyEnforcer``.
+        Performs a textual pre-flight check against each policy; it does
+        not stop a robot by itself. Speeds are read in m/s only, and every
+        m/s value in the text is checked. A speed written some other way
+        (``2 km/h``, ``speed 2``) counts as a violation of an active speed
+        limit, since the check cannot tell whether it is over the limit.
+        ``proximity_limit``, ``time_window``, ``load_limit`` and ``custom``
+        policies are stored but not checked here.
 
         Parameters
         ----------
@@ -319,8 +350,9 @@ class NLPolicyParser:
         """
         violations = []
 
-        # Extract speed from action description for speed limit checks
-        action_speed_m = self._extract_speed(action_description)
+        # Extract speeds from action description for speed limit checks
+        action_speeds = self._extract_speeds(action_description)
+        unread_speed = self._unread_speed(action_description)
 
         for policy in policies:
             if not policy.active:
@@ -328,7 +360,18 @@ class NLPolicyParser:
 
             if policy.constraint_type == "speed_limit":
                 max_speed = policy.parameters.get("max_speed_ms")
-                if max_speed is not None and action_speed_m is not None:
+                if max_speed is None:
+                    continue
+                if unread_speed is not None:
+                    violations.append(
+                        f"Policy [{policy.policy_id}] cannot be checked: "
+                        f"the speed {unread_speed!r} cannot be read as a number in m/s, "
+                        f"so it may exceed limit {max_speed} m/s; write it like '0.3 m/s' "
+                        f"({policy.description})"
+                    )
+                    continue
+                if action_speeds:
+                    action_speed_m = max(action_speeds)
                     if action_speed_m > max_speed:
                         violations.append(
                             f"Policy [{policy.policy_id}] violated: "
@@ -360,9 +403,38 @@ class NLPolicyParser:
 
     @staticmethod
     def _extract_speed(text: str) -> float | None:
-        """Extract a speed value in m/s from *text*, or None."""
-        m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*m/s", text, re.IGNORECASE)
-        return float(m.group(1)) if m else None
+        """Extract the highest speed value in m/s from *text*, or None."""
+        speeds = NLPolicyParser._extract_speeds(text)
+        return max(speeds) if speeds else None
+
+    @staticmethod
+    def _extract_speeds(text: str) -> list[float]:
+        """Every speed written in m/s in *text*."""
+        return [float(m.group(1)) for m in _ACTION_MPS_RE.finditer(text)]
+
+    @staticmethod
+    def _unread_speed(text: str) -> str | None:
+        """The first speed in *text* not written in m/s, or None."""
+        read = [m.span() for m in _ACTION_MPS_RE.finditer(text)]
+
+        def is_read(start: int, end: int) -> bool:
+            return any(rs <= start < re_ or start <= rs < end for rs, re_ in read)
+
+        m = _ACTION_OTHER_SPEED_RE.search(text)
+        if m:
+            return m.group(0)
+        for m in _ACTION_GLUED_MPS_RE.finditer(text):
+            if not re.fullmatch(_NUM, m.group(1)):
+                return m.group(0)
+        for m in _ACTION_PER_SECOND_RE.finditer(text):
+            if not is_read(*m.span()):
+                return m.group(0)
+        for m in _ACTION_SPEED_WORD_RE.finditer(text):
+            start, end = m.span(1)
+            after = text[end:]
+            if not re.match(rf"\s*{_MPS}", after, re.IGNORECASE):
+                return m.group(0).strip()
+        return None
 
     @staticmethod
     def _extract_battery(text: str) -> float | None:
@@ -400,7 +472,12 @@ class NLPolicyStore:
     """
 
     def __init__(self, db_path: str | Path = ":memory:") -> None:
-        self._db_path = str(db_path)
+        db = str(db_path)
+        if db != ":memory:" and not db.startswith("file:"):
+            path = Path(db).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            db = str(path)
+        self._db_path = db
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._ensure_schema()
 

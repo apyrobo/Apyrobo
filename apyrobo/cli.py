@@ -1802,6 +1802,8 @@ def cmd_policy(args: argparse.Namespace) -> None:
             violations = parser.check_compliance(action, active_policies)
             if as_json:
                 print(json.dumps({"action": action, "violations": violations}, indent=2))
+                if violations:
+                    sys.exit(1)
             elif violations:
                 print(f"⚠️  {len(violations)} violation(s) for: {action!r}")
                 for v in violations:
