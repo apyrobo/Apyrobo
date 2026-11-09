@@ -280,6 +280,15 @@ SPEED_NOT_CHECKED = (
     "at or below it."
 )
 
+#: Said in a reply when another node also publishes Nav2 speed limits.
+SPEED_SHARED = (
+    "Another node also publishes on Nav2's speed_limit topic (a costmap speed "
+    "filter, for one). Its next message replaces the limit sent for this drive: "
+    "entering a speed zone sets that zone's limit, even above the policy's, and "
+    "leaving one lifts the limit for the rest of the goal. Keep zone limits and "
+    "the controller's own top speed at or below what you would allow."
+)
+
 
 class RobotToolbox:
     """The tools the MCP server exposes, bound to one robot and one policy."""
@@ -556,6 +565,35 @@ class RobotToolbox:
         adapter = getattr(self.robot, "_adapter", None)
         return getattr(adapter, "speed_limit_checked", True) is not False
 
+    def speed_limit_shared(self) -> bool:
+        """True when another node also publishes Nav2 speed limits (ros2://)."""
+        adapter = getattr(self.robot, "_adapter", None)
+        return getattr(adapter, "speed_limit_shared", False) is True
+
+    def _drove_shared(self, moves_before: int) -> bool:
+        """True when a move ran since *moves_before* with its limit open to replacement."""
+        moves = getattr(self.enforcer, "moves_sent", 0)
+        return (
+            isinstance(moves, int) and moves > moves_before
+            and self.speed_limit_applies() and self.speed_limit_shared()
+        )
+
+    def speed_notes(self, moves_before: int) -> dict[str, Any]:
+        """The speed_* reply fields for the moves run since *moves_before*."""
+        if self._drove_unlimited(moves_before):
+            return {"speed_limit_applied": False, "speed_note": SPEED_NOT_APPLIED}
+        fields: dict[str, Any] = {}
+        notes = []
+        if self._drove_unchecked(moves_before):
+            fields["speed_limit_checked"] = False
+            notes.append(SPEED_NOT_CHECKED)
+        if self._drove_shared(moves_before):
+            fields["speed_limit_shared"] = True
+            notes.append(SPEED_SHARED)
+        if notes:
+            fields["speed_note"] = " ".join(notes)
+        return fields
+
     def _drove_unchecked(self, moves_before: int) -> bool:
         """True when a move ran since *moves_before* with a limit Nav2 got unchecked."""
         moves = getattr(self.enforcer, "moves_sent", 0)
@@ -640,12 +678,7 @@ class RobotToolbox:
             "position": self._position(),
             "safety_interventions": interventions,
         }
-        if self._drove_unlimited(moves_before):
-            result["speed_limit_applied"] = False
-            result["speed_note"] = SPEED_NOT_APPLIED
-        elif self._drove_unchecked(moves_before):
-            result["speed_limit_checked"] = False
-            result["speed_note"] = SPEED_NOT_CHECKED
+        result.update(self.speed_notes(moves_before))
         return result
 
     def rotate_available(self) -> bool:
@@ -890,12 +923,7 @@ class RobotToolbox:
             "position": self._position(),
             "safety_interventions": self.enforcer.interventions[i_before:],
         }
-        if self._drove_unlimited(moves_before):
-            outcome["speed_limit_applied"] = False
-            outcome["speed_note"] = SPEED_NOT_APPLIED
-        elif self._drove_unchecked(moves_before):
-            outcome["speed_limit_checked"] = False
-            outcome["speed_note"] = SPEED_NOT_CHECKED
+        outcome.update(self.speed_notes(moves_before))
         if status != "completed":
             reason = getattr(result, "error", None) or "execution failed"
             if refusals:
@@ -1176,11 +1204,11 @@ class MCPServer:
             # Through Nav2 no speed reaches the robot, so nothing was clamped.
             self._audit_after(name, arguments, "not_limited", detail=SPEED_NOT_APPLIED)
         else:
-            unchecked = self.toolbox._drove_unchecked(before[2])
+            note = self.toolbox.speed_notes(before[2]).get("speed_note")
             self._audit_after(
                 name, arguments, "clamped" if clamped else "ran",
                 enforced_speed=enforcer.last_speed,
-                detail=SPEED_NOT_CHECKED if unchecked else None,
+                detail=note,
             )
 
     # -- --confirm-moves ---------------------------------------------------
