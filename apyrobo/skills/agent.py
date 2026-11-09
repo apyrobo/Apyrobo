@@ -210,6 +210,22 @@ class RuleBasedProvider(AgentProvider):
         r"\bspeed\s*(?:of\s+|[:=]\s*)?\+\s*\d"
         r"|\bat\s+\+\s*\d+(?:\.\d+)?\s*m/s\b"
     )
+    # A speed in a form the speed reader skips: a bare number after "at"
+    # with no unit ("go to x=3, y=4 at 0.2"), or a speed-like key ("v=0.3",
+    # "velocity 0.3"). The drive ran at the default speed. "at" followed by a
+    # coordinate pair ("stop at 3, 4", "at 1 -2") or an angle is not a speed.
+    _BARE_SPEED = re.compile(
+        r"\bat\s+[-+]?\d+(?:\.\d+)?"
+        r"(?![\d.]|\s*,?\s*[-+]?\d|\s*m\s*/\s*s\b"
+        r"|\s*(?:deg(?:ree)?s?|rad(?:ian)?s?|\u00b0))"
+        r"|\b(?:v|vel(?:ocity)?|spd)\s*(?:of\s+|[:=]\s*)?[-+]?\d"
+    )
+    # A vulgar fraction ("\u00bd") or a superscript or subscript digit
+    # ("\u00b2"): the number reader skips them, so "at speed \u00bd" ran at
+    # the default speed and "(\u00b23, 1)" drove to (3, 1).
+    _ODD_DIGIT = re.compile(
+        "[\u00b2\u00b3\u00b9\u00bc-\u00be\u2070-\u209f\u2150-\u215f\u2189]"
+    )
     _NUMBER_TRIPLE = re.compile(
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
@@ -351,6 +367,20 @@ class RuleBasedProvider(AgentProvider):
                 "+0.2), which the rule planner does not read, so the robot will "
                 "not run at a speed nobody asked for. Leave the sign out, like "
                 "'go to (1, 2) at 0.2 m/s'."
+            )
+        if cls._ODD_DIGIT.search(text):
+            return (
+                "Not planned: this task has a fraction sign or a superscript or "
+                "subscript digit (like \u00bd or \u00b2) that the rule planner "
+                "does not read, so the robot will not guess. Write plain "
+                "decimals, like 'go to (3, 1) at 0.5 m/s'."
+            )
+        if cls._BARE_SPEED.search(cls._SPEED.sub(" ", text)):
+            return (
+                "Not planned: this task gives a speed the rule planner does not "
+                "read (like 'at 0.2' with no unit, or 'v=0.3'), so the robot "
+                "would run at the default speed instead. Write it as 'at 0.2 "
+                "m/s' or 'at speed 0.2'."
             )
         read = [m.span() for m in cls._SPEED.finditer(text)]
         unread = cls._HEDGED_SPEED.search(text) or any(

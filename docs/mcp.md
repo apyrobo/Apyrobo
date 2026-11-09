@@ -307,6 +307,8 @@ to (5, 1)), a fraction such as `1/2`, a number with an underscore such as `1_0`,
 a minus written as another dash such as `−` or `–` (`(−5, 0)` used to drive to
 (5, 0); use `-`), a sign with a space before its number such as `- 1`
 (`(- 1, 2)` used to drive to (1, 2); write `-1`),
+a fraction sign or a superscript or subscript digit such as `½` or `²`
+(`(²3, 1)` used to drive to (3, 1)),
 a number it would read in part, such as `0x10`, `1.5.2` or `2:30` (`(0x10, 1)`
 used to drive to (10, 1)), a coordinate with a digit or an arithmetic sign next
 to it, such as `(1 000, 2)`, `(3+1, 3)` or `(3*2, 3)` (`(3+1, 3)` used to drive
@@ -315,7 +317,8 @@ three or more numbers for one target such as `(1, 2, 3)`, and a speed it cannot
 use: written with a decimal comma (`0,2`), in a unit other than m/s (`meters per
 second`, `km/h`, `mph`, `cm/s`, `m/min`, `in/s`, `mps`; `speed 0.2 m/min` used
 to run at 0.2 m/s), in a wording other than the ones above (`at most 0.2 m/s`,
-`max 0.2 m/s`, `at a speed of about 0.2` used to run at the default speed), a
+`max 0.2 m/s`, `at a speed of about 0.2`, a bare `at 0.2` with no unit, `v=0.3`
+or `velocity 0.3` used to run at the default speed), a
 choice or range (`0.1 or 0.2`, `0.1-0.2 m/s`),
 a turn speed (`0.5 rad/s`, `30 deg/s`, `rpm`: call `rotate` with `speed`
 instead), a plus sign (`at speed +0.2` used to run at the default speed), or 0. Each moves
