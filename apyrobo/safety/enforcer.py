@@ -709,7 +709,12 @@ class SafetyEnforcer:
         """Rotate command with angular speed enforcement."""
         self._reject_bad_numbers("rotate", angle_rad=angle_rad, speed=speed)
         original_speed = speed
-        if speed is not None and abs(speed) > self._policy.max_angular_speed:
+        if speed is None:
+            # No speed means "the robot's default turn rate", which the enforcer
+            # cannot read and may be above the policy. Hand the robot the limit
+            # so a turn sent without a speed can't exceed it.
+            speed = self._policy.max_angular_speed
+        elif abs(speed) > self._policy.max_angular_speed:
             speed = math.copysign(self._policy.max_angular_speed, speed)
             intervention = {
                 "type": "angular_speed_clamped",
