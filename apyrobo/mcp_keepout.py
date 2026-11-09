@@ -85,13 +85,22 @@ def _span(low: float, high: float, origin: float, resolution: float) -> tuple[in
     return first, max(end, first + 1)
 
 
+def _number(value: float) -> str:
+    """``value`` with every digit kept, so Nav2 reads back the number we drew with.
+
+    ``:g`` keeps six significant digits: an origin at y = 5412344.68 (a UTM-sized
+    map frame) came out as ``5.41234e+06``, 4.68 m from the drawn mask.
+    """
+    return repr(float(value))
+
+
 def mask_yaml(mask: Mask, image: str) -> str:
     """The map YAML Nav2's map server reads the mask through."""
     return (
         f"image: {image}\n"
         "mode: scale\n"
-        f"resolution: {mask.resolution:g}\n"
-        f"origin: [{mask.origin_x:g}, {mask.origin_y:g}, 0.0]\n"
+        f"resolution: {_number(mask.resolution)}\n"
+        f"origin: [{_number(mask.origin_x)}, {_number(mask.origin_y)}, 0.0]\n"
         "negate: 0\n"
         f"occupied_thresh: {OCCUPIED_THRESH}\n"
         f"free_thresh: {FREE_THRESH}\n"
