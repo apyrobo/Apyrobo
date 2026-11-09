@@ -1537,6 +1537,56 @@ def _params(plugin, param, value, controller_id="FollowPath"):
     }
 
 
+class TestNav2SpeedLimitShared:
+    """Another speed_limit publisher (a costmap SpeedFilter) can replace ours."""
+
+    def _adapter(self, publishers):
+        adapter, pub = _speed_limit_adapter()
+        pub.topic_name = "/speed_limit"
+        adapter._node.count_publishers.return_value = publishers
+        return adapter, pub
+
+    def test_only_our_publisher_is_not_shared(self):
+        adapter, _ = self._adapter(1)
+        assert adapter.speed_limit_shared is False
+        adapter._node.count_publishers.assert_called_with("/speed_limit")
+
+    def test_a_second_publisher_is_shared(self):
+        adapter, _ = self._adapter(2)
+        assert adapter.speed_limit_shared is True
+
+    def test_checked_live(self):
+        adapter, _ = self._adapter(1)
+        assert adapter.speed_limit_shared is False
+        adapter._node.count_publishers.return_value = 2
+        assert adapter.speed_limit_shared is True
+
+    def test_falls_back_to_the_configured_topic(self):
+        adapter, pub = self._adapter(2)
+        pub.topic_name = None
+        assert adapter.speed_limit_shared is True
+        adapter._node.count_publishers.assert_called_with(adapter._config["speed_limit"])
+
+    def test_not_shared_without_nav2_or_a_publisher(self):
+        adapter, _ = self._adapter(2)
+        adapter._speed_limit_pub = None
+        assert adapter.speed_limit_shared is False
+        plain, _ = _build_adapter(has_nav2=False)
+        assert plain.speed_limit_shared is False
+
+    def test_a_graph_error_is_not_shared(self):
+        adapter, _ = self._adapter(2)
+        adapter._node.count_publishers.side_effect = RuntimeError("graph gone")
+        assert adapter.speed_limit_shared is False
+
+    def test_a_move_warns_when_shared(self, caplog):
+        adapter, _ = self._adapter(2)
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit), \
+                caplog.at_level("WARNING", logger=bridge_module.logger.name):
+            adapter._move_nav2(1.0, 1.0, speed=0.1)
+        assert any("replaces this limit" in r.getMessage() for r in caplog.records)
+
+
 class TestNav2SpeedLimitValue:
     @pytest.mark.parametrize("speed, top, sent", [
         (0.1, 0.26, 0.1),
