@@ -146,7 +146,9 @@ class SafetyPolicy:
     Constraints:
         - max_speed: Hard cap on movement speed (m/s)
         - max_angular_speed: Hard cap on rotation speed (rad/s)
-        - collision_zones: List of rectangular zones the robot cannot enter
+        - collision_zones: List of rectangular zones the robot cannot enter;
+          a zone with min > max or a bound that is not a number raises
+          ``ValueError``
         - allowed_areas: Rectangles a move target must fall in; empty means
           anywhere outside the collision zones
         - human_proximity_limit: Minimum distance to maintain from humans (m)
@@ -176,6 +178,10 @@ class SafetyPolicy:
         self.max_angular_speed = max_angular_speed
         self.collision_zones = list(collision_zones or [])
         self.allowed_areas = list(allowed_areas or [])
+        for zone in self.collision_zones:
+            check_area(zone, "collision zone")
+        for area in self.allowed_areas:
+            check_area(area, "allowed area")
         self.human_proximity_limit = human_proximity_limit
         self.move_timeout = move_timeout
         self.watchdog_tolerance = watchdog_tolerance
@@ -238,6 +244,33 @@ def describe_area(area: dict[str, Any]) -> str:
     )
     name = area.get("name")
     return f"'{name}' {bounds}" if name else bounds
+
+
+_BOUND_DEFAULTS = (
+    ("x_min", float("-inf")), ("x_max", float("inf")),
+    ("y_min", float("-inf")), ("y_max", float("inf")),
+)
+
+
+def check_area(area: Any, what: str = "collision zone") -> None:
+    """
+    Raise ``ValueError`` for a zone or allowed area the checks cannot use.
+
+    A bound may be left out (it is then open on that side), but a bound
+    that is given must be a number other than NaN, and each min must not
+    exceed its max. An inverted zone would otherwise block nothing.
+    """
+    if not isinstance(area, dict):
+        raise ValueError(f"{what} must be a dict of x_min/x_max/y_min/y_max, got {area!r}")
+    for key, _ in _BOUND_DEFAULTS:
+        if key not in area:
+            continue
+        value = area[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
+            raise ValueError(f"{what} {key} must be a number, got {value!r}")
+    bounds = {key: area.get(key, default) for key, default in _BOUND_DEFAULTS}
+    if bounds["x_min"] > bounds["x_max"] or bounds["y_min"] > bounds["y_max"]:
+        raise ValueError(f"{what} has min > max: {area!r}")
 
 
 def segment_enters_zone(
@@ -1197,7 +1230,12 @@ class SafetyEnforcer:
             self._policy.collision_zones = list(self._policy.collision_zones)
 
     def add_collision_zone(self, zone: dict[str, float]) -> None:
-        """Add a collision zone at runtime (SF-07)."""
+        """Add a collision zone at runtime (SF-07).
+
+        Raises ``ValueError`` for a zone with min > max or a bound that is
+        not a number, rather than add a zone that blocks nothing.
+        """
+        check_area(zone, "collision zone")
         self._own_policy()
         self._policy.collision_zones.append(zone)
         self._record_audit("zone_added", zone)
