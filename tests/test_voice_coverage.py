@@ -427,7 +427,13 @@ class TestVoiceLoop:
         adapter = MockVoiceAdapter(responses=["navigate to kitchen", "stop"])
 
         voice_loop(agent, robot, adapter, max_turns=1)
-        agent.execute.assert_called_once_with(task="navigate to kitchen", robot=robot)
+        from apyrobo.safety.enforcer import SafetyEnforcer
+        agent.execute.assert_called_once()
+        kwargs = agent.execute.call_args.kwargs
+        assert kwargs["task"] == "navigate to kitchen"
+        # The task runs on a SafetyEnforcer wrapping the robot, not the raw robot.
+        assert isinstance(kwargs["robot"], SafetyEnforcer)
+        assert kwargs["robot"]._robot is robot
 
     def test_stop_command_case_insensitive(self):
         agent = make_mock_agent()
