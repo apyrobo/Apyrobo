@@ -166,6 +166,19 @@ class RuleBasedProvider(AgentProvider):
     # hyphen-minus): the coordinate reader skips it, so "(\u22125, 0)" drove
     # to (5, 0).
     _DASH_SIGN = re.compile(r"[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]\s*\d")
+    # A number the coordinate reader would read in part: a base prefix
+    # ("0x10", "0b11", "0o7"), two decimal points ("1.5.2", "1..5") or a
+    # colon between digits ("2:30"). "(0x10, 1)" drove to (10, 1) and
+    # "(1.5.2, 1)" to (5.2, 1).
+    _PARTLY_READ_NUMBER = re.compile(
+        r"\b0[xbo][0-9a-f]|\d\.\d*\.\d|\d\s*:\s*\d"
+    )
+    # A speed with a plus sign ("at speed +0.2", "at +0.2 m/s"): the speed
+    # reader skips it, so the drive ran at the default speed.
+    _PLUS_SPEED = re.compile(
+        r"\bspeed\s*(?:of\s+|[:=]\s*)?\+\s*\d"
+        r"|\bat\s+\+\s*\d+(?:\.\d+)?\s*m/s\b"
+    )
     _NUMBER_TRIPLE = re.compile(
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
@@ -264,6 +277,20 @@ class RuleBasedProvider(AgentProvider):
                 "does not read (like \u2212 or \u2013), so it would drop the sign "
                 "and the robot will not guess. Use the plain hyphen-minus, like "
                 "'go to (-5, 0)'."
+            )
+        if cls._PARTLY_READ_NUMBER.search(text):
+            return (
+                "Not planned: this task has a number the rule planner would read "
+                "only in part (like 0x10, 1.5.2 or 2:30), so the robot will not "
+                "guess a target. Write it as a plain decimal, like "
+                "'go to (1.5, 2)'."
+            )
+        if cls._PLUS_SPEED.search(text):
+            return (
+                "Not planned: this task writes a speed with a plus sign (like "
+                "+0.2), which the rule planner does not read, so the robot will "
+                "not run at a speed nobody asked for. Leave the sign out, like "
+                "'go to (1, 2) at 0.2 m/s'."
             )
         if cls._NUMBER_TRIPLE.search(text):
             return (
