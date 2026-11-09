@@ -338,7 +338,10 @@ A delivery may name two: "deliver from (1, 1) to (5, 1)" drives to both.
 A turn is planned only on its own: a task with a turn and a drive ("go to
 (3, 3) and rotate 90 degrees"), two turns, or a repeated turn ("rotate 90
 degrees twice") is refused the same way. It used to make one of them, drop the
-rest and report `completed`.
+rest and report `completed`. A turn that names both directions ("rotate 90
+degrees left then right", "turn right 90 degrees and back left", "left or
+right") is refused too: it used to turn one way, sometimes the wrong one.
+"counterclockwise", "anti-clockwise" and "anti clockwise" all turn left.
 
 `plan_task` checks each drive in the plan against the policy without moving:
 a target in a no-go zone, a target outside every allowed area, and a straight
