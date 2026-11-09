@@ -1562,6 +1562,17 @@ class TestNav2SpeedLimitValue:
     def test_param_for_plugin(self, plugin, param):
         assert bridge_module.nav2_controller_max_param(plugin) == param
 
+    @pytest.mark.parametrize("plugin, params", [
+        ("dwb_core::DWBLocalPlanner", ("max_speed_xy",)),
+        ("nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController",
+         ("desired_linear_vel", "max_linear_vel")),
+        ("nav2_mppi_controller::MPPIController", ("vx_max",)),
+        ("nav2_rotation_shim_controller::RotationShimController", ()),
+        (None, ()),
+    ])
+    def test_params_for_plugin(self, plugin, params):
+        assert bridge_module.nav2_controller_max_params(plugin) == params
+
 
 class TestNav2ControllerMax:
     @pytest.mark.parametrize("name", sorted(CONTROLLERS))
@@ -1607,6 +1618,63 @@ class TestNav2ControllerMax:
         with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
             adapter._move_nav2(1.0, 1.0, speed=0.5)
         assert _published(pub)[0].speed_limit == pytest.approx(0.5)
+
+    def test_rpp_lyrical_name_max_linear_vel_is_read(self):
+        # Nav2 lyrical renamed RPP's desired_linear_vel to max_linear_vel; a
+        # config with only the new name leaves the old one undeclared.
+        plugin = CONTROLLERS["RPP"][0]
+        adapter, pub = _controller_adapter(_params(plugin, "max_linear_vel", 0.3))
+        assert adapter._controller_max == pytest.approx(0.3)
+        assert adapter.speed_limit_checked is True
+        with patch.object(bridge_module, "SpeedLimit", _FakeSpeedLimit):
+            adapter._move_nav2(1.0, 1.0, speed=0.5)
+            adapter._move_nav2(1.0, 1.0, speed=0.2)
+        assert [m.speed_limit for m in _published(pub)] == [0.0, pytest.approx(0.2)]
+
+    def test_rpp_old_name_wins_when_both_are_set(self):
+        # parameter_handler.cpp uses desired_linear_vel when it is set.
+        plugin = CONTROLLERS["RPP"][0]
+        params = _params(plugin, "desired_linear_vel", 0.26)
+        params["FollowPath.max_linear_vel"] = 0.5
+        adapter, _ = _controller_adapter(params)
+        assert adapter._controller_max == pytest.approx(0.26)
+
+    def test_rpp_bad_old_value_is_not_replaced_by_the_new_name(self):
+        plugin = CONTROLLERS["RPP"][0]
+        params = _params(plugin, "desired_linear_vel", 0.0)
+        params["FollowPath.max_linear_vel"] = 0.5
+        adapter, _ = _controller_adapter(params)
+        assert adapter._controller_max is None
+        assert adapter.speed_limit_checked is False
+
+    def test_rpp_neither_name_is_unchecked(self):
+        plugin = CONTROLLERS["RPP"][0]
+        adapter, _ = _controller_adapter(
+            {"controller_plugins": ["FollowPath"], "FollowPath.plugin": plugin}
+        )
+        assert adapter._controller_max is None
+        assert adapter.speed_limit_checked is False
+
+    def test_each_request_names_one_top_speed_parameter(self):
+        # controller_server answers nothing when a request names an
+        # undeclared parameter, so the names are never asked together.
+        plugin = CONTROLLERS["RPP"][0]
+        params = _params(plugin, "max_linear_vel", 0.3)
+        asked = []
+        fake = _fake_controller(params)
+
+        def get(names):
+            asked.append(list(names))
+            if any(n not in params for n in names):
+                return {}
+            return fake(names)
+
+        adapter, _ = _speed_limit_adapter()
+        adapter._get_controller_params = get
+        assert adapter._read_controller_max() == (plugin, pytest.approx(0.3))
+        assert ["FollowPath.desired_linear_vel"] in asked
+        assert ["FollowPath.max_linear_vel"] in asked
+        assert all(len(names) == 1 for names in asked)
 
     def test_reads_another_controller_id(self):
         plugin, param, top = CONTROLLERS["MPPI"]
