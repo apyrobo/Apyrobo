@@ -14,7 +14,9 @@ dashboards and bots.
 ```ts
 import { ApyroboClient, isPlanned } from "apyrobo-client";
 
-// Over WebSocket (browser or Node ≥ 21; pass options.webSocket on Node 20):
+// Over WebSocket (browser or Node ≥ 21; pass options.webSocket on Node 20).
+// Rejects if the socket closes or errors before opening, or has not opened
+// within options.timeoutMs (default 10 000 ms; 0 waits forever):
 const client = await ApyroboClient.connect("ws://localhost:8765");
 
 // …or spawn a server and speak stdio NDJSON (Node only):
