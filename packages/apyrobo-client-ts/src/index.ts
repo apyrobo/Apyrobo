@@ -8,4 +8,9 @@ export {
   isPlanned,
   parseMessage,
 } from "./messages.js";
-export { StdioTransport, Transport, WebSocketTransport } from "./transport.js";
+export {
+  DEFAULT_CONNECT_TIMEOUT_MS,
+  StdioTransport,
+  Transport,
+  WebSocketTransport,
+} from "./transport.js";
