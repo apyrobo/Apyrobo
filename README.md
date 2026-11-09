@@ -29,13 +29,13 @@
 
 ```bash
 # needs uv (https://docs.astral.sh/uv/); runs the MCP server on a simulated mock:// robot
-uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+uvx apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
 ```
 
-Point Claude Code at it with `claude mcp add apyrobo -- uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4`,
+Point Claude Code at it with `claude mcp add apyrobo -- uvx apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4`,
 then ask: *"drive to (1, 1) at 2 m/s, then to (3, 3)"*. The first move is clamped to 0.5 m/s; the second is refused because (3, 3) is inside the no-go zone.
 Claude Desktop and Cursor configs, the tool list and the flags are in [docs/mcp.md](docs/mcp.md).
-`apyrobo mcp` is not in a PyPI release yet (`pip install apyrobo` gives 4.0.0 without it), so the one-liner installs from GitHub.
+`apyrobo mcp` ships on PyPI from 4.2.0 (`pip install apyrobo` works too). To run the latest `main` instead, use `uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp …`.
 
 ```
    "deliver the package to dock 3"

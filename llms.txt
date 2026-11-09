@@ -7,20 +7,20 @@ APYROBO's `SafetyEnforcer` first.
 
 ## MCP server (start here)
 
-Try it with no robot and no ROS. This needs uv and git, and runs on a simulated `mock://` robot:
+Try it with no robot and no ROS. This needs uv, and runs on a simulated `mock://` robot:
 
 ```bash
-uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+uvx apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
 ```
 
-`apyrobo mcp` is not in a PyPI release yet (`pip install apyrobo` gives 4.0.0 without it),
-so the command above installs from GitHub.
+`apyrobo mcp` ships on PyPI from 4.2.0. To run the latest `main` instead, use
+`uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp …` (needs git).
 
 Print a ready-to-paste client config with the absolute path for this machine. The client
 can be `claude-desktop`, `cursor` or `claude-code`:
 
 ```bash
-uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
+uvx apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
 ```
 
 What it does:

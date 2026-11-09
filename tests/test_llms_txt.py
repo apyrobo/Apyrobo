@@ -50,3 +50,12 @@ def test_every_relative_link_resolves():
     assert links
     missing = [link for link in links if not (ROOT / link).exists()]
     assert not missing, f"llms.txt links to missing files {missing}"
+
+
+def test_readme_and_llms_txt_lead_with_the_pypi_command():
+    """From 4.2.0 apyrobo mcp is on PyPI: the first command is the plain uvx form."""
+    for name in ("README.md", "llms.txt"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        first = text.index("apyrobo mcp --max-speed")
+        assert text[:first].rstrip().endswith("uvx"), f"{name} does not lead with uvx apyrobo mcp"
+        assert "not in a PyPI release yet" not in text, name
