@@ -109,7 +109,7 @@ Full authoring guide: [adapter_authoring.md](../adapter_authoring.md)
 
 - [Skill authoring](../skill_authoring.md) — write skills that work across all adapters
 - [Multi-agent coordination](multi_agent_coordination.md) — mix different adapters in one `TaskBus`
-- [Natural language safety policies](nl_safety_policies.md) — enforce safety independent of adapter
+- [Natural language safety policies](nl_safety_policies.md) — check plain-English safety rules, independent of adapter
 
 ---
 

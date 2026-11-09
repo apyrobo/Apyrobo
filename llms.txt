@@ -85,7 +85,7 @@ store = NLPolicyStore("~/.apyrobo/policies.db")
 store.add(NLPolicyParser().parse("never exceed 0.5 m/s near humans"))
 violations = NLPolicyParser().check_compliance("navigate at 2 m/s", store.get_active_policies())
 ```
-Parse plain English → store in SQLite → enforce before execution. Non-engineers write the rules.
+Parse plain English → store in SQLite → check an action before running it (a text check; not applied to motion, use SafetyEnforcer for that). Non-engineers write the rules.
 
 ### Multi-agent coordination
 ```python
