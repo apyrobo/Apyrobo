@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import json
 import logging
+import math
 import signal
 import subprocess
 import sys
@@ -179,10 +180,16 @@ def cmd_plan(args: argparse.Namespace) -> None:
 
 def cmd_execute(args: argparse.Namespace) -> None:
     """Plan and execute a task with live output."""
+    max_speed = args.max_speed
+    if not (isinstance(max_speed, (int, float)) and math.isfinite(max_speed) and max_speed > 0):
+        print(f"Error: --max-speed must be a positive number, got {max_speed!r}", file=sys.stderr)
+        sys.exit(2)
+
     robot = Robot.discover(args.robot)
 
-    # Safety
-    policy = SafetyPolicy(max_speed=args.max_speed)
+    # Safety: every motion of the task goes through the enforcer, so
+    # --max-speed caps the speed the robot is actually sent.
+    policy = SafetyPolicy(max_speed=max_speed)
     enforcer = SafetyEnforcer(robot, policy=policy)
 
     # Agent
@@ -225,7 +232,7 @@ def cmd_execute(args: argparse.Namespace) -> None:
         }.get(event.status, "  ")
         print(f"  {icon} [{elapsed:5.1f}s] {event.skill_id}: {event.message}")
 
-    result = agent.execute(task=args.task, robot=robot, on_event=on_event)
+    result = agent.execute(task=args.task, robot=enforcer, on_event=on_event)
     duration = time.time() - t0
 
     print("-" * 50)
