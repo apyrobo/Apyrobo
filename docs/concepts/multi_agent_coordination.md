@@ -135,7 +135,7 @@ if not violations:
 
 ## Related concepts
 
-- [Natural language safety policies](nl_safety_policies.md) — enforce plain-English constraints before dispatch
+- [Natural language safety policies](nl_safety_policies.md) — check plain-English constraints before dispatch
 - [Fleet coordination](../architecture.md) — lower-level swarm module for homogeneous robot fleets
 - [Skill graph engine](../architecture.md) — DAG-based skill composition used by each agent's planner
 
