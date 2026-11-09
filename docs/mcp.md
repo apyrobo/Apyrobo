@@ -304,6 +304,8 @@ refuses those rather than guess: a task with "don't", "do not", "never" or "not"
 (it used to plan the very drive it ruled out), a number in exponent form such as
 `1e3`, a number with no 0 before its point such as `.5` (`(.5, 1)` used to drive
 to (5, 1)), a fraction such as `1/2`, a number with an underscore such as `1_0`,
+a minus written as another dash such as `−` or `–` (`(−5, 0)` used to drive to
+(5, 0); use `-`),
 three or more numbers for one target such as `(1, 2, 3)`, and a speed it cannot
 use: written with a decimal comma (`0,2`), in a unit other than m/s (`meters per
 second`, `km/h`, `mph`, `cm/s`), a choice or range (`0.1 or 0.2`, `0.1-0.2 m/s`),

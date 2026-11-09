@@ -162,6 +162,10 @@ class RuleBasedProvider(AgentProvider):
     # A digit group separator ("1_0"), which the coordinate reader splits:
     # "(1_0, 1)" drove to (0, 1).
     _UNDERSCORE_NUMBER = re.compile(r"\d_\d")
+    # A minus written as another dash ("\u22125", en dash, em dash, full-width
+    # hyphen-minus): the coordinate reader skips it, so "(\u22125, 0)" drove
+    # to (5, 0).
+    _DASH_SIGN = re.compile(r"[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]\s*\d")
     _NUMBER_TRIPLE = re.compile(
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
@@ -253,6 +257,13 @@ class RuleBasedProvider(AgentProvider):
                 "'0.1 or 0.2'), and the rule planner would use only one, so the "
                 "robot will not guess which. Give one speed, like 'go to (1, 2) "
                 "at 0.2 m/s'."
+            )
+        if cls._DASH_SIGN.search(text):
+            return (
+                "Not planned: this task has a minus sign or dash the rule planner "
+                "does not read (like \u2212 or \u2013), so it would drop the sign "
+                "and the robot will not guess. Use the plain hyphen-minus, like "
+                "'go to (-5, 0)'."
             )
         if cls._NUMBER_TRIPLE.search(text):
             return (
