@@ -533,11 +533,9 @@ A speed limit is never sent at or above the controller's own top speed:
 Regulated Pure Pursuit and MPPI would take it as a new, higher target, and DWB
 would ignore it and keep an earlier, lower limit. So at start `ros2://` reads,
 from `controller_server`'s parameters, the one configured controller's plugin
-and its top speed: `max_speed_xy` for DWB, `vx_max` for MPPI, and for
-Regulated Pure Pursuit `desired_linear_vel` or, when that is not set,
-`max_linear_vel` (the name Nav2 Lyrical gave it; Lyrical still reads the old
-name, with a deprecation warning, when it is set). Parameter names checked in
-Nav2's Humble, Jazzy, Kilted and Lyrical source. A move's speed at or above it lifts the limit instead, so the
+and its top speed: `max_speed_xy` for DWB, `desired_linear_vel` for Regulated
+Pure Pursuit, `vx_max` for MPPI (parameter names checked in Nav2's Humble and
+Jazzy source). A move's speed at or above it lifts the limit instead, so the
 controller drives at its own speed. With any other controller (a rotation
 shim, for one), several controllers, or no answer within about a second, the
 speed is sent as is: the reply then carries `"speed_limit_checked": false`
