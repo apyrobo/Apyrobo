@@ -22,6 +22,22 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _through_enforcer(robot: Any, safety_policy: Any = None) -> Any:
+    """Return *robot* wrapped in a SafetyEnforcer, unless it already is one.
+
+    Voice commands run through the enforcer like every other command, so a
+    heard "at speed 5" is clamped to the policy's max speed and no-go zones
+    are checked. *safety_policy* is a SafetyPolicy or a registered name;
+    None means "default".
+    """
+    from apyrobo.safety.enforcer import SafetyEnforcer
+
+    if isinstance(robot, SafetyEnforcer):
+        return robot
+    policy = safety_policy if safety_policy is not None else "default"
+    return SafetyEnforcer(robot, policy=policy)
+
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
@@ -417,9 +433,11 @@ class VoiceAgent:
         robot: Any,
         stt: VoiceAdapter,
         tts: VoiceAdapter | None = None,
+        safety_policy: Any = None,
     ) -> None:
         self._agent = agent
-        self._robot = robot
+        # Every task runs through a SafetyEnforcer (see _through_enforcer).
+        self._robot = _through_enforcer(robot, safety_policy)
         self._stt = stt
         self._tts = tts if tts is not None else MockVoiceAdapter()
 
@@ -609,6 +627,7 @@ def voice_loop(
     max_turns: int | None = None,
     on_listen: Any = None,
     on_result: Any = None,
+    safety_policy: Any = None,
 ) -> list[dict[str, Any]]:
     """
     Run a voice interaction loop: listen -> plan+execute -> speak result.
@@ -620,10 +639,14 @@ def voice_loop(
         max_turns: Maximum number of turns (None = infinite)
         on_listen: Optional callback(text) after transcription
         on_result: Optional callback(result) after execution
+        safety_policy: SafetyPolicy or registered policy name every task is
+            enforced with (None = "default"); a robot that is already a
+            SafetyEnforcer is used as it is
 
     Returns:
         List of turn records: [{"input": str, "result": TaskResult, "summary": str}]
     """
+    robot = _through_enforcer(robot, safety_policy)
     turns: list[dict[str, Any]] = []
     turn_count = 0
 
