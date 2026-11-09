@@ -222,6 +222,10 @@ Expose APYROBO to any front-end over JSON stdio — wire it to Slack, a web UI, 
 apyrobo serve --robot mock://turtlebot4 --provider rule
 ```
 
+Add `--execute` to run each planned task on the robot. It runs through the
+safety enforcer with the default policy (1.5 m/s); `--max-speed` sets another
+limit. A robot named in a message's `robot_uri` gets the same limit.
+
 ```python
 from apyrobo.orchestration import OrchestrationServer, StdioOrchestrationAdapter
 from apyrobo import Agent
