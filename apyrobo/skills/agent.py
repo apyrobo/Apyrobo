@@ -391,7 +391,7 @@ class RuleBasedProvider(AgentProvider):
         r"(-?\d+(?:\.\d+)?)\s*(degrees?|degs?|°|radians?|rads?)(?![a-z])"
     )
     _CLOCKWISE = re.compile(r"\bright\b|(?<![a-z])clockwise\b")
-    _COUNTERCLOCKWISE = re.compile(r"\bleft\b|\b(?:counter|anti)-?clockwise\b")
+    _COUNTERCLOCKWISE = re.compile(r"\bleft\b|\b(?:counter|anti)[- ]?clockwise\b")
 
     @classmethod
     def extract_angle(cls, task: str) -> float | None:
@@ -409,11 +409,27 @@ class RuleBasedProvider(AgentProvider):
         value = float(found.group(1))
         if found.group(2).startswith(("deg", "°")):
             value = math.radians(value)
-        if cls._CLOCKWISE.search(text) and not cls._COUNTERCLOCKWISE.search(text):
+        directions = cls.turn_directions(text)
+        if directions == {"right"}:
             value = -abs(value)
-        elif cls._COUNTERCLOCKWISE.search(text) and not cls._CLOCKWISE.search(text):
+        elif directions == {"left"}:
             value = abs(value)
         return value
+
+    @classmethod
+    def turn_directions(cls, task: str) -> set[str]:
+        """The turn directions ``task`` names: "left", "right", both or none.
+
+        "counterclockwise", "anti-clockwise" and "anti clockwise" are left;
+        the "clockwise" inside them is not also read as right.
+        """
+        text = task.lower()
+        found = set()
+        if cls._COUNTERCLOCKWISE.search(text):
+            found.add("left")
+        if cls._CLOCKWISE.search(cls._COUNTERCLOCKWISE.sub(" ", text)):
+            found.add("right")
+        return found
 
     @classmethod
     def is_status_ask(cls, task: str) -> bool:
