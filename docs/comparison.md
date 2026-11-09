@@ -103,6 +103,25 @@ APYROBO provides three storage backends:
 
 RAI and ROS-LLM have no built-in state persistence.
 
+### 8. Robot MCP servers
+
+APYROBO also runs as an MCP server (`apyrobo mcp`), so a model in Claude
+Desktop, Claude Code or another MCP client can drive a robot through the same
+`SafetyEnforcer`. It is not the only robot MCP server with safety limits:
+[armguard-mcp](https://github.com/Lynn-hh/armguard-mcp)
+([PyPI](https://pypi.org/project/armguard-mcp/)) is a safety-first MCP server
+for ROS 2 robot arms (Jazzy, MoveIt 2, Franka FR3), with joint, workspace and
+keep-out envelopes, speed caps, human approval through MCP elicitation, an
+e-stop and an audit log. It is Apache-2.0 and, by its own README, alpha and not
+yet run on hardware.
+
+The two cover different robots: armguard-mcp guards manipulators; APYROBO
+guards mobile robots (`mock://`, or ROS 2 with Nav2 through `ros2://`). For a
+robot arm, use armguard-mcp. For a mobile base or a fleet where the model must
+stay inside speed limits and no-go zones you set, use APYROBO. The
+[MCP guide](mcp.md#how-apyrobo-fits-with-other-robot-mcp-servers) compares
+these and other robot MCP servers side by side.
+
 ---
 
 ## When to Use Each
@@ -152,3 +171,4 @@ RAI and ROS-LLM have no built-in state persistence.
 - **APYROBO**: [github.com/apyrobo/apyrobo](https://github.com/apyrobo/apyrobo)
 - **RAI**: [github.com/RobotecAI/rai](https://github.com/RobotecAI/rai)
 - **ROS-LLM**: [github.com/autonohm/ros_llm](https://github.com/autonohm/ros_llm)
+- **armguard-mcp**: [github.com/Lynn-hh/armguard-mcp](https://github.com/Lynn-hh/armguard-mcp)
