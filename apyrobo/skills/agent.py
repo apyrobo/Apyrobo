@@ -142,7 +142,26 @@ class RuleBasedProvider(AgentProvider):
     _OTHER_SPEED_UNIT = re.compile(
         r"\d\s*(?:(?:met(?:er|re)s?|m)\s+(?:per|a|an)\s+sec(?:ond)?s?\b"
         r"|m\s*/\s*sec\b|km\s*/\s*h\b|kph\b|kmh\b|mph\b|cm\s*/\s*s\b"
-        r"|mm\s*/\s*s\b|ft\s*/\s*s\b|(?:feet|foot)\s+per\s+second\b|knots?\b)"
+        r"|mm\s*/\s*s\b|ft\s*/\s*s\b|(?:feet|foot)\s+per\s+second\b|knots?\b"
+        # Per minute or hour, m/s squared, inches, "mps", metres spelled out
+        # with a slash, and other lengths per time: "speed 0.2 m/min" ran at
+        # 0.2 m/s, "at 0.2 mps" at the default speed.
+        r"|m\s*/\s*(?:min(?:ute)?|h(?:ou)?r?)\b|m\s*/\s*s\s*(?:\u00b2|\^)"
+        r"|in(?:ch(?:es)?)?\s*/\s*s|mps\b|met(?:er|re)s?\s*/\s*s"
+        r"|(?:m|met(?:er|re)s?|cm|centimet(?:er|re)s?|mm|millimet(?:er|re)s?"
+        r"|km|kilomet(?:er|re)s?|in(?:ch(?:es)?)?|ft|feet|foot|yards?)\s+"
+        r"(?:per|a|an)\s+(?:sec(?:ond)?s?|min(?:ute)?s?|h(?:ou)?rs?)\b)"
+    )
+    # A speed in m/s the speed reader does not take in that wording ("at
+    # most 0.2 m/s", "max 0.2 m/s"): the drive ran at the default speed.
+    _MPS_NUMBER = re.compile(r"-?\d+(?:\.\d+)?\s*m\s*/\s*s\b")
+    # "speed" followed by a word the speed reader does not take ("at a speed
+    # of about 0.2", "speed limit 0.2"): the drive ran at the default speed.
+    _HEDGED_SPEED = re.compile(
+        r"\bspeed\s*(?:of\s+)?(?:(?:about|around|roughly|approx(?:imately)?"
+        r"|up\s+to|at\s+most|max(?:imum)?|limit|below|under|no\s+more\s+than"
+        r"|less\s+than)\s+)+[:=]?\s*-?\d"
+        r"|\bspeed\s*(?:of\s+)?(?:<=?|\u2264|~)\s*-?\d"
     )
     # A turn speed ("at 0.5 rad/s", "30 degrees per second", "10 rpm"): the
     # rule planner sets no turn speed, so it used to turn at the default.
@@ -291,6 +310,18 @@ class RuleBasedProvider(AgentProvider):
                 "+0.2), which the rule planner does not read, so the robot will "
                 "not run at a speed nobody asked for. Leave the sign out, like "
                 "'go to (1, 2) at 0.2 m/s'."
+            )
+        read = [m.span() for m in cls._SPEED.finditer(text)]
+        unread = cls._HEDGED_SPEED.search(text) or any(
+            not any(a <= m.start() and m.end() <= b + 6 for a, b in read)
+            for m in cls._MPS_NUMBER.finditer(text)
+        )
+        if unread:
+            return (
+                "Not planned: this task gives a speed in a wording the rule "
+                "planner does not read (like 'at most 0.2 m/s'), so the robot "
+                "would run at the default speed instead. Write it as 'at 0.2 "
+                "m/s' or 'at speed 0.2'."
             )
         if cls._NUMBER_TRIPLE.search(text):
             return (

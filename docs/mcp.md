@@ -310,7 +310,10 @@ a number it would read in part, such as `0x10`, `1.5.2` or `2:30` (`(0x10, 1)`
 used to drive to (10, 1)),
 three or more numbers for one target such as `(1, 2, 3)`, and a speed it cannot
 use: written with a decimal comma (`0,2`), in a unit other than m/s (`meters per
-second`, `km/h`, `mph`, `cm/s`), a choice or range (`0.1 or 0.2`, `0.1-0.2 m/s`),
+second`, `km/h`, `mph`, `cm/s`, `m/min`, `in/s`, `mps`; `speed 0.2 m/min` used
+to run at 0.2 m/s), in a wording other than the ones above (`at most 0.2 m/s`,
+`max 0.2 m/s`, `at a speed of about 0.2` used to run at the default speed), a
+choice or range (`0.1 or 0.2`, `0.1-0.2 m/s`),
 a turn speed (`0.5 rad/s`, `30 deg/s`, `rpm`: call `rotate` with `speed`
 instead), a plus sign (`at speed +0.2` used to run at the default speed), or 0. Each moves
 nothing; `execute_task` returns an error starting "Not planned:" and `plan_task`
