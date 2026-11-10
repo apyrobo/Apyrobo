@@ -49,10 +49,10 @@ where = ["."]
 include = ["apyrobo_skills_myrobot*"]
 ```
 
-The `[project.entry-points."apyrobo.skills"]` section names your `register` function. APYROBO
-does not load this entry point automatically yet, so users import your package and call
-`register()` themselves (see section 7). Declaring it now means nothing changes for your users
-when automatic loading lands.
+The `[project.entry-points."apyrobo.skills"]` section names your `register` function.
+`apyrobo test-skill` loads it (see section 5). Nothing else in APYROBO loads it automatically
+yet, so in their own code users import your package and call `register()` themselves (see
+section 7).
 
 ---
 
@@ -124,12 +124,17 @@ Run:
 pytest packages/apyrobo-skills-myrobot/tests/
 ```
 
-`apyrobo test-skill` does not load installed skill packages yet: it finds a skill by ID only
-among the built-in skills, or in a `.py` file whose name is the skill's ID (it imports the file
-and runs the skill named after it). For the layout above, `apyrobo test-skill go_to_waypoint`
-reports the skill as not found, and `apyrobo test-skill apyrobo_skills_myrobot/navigation.py`
-looks for a skill called `navigation`. Test package skills with pytest as above. To try one skill
-in the CLI harness, put it alone in a file named after it:
+`apyrobo test-skill` also runs skills from installed packages. When a skill ID is not a
+built-in skill, it loads every installed `apyrobo.skills` entry point (calling the `register`
+function each one names) and looks again. So once the package is installed
+(`pip install -e packages/apyrobo-skills-myrobot`), this runs `go_to_waypoint` from it:
+```bash
+apyrobo test-skill go_to_waypoint --repeat 5
+```
+
+A `.py` file works too, installed or not: test-skill imports it and runs the skill named after
+the file, or the file's only `@skill` when none is (a file with several skills and none named
+after it is refused with their names):
 ```bash
 # go_to_waypoint.py holds the @skill go_to_waypoint function from section 3
 apyrobo test-skill go_to_waypoint.py --repeat 5
