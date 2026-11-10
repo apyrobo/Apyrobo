@@ -5,7 +5,8 @@ The agent converts a list of SkillTool definitions into LLM tool/function
 specs, sends the task to the LLM, executes any tool calls the model
 requests, and returns the final text answer.
 
-Falls back to a deterministic mock when litellm is not configured.
+Without litellm, or when the LLM call fails, no tool is run: the agent
+never invokes a skill the model did not ask for.
 
 Classes:
     SkillTool         — descriptor for one executable skill
@@ -16,8 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +51,19 @@ def _tools_to_litellm(tools: list[SkillTool]) -> list[dict[str, Any]]:
 
 def _mock_run(task: str, tools: list[SkillTool]) -> str:
     """
-    Deterministic mock: execute the first tool with default params,
-    then return a canned summary.
+    Offline fallback when litellm is not installed.
+
+    Runs no tool: with no model to read the task, any tool call would be a
+    guess (a navigate tool called with zeros drives the robot to the
+    origin, even for "stop").
     """
     if not tools:
         return f"Mock: no tools available for task {task!r}"
-    tool = tools[0]
-    # Build minimal args from required properties
-    props = tool.parameters.get("properties", {})
-    required = tool.parameters.get("required", [])
-    kwargs: dict[str, Any] = {}
-    for key in required:
-        schema = props.get(key, {})
-        t = schema.get("type", "string")
-        kwargs[key] = 0.0 if t == "number" else ("mock_value" if t == "string" else None)
-    result = tool.executor(**kwargs)
-    return f"Mock: executed {tool.name!r} → {result}"
+    names = ", ".join(t.name for t in tools)
+    return (
+        f"Mock: litellm is not installed, so no tool was run for task {task!r} "
+        f"(available: {names})"
+    )
 
 
 class ToolCallingAgent:
@@ -103,10 +102,16 @@ class ToolCallingAgent:
         """
         try:
             import litellm  # type: ignore[import]
-            return self._run_with_litellm(task, litellm)
-        except Exception as exc:
+        except ImportError as exc:
             logger.debug("litellm unavailable (%s), using mock", exc)
             return _mock_run(task, self.tools)
+        try:
+            return self._run_with_litellm(task, litellm)
+        except Exception as exc:
+            # Never fall back to the mock here: tools the model asked for
+            # may already have run, and guessing another call is unsafe.
+            logger.warning("LLM call failed (%s); no further tools run", exc)
+            return f"LLM call failed: {exc}. No further tools were run."
 
     def _run_with_litellm(self, task: str, litellm: Any) -> str:
         messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
@@ -124,7 +129,11 @@ class ToolCallingAgent:
             msg = choice.message
 
             # Add assistant message to context
-            messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": getattr(msg, "tool_calls", None)})
+            messages.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": getattr(msg, "tool_calls", None),
+            })
 
             if finish == "tool_calls" and msg.tool_calls:
                 for tc in msg.tool_calls:

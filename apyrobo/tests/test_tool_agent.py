@@ -1,5 +1,4 @@
 """Tests for apyrobo.agents.tool_agent"""
-import pytest
 from apyrobo.agents.tool_agent import SkillTool, ToolCallingAgent
 
 
@@ -46,13 +45,16 @@ class TestToolCallingAgent:
         result = agent.run("go to position 1 2")
         assert isinstance(result, str)
 
-    def test_mock_executes_first_tool(self):
+    def test_mock_runs_no_tool(self, monkeypatch):
+        import sys
+        monkeypatch.setitem(sys.modules, "litellm", None)
         calls = []
         tool, calls = make_nav_tool(calls)
         agent = ToolCallingAgent(tools=[tool])
         result = agent.run("navigate somewhere")
-        # mock path should have called the tool
-        assert "navigate_to" in result or isinstance(result, str)
+        # the offline mock never guesses a tool call
+        assert calls == []
+        assert "no tool was run" in result
 
     def test_no_tools(self):
         agent = ToolCallingAgent(tools=[])
