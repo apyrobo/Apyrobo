@@ -40,7 +40,7 @@ graph.add_skill(BUILTIN_SKILLS["run_policy"],
 | A runaway policy cannot ask for more than one bounded step | `max_step_m` per tick, enforced by the runner itself |
 | Speed limits, collision zones, audit trail | pass a `SafetyEnforcer` as `robot` — its clamps apply to every action |
 | Episodes always end | `max_duration_sec`, optional `max_steps` |
-| Failures fail closed | any policy/robot exception aborts the episode; `robot.stop()` runs in a `finally` |
+| Failures fail closed | any policy/robot exception, or a NaN/inf action or position, aborts the episode before a move is sent; `robot.stop()` runs in a `finally` |
 | Observable outcome | `PolicyResult`: success, stop reason, steps, clamped-step count, trajectory |
 
 ## The Policy contract
