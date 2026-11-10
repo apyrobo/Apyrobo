@@ -75,10 +75,12 @@ class TestEndToEnd:
                      parameters={"x": 1.0, "y": 2.0, "speed": 0.5})
         g.add_skill(BUILTIN_SKILLS["pick_object"],
                      depends_on=["navigate_to"])
-        g.add_skill(BUILTIN_SKILLS["navigate_to"],
-                     depends_on=["pick_object"])
+        # Can't add the same skill_id twice: it would replace the first step
+        with pytest.raises(ValueError, match="navigate_to"):
+            g.add_skill(BUILTIN_SKILLS["navigate_to"],
+                         depends_on=["pick_object"])
 
-        # Can't add same skill_id twice, so create unique skills
+        # So create unique skills
         nav1 = BUILTIN_SKILLS["navigate_to"]
         from apyrobo.skills.skill import Skill
         nav2 = Skill(

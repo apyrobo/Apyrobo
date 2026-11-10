@@ -224,6 +224,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `SkillGraph.add_skill` raises `ValueError` naming the duplicate `skill_id`
+  instead of silently replacing the earlier step, so a graph that added
+  `navigate_to` twice no longer runs it once and skips a waypoint.
 - `SafetyEnforcer(robot, policy="...")` and `swap_policy("...")` raise
   `ValueError` on a name that is not in `POLICY_REGISTRY` instead of quietly
   running the `default` policy. A misspelt `"Strict"` used to drive at the

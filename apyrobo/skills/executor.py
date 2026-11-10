@@ -94,7 +94,19 @@ class SkillGraph:
 
     def add_skill(self, skill: Skill, depends_on: list[str] | None = None,
                   parameters: dict[str, Any] | None = None) -> None:
-        """Add a skill to the graph with optional dependencies."""
+        """Add a skill to the graph with optional dependencies.
+
+        Raises ValueError if a skill with the same ``skill_id`` is already
+        in the graph: replacing it would silently drop a planned step.
+        Give each step its own id (e.g. ``navigate_to_0``, ``navigate_to_1``).
+        """
+        if skill.skill_id in self._skills:
+            raise ValueError(
+                f"SkillGraph already has a step with skill_id {skill.skill_id!r}; "
+                "adding it again would replace the earlier step. "
+                "Give each step a unique skill_id (e.g. "
+                f"{skill.skill_id + '_1'!r})."
+            )
         self._skills[skill.skill_id] = skill
         self._edges[skill.skill_id] = depends_on or []
         if parameters:
