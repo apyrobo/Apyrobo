@@ -383,6 +383,55 @@ class TestTaskBusBroadcast:
             for c in coords:
                 c.stop()
 
+    def test_broadcast_sends_one_copy_to_each_agent(self):
+        # broadcast used to route every copy through dispatch(), which picks
+        # the least-loaded agent, so one agent could get all three copies.
+        bus = TaskBus(timeout=5.0)
+        coords = []
+        for i in range(3):
+            agent = _make_agent(f"skill_{i}")
+            robot = _make_robot([])
+            coord = MultiAgentCoordinator(agent, robot, bus,
+                                          agent_id=f"bot-{i}", capabilities=[])
+            coord.start()
+            coords.append(coord)
+
+        try:
+            results = bus.broadcast("status check")
+            assert sorted(r.agent_id for r in results) == ["bot-0", "bot-1", "bot-2"]
+            for c in coords:
+                c._agent.plan.assert_called_once()
+        finally:
+            for c in coords:
+                c.stop()
+
+    def test_broadcast_stop_stops_every_mock_robot(self):
+        # The docs and the warehouse demo use broadcast for a fleet-wide stop:
+        # every robot on the bus must receive it, not only the idlest one.
+        from apyrobo import Agent, MockAdapter, Robot
+
+        bus = TaskBus(timeout=5.0)
+        coords = []
+        adapters = []
+        for name in ("a", "b", "c"):
+            adapter = MockAdapter(name)
+            adapters.append(adapter)
+            coord = MultiAgentCoordinator(
+                Agent(provider="rule"), Robot(f"mock://{name}", adapter), bus,
+                agent_id=name, capabilities=["NAVIGATE"],
+            )
+            coord.start()
+            coords.append(coord)
+
+        try:
+            results = bus.broadcast("stop")
+            assert sorted(r.agent_id for r in results) == ["a", "b", "c"]
+            assert all(r.success for r in results)
+            assert all(r.skills_planned == ["Stop"] for r in results)
+        finally:
+            for c in coords:
+                c.stop()
+
 
 # ---------------------------------------------------------------------------
 # Module exports
