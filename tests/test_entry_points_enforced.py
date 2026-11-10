@@ -11,9 +11,11 @@ zone (nothing must reach the robot).
 The no-go zone is added to every SafetyEnforcer the command builds, so a
 command that skips the enforcer moves into it and fails here.
 
+``apyrobo shell`` is checked through the ``robot`` it puts in the REPL; the
+REPL also holds ``raw_robot``, which a user picks on purpose to bypass the
+enforcer (a test below checks the banner says so).
+
 Out of scope, with the reason:
-- ``apyrobo shell`` is a Python REPL: the user types library calls on the
-  ``robot`` object, the same as the library API.
 - Library APIs that take a caller's robot (Agent.execute, the operations
   scheduler, fleet/manager.py): the caller chooses to pass a SafetyEnforcer.
 - ``apyrobo listen`` and ``apyrobo plan`` without ``--simulate`` only plan;
@@ -134,6 +136,17 @@ def _mcp(mp: pytest.MonkeyPatch, x: float, y: float, speed: float) -> None:
         "name": "move_to", "arguments": {"x": x, "y": y, "speed": speed}}})
 
 
+def _shell(mp: pytest.MonkeyPatch, x: float, y: float, speed: float) -> None:
+    # Stand in for the user typing robot.move(...) at the REPL prompt.
+    def interact(banner: str = "", local: dict | None = None, exitmsg: str = "") -> None:
+        assert local is not None
+        with contextlib.suppress(Exception):
+            local["robot"].move(x=x, y=y, speed=speed)
+
+    mp.setattr("code.interact", interact)
+    _main(mp, "shell")
+
+
 ENTRY_POINTS = {
     "execute": _execute,
     "serve --execute": _serve_execute,
@@ -142,6 +155,7 @@ ENTRY_POINTS = {
     "skill compose": _skill_compose,
     "test-skill": _test_skill,
     "mcp": _mcp,
+    "shell": _shell,
 }
 
 

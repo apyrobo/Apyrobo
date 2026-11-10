@@ -2550,13 +2550,21 @@ def cmd_shell(args: argparse.Namespace) -> None:
 
     robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
     provider_name: str = getattr(args, "provider", "rule")
+    max_speed = getattr(args, "max_speed", 1.5)
+    if not (isinstance(max_speed, (int, float)) and math.isfinite(max_speed) and max_speed > 0):
+        print(f"Error: --max-speed must be a positive number, got {max_speed!r}", file=sys.stderr)
+        sys.exit(2)
 
     print(f"Connecting to {robot_uri!r} …")
     try:
-        robot = Robot.discover(robot_uri)
+        raw_robot = Robot.discover(robot_uri)
     except Exception as exc:
         print(f"Error: could not connect to {robot_uri!r}: {exc}", file=sys.stderr)
         sys.exit(1)
+
+    # ``robot`` goes through the SafetyEnforcer like every other command;
+    # ``raw_robot`` is there for a user who wants to bypass it on purpose.
+    robot = SafetyEnforcer(raw_robot, policy=SafetyPolicy(max_speed=max_speed))
 
     provider, model = _resolve_provider(provider_name)
     try:
@@ -2574,7 +2582,9 @@ def cmd_shell(args: argparse.Namespace) -> None:
         "\n"
         "  APYROBO Interactive Shell\n"
         "  ─────────────────────────────────────────────────────\n"
-        f"  robot    → {caps.name!r} ({robot_uri})\n"
+        f"  robot    → {caps.name!r} ({robot_uri}) through the SafetyEnforcer, "
+        f"max speed {max_speed:g} m/s\n"
+        "  raw_robot → the same robot with no safety checks\n"
         f"  agent    → {provider} provider\n"
         f"  skills   → {len(BUILTIN_SKILLS)} built-in skills available\n"
         "\n"
@@ -2589,6 +2599,7 @@ def cmd_shell(args: argparse.Namespace) -> None:
 
     local_ns: dict = {
         "robot": robot,
+        "raw_robot": raw_robot,
         "agent": agent,
         "Robot": Robot,
         "Agent": Agent,
@@ -3262,6 +3273,9 @@ def main() -> None:
                          help="Robot URI (default: mock://turtlebot4)")
     p_shell.add_argument("--provider", default="rule",
                          help="LLM provider (default: rule)")
+    p_shell.add_argument("--max-speed", dest="max_speed", type=float, default=1.5,
+                         metavar="M_S",
+                         help="Speed limit for robot, in m/s (default: 1.5)")
 
     # tutorial — guided walkthrough
     p_tutorial = sub.add_parser("tutorial", help="Interactive guided tutorial (mock mode, no hardware needed)")
