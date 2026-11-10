@@ -87,6 +87,38 @@ class TestAdapterScaffold:
         assert excinfo.value.code == 1
         assert "collides with a first-party adapter" in capsys.readouterr().err
 
+    @pytest.mark.parametrize("scheme", ["vda5050", "VDA5050", "unitree"])
+    def test_every_built_in_scheme_is_refused(self, scheme, tmp_path, capsys):
+        # vda5050:// ships in apyrobo but is not in the spec's list of eight;
+        # a scaffold on it would be shadowed by the built-in adapter.
+        with pytest.raises(SystemExit) as excinfo:
+            cmd_init(_ns(scheme, str(tmp_path / "out")))
+        assert excinfo.value.code == 1
+        assert "collides with a first-party adapter" in capsys.readouterr().err
+        assert not (tmp_path / "out").exists()
+
+    def test_reserved_set_covers_every_register_adapter_in_package(self):
+        import pathlib
+        import re
+
+        from apyrobo.cli import _FIRST_PARTY_SCHEMES
+
+        pkg = pathlib.Path(importlib.import_module("apyrobo").__file__).parent
+        pattern = re.compile(
+            r"""^[ \t]*@register_adapter\(\s*["']([a-z][a-z0-9_+.-]*)["']""",
+            re.M,
+        )
+        registered = {
+            m.group(1)
+            for path in pkg.rglob("*.py")
+            for m in pattern.finditer(path.read_text(encoding="utf-8"))
+        }
+        assert "vda5050" in registered  # the scan finds the real decorators
+        assert registered <= _FIRST_PARTY_SCHEMES, (
+            f"schemes apyrobo registers but apyrobo init would hand out: "
+            f"{sorted(registered - _FIRST_PARTY_SCHEMES)}"
+        )
+
     def test_invalid_scheme_is_refused(self, tmp_path, capsys):
         with pytest.raises(SystemExit):
             cmd_init(_ns("9bad scheme!", str(tmp_path / "out")))
