@@ -2611,16 +2611,14 @@ _TUTORIAL_STEPS = [
             "The 'mock://' prefix spins up an in-process simulator — no hardware needed."
         ),
         "code": "robot = Robot.discover('mock://turtlebot4')\nprint(robot.capabilities().name)",
-        "expect": "TurtleBot4",
     },
     {
         "title": "Step 2 — Inspect capabilities",
         "description": (
             "Every robot exposes its capabilities so the planner knows what it can do.\n"
-            "The mock TurtleBot4 supports navigation, cameras, and basic manipulation."
+            "The mock TurtleBot4 supports navigation, rotation, and pick-and-place."
         ),
         "code": "caps = robot.capabilities()\nfor c in caps.capabilities:\n    print(f'  {c.name}: {c.description}')",
-        "expect": None,
     },
     {
         "title": "Step 3 — Plan a task",
@@ -2629,22 +2627,23 @@ _TUTORIAL_STEPS = [
             "The built-in rule-based planner works without any API key."
         ),
         "code": "agent = Agent(provider='rule')\ngraph = agent.plan('navigate to the dock', robot)\nfor s in graph.get_execution_order():\n    print(f'  {s.skill_id}: {s.name}')",
-        "expect": None,
     },
     {
         "title": "Step 4 — Execute the plan",
         "description": (
-            "SkillExecutor runs each skill in the graph, respecting dependencies\n"
-            "and enforcing safety policies at every step."
+            "SkillExecutor runs each skill in the graph, respecting dependencies.\n"
+            "It checks no safety limits itself: a raw robot moves unchecked. Wrap the\n"
+            "robot in a SafetyEnforcer (default policy caps speed at 1.5 m/s) and give\n"
+            "the executor that, so every move is checked against the policy."
         ),
         "code": (
             "from apyrobo.skills.executor import SkillExecutor\n"
-            "from apyrobo.core.schemas import TaskStatus\n"
-            "executor = SkillExecutor(robot)\n"
+            "from apyrobo.safety.enforcer import SafetyEnforcer\n"
+            "safe_robot = SafetyEnforcer(robot)\n"
+            "executor = SkillExecutor(safe_robot)\n"
             "result = executor.execute_graph(graph)\n"
             "print('Result:', result.status.value)"
         ),
-        "expect": "completed",
     },
     {
         "title": "Step 5 — Write your own skill",
@@ -2661,7 +2660,6 @@ _TUTORIAL_STEPS = [
             "    return True\n\n"
             "wave(robot)"
         ),
-        "expect": None,
     },
     {
         "title": "Step 6 — Test a skill",
@@ -2671,7 +2669,6 @@ _TUTORIAL_STEPS = [
         ),
         "code": None,  # command-line demo
         "cli": "apyrobo test-skill navigate_to --robot mock://turtlebot4",
-        "expect": None,
     },
 ]
 
@@ -2754,11 +2751,11 @@ def cmd_tutorial(args: argparse.Namespace) -> None:
         else:
             print(f"  └─")
 
-        if step.get("code") and step.get("expect") is None and not step.get("cli"):
+        if step.get("code") and not step.get("cli"):
             try:
                 exec(step["code"], ns)  # noqa: S102
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"  (this step failed: {type(exc).__name__}: {exc})")
 
         print()
 

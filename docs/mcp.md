@@ -783,3 +783,15 @@ and both eras are tested in CI against the official MCP Python SDK client
 tools, and sees a normal move run, an over-limit move clamped and a no-go
 move refused. Desktop hosts (Claude Desktop, Cursor) have not been tried on
 2026-07-28 yet.
+
+A `move_to` or `rotate` refused by the safety policy also carries
+`structuredContent` for clients on 2025-06-18 or later: `{"status":
+"refused", "code": …, "policy": …, "violation": {…}}`, where `code` is the
+enforcer's violation type (`collision_zone`, `outside_allowed_area`,
+`battery_below_minimum`, …, or `safety_violation` when none was recorded)
+and `violation` holds the zone, areas or limit that tripped. The text is the
+same sentence as before, so a model reading it sees no change; an agent or a
+test can branch on `code` instead of parsing words. Older protocol versions
+get the text only. `execute_task` refusals do not carry it yet. Unit-tested
+on `mock://` (`tests/test_mcp_refusal_codes.py`); whether a desktop host
+shows `structuredContent` on an error has not been checked.
