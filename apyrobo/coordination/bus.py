@@ -206,6 +206,14 @@ class TaskBus:
                 error=f"No agent available for capability {required_capability!r}",
             )
 
+        return self._send(agent, request)
+
+    def _send(
+        self, agent: MultiAgentCoordinator, request: TaskRequest,
+    ) -> TaskResult:
+        """Enqueue *request* on *agent* and wait for its result."""
+        task = request.task
+        robot_uri = request.robot_uri
         result_q: queue.Queue[TaskResult] = queue.Queue()
         with self._lock:
             self._result_queues[request.request_id] = result_q
@@ -295,7 +303,15 @@ class TaskBus:
         results_lock = threading.Lock()
 
         def _dispatch_one(agent: "MultiAgentCoordinator") -> None:
-            r = self.dispatch(task, requester_id="broadcast", metadata=metadata)
+            # Each agent gets its own request. Routing through dispatch()
+            # would pick the least-loaded agent every time, so one agent
+            # could receive every copy and the others none.
+            request = TaskRequest(
+                task=task,
+                requester_id="broadcast",
+                metadata=dict(metadata or {}),
+            )
+            r = self._send(agent, request)
             with results_lock:
                 results.append(r)
 
