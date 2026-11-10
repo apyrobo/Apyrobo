@@ -2023,9 +2023,14 @@ def cmd_profiles(args: argparse.Namespace) -> None:
 # apyrobo init — scaffold a new pip-installable skill package
 # ---------------------------------------------------------------------------
 
-# Schemes reserved by first-party adapters (spec/adapter-contract.md §1).
+# Schemes reserved by first-party adapters: the eight spec/adapter-contract.md
+# §1 lists, plus every other scheme apyrobo itself registers. A third-party
+# adapter on one of these would never load, because get_adapter() finds the
+# built-in class first. tests/test_cli_init_adapter.py checks this set against
+# every @register_adapter in the package.
 _FIRST_PARTY_SCHEMES = {
     "mock", "gazebo", "mqtt", "http", "ros2", "isaac", "unitree", "mujoco",
+    "vda5050", "gazebo_native", "isaac_sim",
 }
 
 
