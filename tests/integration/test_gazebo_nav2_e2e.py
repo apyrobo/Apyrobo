@@ -96,7 +96,9 @@ def test_nl_task_plans_navigate_skill(robot):
 
     graph = Agent(provider="rule").plan(TASK, robot)
     order = graph.get_execution_order()
-    nav_steps = [s for s in order if "navigate" in s.name.lower() or "navigate" in s.skill_id.lower()]
+    nav_steps = [
+        s for s in order if "navigate" in s.name.lower() or "navigate" in s.skill_id.lower()
+    ]
     assert nav_steps, f"no navigate skill planned for {TASK!r}: {[s.name for s in order]}"
     # Runtime parameters live on the graph (provider coords merged over the
     # catalog defaults), not on Skill.parameters — same lookup the executor
@@ -427,7 +429,12 @@ def test_mcp_refuses_a_goal_whose_nav2_route_crosses_a_zone(robot):
 
 # How far the robot has to get before the stop is sent, and how far short of
 # GOAL it must end up. GOAL is 0.8 m from START, several seconds at this speed.
-STOP_AFTER_M = 0.15
+# The second move starts where the cancelled one settled, and a cancel lets the
+# robot run on for a while (Nav2 has to confirm it), so with 0.15 m the stop
+# could land only ~0.27 m from GOAL and settle just inside the 0.25 m check.
+# 0.08 m is still well above the 0.05 m a settled robot may drift, so the stop
+# and the cancel both still land while the robot is driving.
+STOP_AFTER_M = 0.08
 STOP_SHORT_OF_GOAL_M = 0.25
 STOP_MAX_SPEED = 0.22
 
