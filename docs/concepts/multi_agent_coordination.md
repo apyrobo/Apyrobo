@@ -86,6 +86,10 @@ results = bus.broadcast("emergency_stop")
 success = all(r.success for r in results)
 ```
 
+Each registered agent gets one copy. An agent works through its queue one task
+at a time, so a broadcast stop runs after the task that agent is already on.
+For an immediate halt, call `stop()` on each robot directly.
+
 ---
 
 ## TaskResult

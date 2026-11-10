@@ -134,7 +134,8 @@ def main() -> None:
                 outcome = _c(str(result.error), DIM)
             passed += 1
 
-        correct = (violations and task.expected == "blocked") or (not violations and task.expected == "ok")
+        correct = ((violations and task.expected == "blocked")
+                   or (not violations and task.expected == "ok"))
         marker = _c("✓", GREEN) if correct else _c("✗", RED)
         print(f"  {marker} {task.description:<40} {status}  {outcome}")
         _pace()
@@ -145,7 +146,7 @@ def main() -> None:
 
     # 4. Show that policies can be updated at runtime
     print(f"  {_c('Runtime policy update:', BOLD)}")
-    print(f"  Adding: \"never enter the kitchen\"")
+    print("  Adding: \"never enter the kitchen\"")
     kitchen_policy = parser.parse("never enter the kitchen")
     store.add(kitchen_policy)
     active_policies = store.get_active_policies()
@@ -153,7 +154,8 @@ def main() -> None:
     test_action = "navigate at 0.2 m/s to kitchen"
     new_violations = parser.check_compliance(test_action, active_policies)
     if new_violations:
-        print(f"  {_c('✓', GREEN)} \"Fetch coffee from kitchen\" now {_c('BLOCKED', RED)} — policy applied instantly")
+        print(f"  {_c('✓', GREEN)} \"Fetch coffee from kitchen\" now {_c('BLOCKED', RED)}"
+              " — policy applied instantly")
     print()
 
     print("=" * 65)
@@ -163,7 +165,7 @@ def main() -> None:
     print("  Next steps:")
     print("  • Persist to disk: NLPolicyStore('~/.apyrobo/policies.db')")
     print("  • CLI: `apyrobo policy add \"never exceed 0.3 m/s near humans\"`")
-    print("  • LLM upgrade: NLPolicyParser(agent=LLMAgent()) for complex rules")
+    print("  • Rules the parser can't read: LLM fallback in docs/concepts/nl_safety_policies.md")
     print()
 
 
