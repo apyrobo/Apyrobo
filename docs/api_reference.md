@@ -158,8 +158,8 @@ from apyrobo import SafetyPolicy
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `name` | `str` | `"default"` | Policy name |
-| `max_speed` | `float` | `1.5` | Speed cap (m/s) |
-| `max_angular_speed` | `float` | `2.0` | Angular speed cap (rad/s) |
+| `max_speed` | `float` | `1.5` | Speed cap (m/s); must be finite and above 0, else `ValueError` |
+| `max_angular_speed` | `float` | `2.0` | Angular speed cap (rad/s); must be finite and above 0, else `ValueError` |
 | `collision_zones` | `list[dict]` | `[]` | No-go rectangles (`x_min`, `x_max`, `y_min`, `y_max`; a bound left out is open); `ValueError` if min > max or a bound is not a number |
 | `human_proximity_limit` | `float` | `0.5` | Min human distance (m) |
 | `move_timeout` | `float` | `120.0` | Auto-stop after (s) |
