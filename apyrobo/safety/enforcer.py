@@ -248,6 +248,21 @@ POLICY_REGISTRY: dict[str, SafetyPolicy] = {
 }
 
 
+def _registered_policy(name: str) -> SafetyPolicy:
+    """Return the registered policy called *name*, or raise ValueError.
+
+    A misspelt name ("Strict", "stirct") must not quietly run the default
+    policy, whose limits are looser than the one the caller asked for.
+    """
+    policy = POLICY_REGISTRY.get(name)
+    if policy is None:
+        raise ValueError(
+            f"unknown safety policy {name!r}; choose from {sorted(POLICY_REGISTRY)} "
+            "or pass a SafetyPolicy"
+        )
+    return policy
+
+
 # ---------------------------------------------------------------------------
 # Safety Enforcer
 # ---------------------------------------------------------------------------
@@ -404,7 +419,7 @@ class SafetyEnforcer:
     ) -> None:
         self._robot = robot
         if isinstance(policy, str):
-            self._policy = POLICY_REGISTRY.get(policy, DEFAULT_POLICY)
+            self._policy = _registered_policy(policy)
         else:
             self._policy = policy
         self._violations: list[dict[str, Any]] = []
@@ -468,11 +483,12 @@ class SafetyEnforcer:
         """
         Hot-swap the active safety policy without restarting.
 
-        Returns the previous policy.
+        Returns the previous policy. An unknown policy name raises ValueError
+        and leaves the active policy in place.
         """
         old = self._policy
         if isinstance(new_policy, str):
-            self._policy = POLICY_REGISTRY.get(new_policy, DEFAULT_POLICY)
+            self._policy = _registered_policy(new_policy)
         else:
             self._policy = new_policy
         self._record_audit("policy_swap", {
