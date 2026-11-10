@@ -1068,6 +1068,31 @@ def _get_apyrobo_version() -> str:
 # apyrobo test-skill — isolated skill test runner
 # ---------------------------------------------------------------------------
 
+def _load_skill_entry_points() -> list[str]:
+    """Load every installed ``apyrobo.skills`` entry point.
+
+    Each entry point names a package's ``register`` function (the layout
+    ``apyrobo init <name>`` scaffolds); it is called so the package's @skill
+    functions land in the skill registries. A loaded object that is not
+    callable counts as loaded by its import alone. Failures are reported on
+    stderr and skipped. Returns the names of the entry points that loaded.
+    """
+    from importlib.metadata import entry_points
+
+    loaded: list[str] = []
+    for ep in entry_points(group="apyrobo.skills"):
+        try:
+            obj = ep.load()
+            if callable(obj):
+                obj()
+        except Exception as exc:  # noqa: BLE001 - one broken package must not stop the rest
+            print(f"Warning: skill package entry point {ep.name!r} failed to load: {exc}",
+                  file=sys.stderr)
+            continue
+        loaded.append(ep.name)
+    return loaded
+
+
 def cmd_test_skill(args: argparse.Namespace) -> None:
     """Run a skill against a mock robot and report results."""
     skill_id_or_file: str = args.skill
@@ -1089,6 +1114,10 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
     skill_file = _Path(skill_id_or_file)
     skill_id = skill_id_or_file
 
+    from apyrobo.skills.handlers import _DEFAULT_REGISTRY, dispatch as _dispatch
+    from apyrobo.skills.skill import BUILTIN_SKILLS
+    from apyrobo.skills.decorators import get_decorated_skills
+
     if skill_file.suffix == ".py" and skill_file.exists():
         # Import the file so @skill decorators run
         import importlib.util
@@ -1096,15 +1125,29 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)  # type: ignore[union-attr]
-        # Use the stem as skill_id if not overridden
+        # The skill named after the file, else the file's only @skill
         skill_id = skill_file.stem
+        if skill_id not in get_decorated_skills():
+            in_file = sorted(
+                sid for sid, (_s, fn) in get_decorated_skills().items()
+                if getattr(fn, "__module__", None) == "_test_skill_mod"
+            )
+            if len(in_file) == 1:
+                skill_id = in_file[0]
+            elif len(in_file) > 1:
+                print(f"Error: {skill_file} defines {len(in_file)} skills "
+                      f"({', '.join(in_file)}) and none is named {skill_id!r}.",
+                      file=sys.stderr)
+                print("Hint: name the file after the skill to run, or pass the skill ID "
+                      "of an installed package.", file=sys.stderr)
+                sys.exit(1)
 
-    # Resolve the handler — check global registry first, then decorated skills
-    from apyrobo.skills.handlers import _DEFAULT_REGISTRY, dispatch as _dispatch
-    from apyrobo.skills.skill import BUILTIN_SKILLS
-    from apyrobo.skills.decorators import get_decorated_skills
-
+    # Resolve the handler — check global registry first, then decorated skills,
+    # then installed skill packages (the apyrobo.skills entry point group)
     handler = _DEFAULT_REGISTRY.resolve(skill_id)
+    if handler is None and skill_id not in get_decorated_skills():
+        _load_skill_entry_points()
+        handler = _DEFAULT_REGISTRY.resolve(skill_id)
     if handler is None:
         # Try decorated skills (file may have registered via @skill)
         dec = get_decorated_skills()
@@ -1120,9 +1163,10 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
                 result = fn(**filtered)
                 return bool(result) if result is not None else True
         else:
-            print(f"Error: skill {skill_id!r} not found in handler registry or @skill registry.",
-                  file=sys.stderr)
-            print("Hint: register it with @skill_handler or @skill before running.", file=sys.stderr)
+            print(f"Error: skill {skill_id!r} not found in handler registry, @skill registry "
+                  "or installed skill packages.", file=sys.stderr)
+            print("Hint: register it with @skill_handler or @skill, or install a package "
+                  "that declares an apyrobo.skills entry point.", file=sys.stderr)
             sys.exit(1)
 
     # Build the Skill metadata (for precondition check display)
@@ -2411,8 +2455,8 @@ def cmd_init(args: argparse.Namespace) -> None:
             \"\"\"Wire this package's @skill functions into APYROBO's skill registry.
 
             Call it after importing the package. The apyrobo.skills entry point
-            in pyproject.toml names this function, but APYROBO does not load
-            that entry point automatically yet.
+            in pyproject.toml names this function; apyrobo test-skill loads it,
+            nothing else in APYROBO does automatically yet.
             \"\"\"
             SkillLibrary.from_decorated()
     """))

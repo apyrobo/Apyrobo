@@ -251,9 +251,9 @@ class TestSafetyEnforcerProperties:
         enforcer.move(x=5.0, y=5.0, speed=0.5)
         enforcer.disconnect()
 
-    def test_unknown_policy_name_uses_default(self, mock_robot: Robot) -> None:
-        enforcer = SafetyEnforcer(mock_robot, policy="unknown_policy_xyz")
-        assert enforcer.policy is DEFAULT_POLICY
+    def test_unknown_policy_name_is_refused(self, mock_robot: Robot) -> None:
+        with pytest.raises(ValueError, match="unknown_policy_xyz"):
+            SafetyEnforcer(mock_robot, policy="unknown_policy_xyz")
 
     def test_custom_policy_object(self, mock_robot: Robot) -> None:
         custom = SafetyPolicy(name="my_custom", max_speed=0.2)
@@ -711,10 +711,11 @@ class TestPolicySwapExtra:
         assert old.name == "default"
         assert enforcer.policy.name == "strict"
 
-    def test_swap_by_name_unknown_uses_default(self, enforcer: SafetyEnforcer) -> None:
-        enforcer.swap_policy("default")
-        enforcer.swap_policy("ghost_policy")
-        assert enforcer.policy is DEFAULT_POLICY
+    def test_swap_by_name_unknown_is_refused(self, enforcer: SafetyEnforcer) -> None:
+        enforcer.swap_policy("strict")
+        with pytest.raises(ValueError, match="ghost_policy"):
+            enforcer.swap_policy("ghost_policy")
+        assert enforcer.policy.name == "strict"
 
     def test_swap_by_object(self, enforcer: SafetyEnforcer) -> None:
         new_policy = SafetyPolicy(name="fast", max_speed=3.0)
