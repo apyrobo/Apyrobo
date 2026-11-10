@@ -224,6 +224,17 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo shell` binds `robot` to a `SafetyEnforcer` capped at `--max-speed`
+  (default 1.5 m/s; NaN, inf, 0 or a negative value exits 2), like the other
+  robot-driving commands, instead of the raw adapter. The unwrapped adapter
+  stays available as `raw_robot` and the banner says it has no safety checks.
+- `apyrobo tutorial` runs every code step and prints its output; before, steps
+  with an expected value were skipped and later steps failed silently. Step 4
+  now wraps the robot in a `SafetyEnforcer` before the `SkillExecutor` and says
+  that the executor itself checks no limits.
+- `SkillGraph.add_skill` raises `ValueError` naming the duplicate `skill_id`
+  instead of silently replacing the earlier step, so a graph that added
+  `navigate_to` twice no longer runs it once and skips a waypoint.
 - `SafetyEnforcer(robot, policy="...")` and `swap_policy("...")` raise
   `ValueError` on a name that is not in `POLICY_REGISTRY` instead of quietly
   running the `default` policy. A misspelt `"Strict"` used to drive at the
