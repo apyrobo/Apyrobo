@@ -219,6 +219,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `SafetyEnforcer(robot, policy="...")` and `swap_policy("...")` raise
+  `ValueError` on a name that is not in `POLICY_REGISTRY` instead of quietly
+  running the `default` policy. A misspelt `"Strict"` used to drive at the
+  default 1.5 m/s cap instead of strict's 0.5 m/s. Behaviour change: code that
+  relied on the fallback must pass `"default"` or a `SafetyPolicy`. A refused
+  `swap_policy` keeps the active policy.
 - docs/skill_packaging.md said `apyrobo test-skill go_to_waypoint --repeat 5` runs a
   packaged skill; test-skill does not load installed packages, so it reported the skill
   as not found. The guide now says so and shows the form that works (a `.py` file named
