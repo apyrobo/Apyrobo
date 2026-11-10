@@ -124,9 +124,16 @@ Run:
 pytest packages/apyrobo-skills-myrobot/tests/
 ```
 
-Or use the CLI harness:
+`apyrobo test-skill` does not load installed skill packages yet: it finds a skill by ID only
+among the built-in skills, or in a `.py` file whose name is the skill's ID (it imports the file
+and runs the skill named after it). For the layout above, `apyrobo test-skill go_to_waypoint`
+reports the skill as not found, and `apyrobo test-skill apyrobo_skills_myrobot/navigation.py`
+looks for a skill called `navigation`. Test package skills with pytest as above. To try one skill
+in the CLI harness, put it alone in a file named after it:
 ```bash
-apyrobo test-skill go_to_waypoint --repeat 5
+# go_to_waypoint.py holds the @skill go_to_waypoint function from section 3
+apyrobo test-skill go_to_waypoint.py --repeat 5
+apyrobo test-skill go_to_waypoint.py --params '{"waypoint_id": "wp_42"}'
 ```
 
 ---
