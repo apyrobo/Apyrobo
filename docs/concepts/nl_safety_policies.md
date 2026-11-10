@@ -66,14 +66,30 @@ APYROBO uses a two-stage pipeline:
 
 **Stage 2 — LLM fallback** (optional, for complex rules)
 
-If the regex doesn't match, APYROBO calls `agent.complete()` and parses the JSON response. The LLM is only invoked when needed — not for every parse call.
+If the regex doesn't match and you gave the parser an `agent`, APYROBO calls `agent.complete(prompt)` and parses the JSON it returns. The LLM is only invoked when needed — not for every parse call. If the call fails or the reply is not JSON, the rule is stored as `custom`.
+
+`agent` is any object with a `complete(prompt) -> str` method. `apyrobo.Agent` has no such method, so passing one raises `TypeError`. A few lines around [litellm](https://docs.litellm.ai/) (`pip install apyrobo[llm]`) are enough:
 
 ```python
-from apyrobo import Agent
-parser = NLPolicyParser(agent=Agent(provider="openai"))  # LLM fallback enabled
+import litellm
+from apyrobo.safety.nl_policy import NLPolicyParser
+
+class LiteLLM:
+    def __init__(self, model: str = "gpt-4o-mini") -> None:
+        self.model = model
+
+    def complete(self, prompt: str) -> str:
+        reply = litellm.completion(
+            model=self.model, messages=[{"role": "user", "content": prompt}]
+        )
+        return reply.choices[0].message.content
+
+parser = NLPolicyParser(agent=LiteLLM())  # LLM fallback enabled
 policy = parser.parse("only operate between 9am and 6pm on weekdays")
-# → constraint_type: "time_window", source: "llm"
+# → e.g. constraint_type: "time_window", source: "llm" (the model decides)
 ```
+
+A `time_window` policy is stored and listed, not checked (see the table below).
 
 ---
 

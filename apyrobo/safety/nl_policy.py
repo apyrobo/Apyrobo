@@ -148,7 +148,7 @@ class NLSafetyPolicy:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "NLSafetyPolicy":
+    def from_dict(cls, d: dict[str, Any]) -> NLSafetyPolicy:
         return cls(
             policy_id=d.get("policy_id", str(uuid.uuid4())[:12]),
             description=d.get("description", ""),
@@ -184,9 +184,11 @@ class NLPolicyParser:
     Parameters
     ----------
     agent:
-        Optional ``Agent`` instance used as LLM fallback.  When ``None``
-        (default), unrecognised patterns produce a ``"custom"`` policy with
-        the description stored verbatim.
+        Optional LLM fallback: any object with a ``complete(prompt) -> str``
+        method, such as a small wrapper around ``litellm.completion``.
+        ``apyrobo.Agent`` has no ``complete`` method and is refused with
+        ``TypeError``.  When ``None`` (default), unrecognised patterns
+        produce a ``"custom"`` policy with the description stored verbatim.
     severity:
         Default severity for parsed policies (``"hard"`` or ``"soft"``).
 
@@ -201,6 +203,13 @@ class NLPolicyParser:
     """
 
     def __init__(self, agent: Any = None, severity: str = "hard") -> None:
+        if agent is not None and not callable(getattr(agent, "complete", None)):
+            raise TypeError(
+                "NLPolicyParser agent must have a complete(prompt) -> str method; "
+                f"{type(agent).__name__} has none, so the LLM fallback would never run. "
+                "Wrap your LLM call in a small class with complete(), "
+                "see docs/concepts/nl_safety_policies.md"
+            )
         self._agent = agent
         self._default_severity = severity
 
@@ -324,7 +333,9 @@ class NLPolicyParser:
             logger.debug("NLPolicyParser LLM parse failed: %s", exc)
             return None
 
-    def check_compliance(self, action_description: str, policies: list[NLSafetyPolicy]) -> list[str]:
+    def check_compliance(
+        self, action_description: str, policies: list[NLSafetyPolicy]
+    ) -> list[str]:
         """Check whether *action_description* would violate any active policy.
 
         Performs a textual pre-flight check against each policy; it does
@@ -382,13 +393,16 @@ class NLPolicyParser:
             elif policy.constraint_type == "battery_reserve":
                 min_battery = policy.parameters.get("min_battery_pct")
                 battery_m = self._extract_battery(action_description)
-                if min_battery is not None and battery_m is not None:
-                    if battery_m < min_battery:
-                        violations.append(
-                            f"Policy [{policy.policy_id}] violated: "
-                            f"battery {battery_m}% below reserve {min_battery}% "
-                            f"({policy.description})"
-                        )
+                if (
+                    min_battery is not None
+                    and battery_m is not None
+                    and battery_m < min_battery
+                ):
+                    violations.append(
+                        f"Policy [{policy.policy_id}] violated: "
+                        f"battery {battery_m}% below reserve {min_battery}% "
+                        f"({policy.description})"
+                    )
 
             elif policy.constraint_type == "no_go_zone":
                 zone = policy.parameters.get("zone_name", "").lower()
