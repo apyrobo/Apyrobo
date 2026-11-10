@@ -439,11 +439,65 @@ STOP_SHORT_OF_GOAL_M = 0.25
 STOP_MAX_SPEED = 0.22
 
 
+# Nav2's lifecycle nodes a NavigateToPose goal needs. A goal sent before they
+# are active, or while the costmaps cannot place the robot (no map to
+# base_link transform), is accepted but never drives.
+NAV2_LIFECYCLE_NODES = ("controller_server", "planner_server", "bt_navigator")
+
+
+def _nav2_states(adapter: Any) -> dict[str, str]:
+    """Each Nav2 lifecycle node's state label, as its get_state service says."""
+    from lifecycle_msgs.srv import GetState
+
+    node = adapter._node
+    states: dict[str, str] = {}
+    for name in NAV2_LIFECYCLE_NODES:
+        client = node.create_client(GetState, f"/{name}/get_state")
+        try:
+            if not client.wait_for_service(timeout_sec=2.0):
+                states[name] = "no get_state service"
+                continue
+            future = client.call_async(GetState.Request())
+            deadline = time.time() + 2.0
+            while not future.done() and time.time() < deadline:
+                time.sleep(0.05)
+            result = future.result() if future.done() else None
+            states[name] = result.current_state.label if result else "no answer"
+        finally:
+            node.destroy_client(client)
+    return states
+
+
+def _nav2_diagnosis(adapter: Any, states: dict[str, str]) -> str:
+    return (
+        f"Nav2 lifecycle states {states}; position frame "
+        f"{adapter.position_frame!r} (not 'map' = no fresh map to base_link transform)"
+    )
+
+
+def _wait_until_nav2_ready(adapter: Any, timeout_s: float) -> None:
+    """Block until Nav2 is active and map to base_link resolves, or fail saying which is not."""
+    deadline = time.time() + timeout_s
+    while True:
+        states = _nav2_states(adapter)
+        if adapter.position_frame == "map" and all(s == "active" for s in states.values()):
+            return
+        if time.time() >= deadline:
+            pytest.fail(
+                f"Nav2 not ready after {timeout_s:.0f} s: " + _nav2_diagnosis(adapter, states)
+            )
+        time.sleep(0.5)
+
+
 def _wait_until_driving(adapter: Any, start: tuple[float, float]) -> None:
     """Block until the physics robot is on its way, so the stop lands mid-move."""
     deadline = time.time() + 30.0
     while _dist(start, adapter.position) < STOP_AFTER_M:
-        assert time.time() < deadline, f"robot never started moving from {start}"
+        if time.time() >= deadline:
+            pytest.fail(
+                f"robot never started moving from {start}: "
+                + _nav2_diagnosis(adapter, _nav2_states(adapter))
+            )
         time.sleep(0.05)
 
 
@@ -475,6 +529,9 @@ def test_mcp_cancel_and_stop_end_a_running_nav2_goal(robot):
         "--robot", "ros2://burger",
         "--max-speed", str(STOP_MAX_SPEED),
     ]
+    # Before each leg, Nav2 must be able to take the goal; a goal sent too
+    # early is accepted and then never drives.
+    _wait_until_nav2_ready(adapter, timeout_s=60.0)
     with tempfile.TemporaryFile(mode="w+") as log:
         client = _StdioMCPClient(cmd, stderr=log)
         # A move that is not stopped blocks the readline below; fail, don't hang.
@@ -499,6 +556,7 @@ def test_mcp_cancel_and_stop_end_a_running_nav2_goal(robot):
             is_error, report = client.call_tool("safety_report", {})
             assert not is_error and report, "server did not answer after a cancelled move"
 
+            _wait_until_nav2_ready(adapter, timeout_s=30.0)
             move_id = client.send("tools/call", move)
             _wait_until_driving(adapter, after_cancel)
             stop_id = client.send("tools/call", {"name": "stop", "arguments": {}})
