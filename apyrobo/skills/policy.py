@@ -121,6 +121,11 @@ class PolicyRunner:
             raise TypeError(
                 f"policy must have select_action(observation); got {type(policy).__name__}"
             )
+        max_step_m = float(max_step_m)
+        if not math.isfinite(max_step_m) or max_step_m <= 0.0:
+            raise ValueError(
+                f"max_step_m must be a finite number > 0, got {max_step_m!r}"
+            )
         self.policy = policy
         self.robot = robot
         self.hz = float(hz)
@@ -158,6 +163,14 @@ class PolicyRunner:
         else:
             raise ValueError(
                 f"policy action must contain dx/dy or x/y, got {sorted(action)}"
+            )
+        if not all(math.isfinite(v) for v in (px, py, dx, dy)):
+            # A diverged policy (NaN/inf output) or a NaN position must not
+            # reach the robot: NaN compares False against max_step_m, so the
+            # bound below would let it through.
+            raise ValueError(
+                f"policy step is not finite (position=({px!r}, {py!r}), "
+                f"dx={dx!r}, dy={dy!r})"
             )
         dist = math.hypot(dx, dy)
         if dist > self.max_step_m and dist > 0.0:
