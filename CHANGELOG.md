@@ -219,6 +219,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/skill_packaging.md said `apyrobo test-skill go_to_waypoint --repeat 5` runs a
+  packaged skill; test-skill does not load installed packages, so it reported the skill
+  as not found. The guide now says so and shows the form that works (a `.py` file named
+  after the skill), and a test runs every test-skill command it shows.
 - `TaskBus.broadcast()` sent every copy through `dispatch()`, which picks the
   least-loaded agent, so one agent could get them all and the rest none: a
   broadcast `stop` to three `mock://` robots reached only one. Each registered
