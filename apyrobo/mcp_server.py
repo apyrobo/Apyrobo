@@ -156,7 +156,39 @@ INSTRUCTIONS = (
 
 
 class ToolError(Exception):
-    """A tool ran but could not do what was asked (reported as isError)."""
+    """A tool ran but could not do what was asked (reported as isError).
+
+    *structured*, when given, goes out as the result's ``structuredContent``
+    beside the text, for clients that negotiated 2025-06-18 or later.
+    """
+
+    def __init__(self, message: str, structured: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.structured = structured
+
+
+# structuredContent arrived in MCP 2025-06-18; older clients get text only.
+STRUCTURED_CONTENT_SINCE = "2025-06-18"
+
+
+def _refusal_content(policy: str, violation: dict[str, Any] | None) -> dict[str, Any]:
+    """The machine-readable side of a safety refusal.
+
+    ``code`` is the enforcer's violation type (``collision_zone``,
+    ``outside_allowed_area``, ``battery_below_minimum``, ...), or
+    ``safety_violation`` when the enforcer recorded none; ``violation`` holds
+    the rest of what the enforcer recorded (the zone, the allowed areas, the
+    limit that tripped).
+    """
+    record = dict(violation or {})
+    code = record.pop("type", None)
+    record.pop("message", None)
+    return {
+        "status": "refused",
+        "code": code if isinstance(code, str) and code else "safety_violation",
+        "policy": policy,
+        "violation": _jsonable(record),
+    }
 
 
 class AuditLog:
@@ -619,12 +651,16 @@ class RobotToolbox:
         from apyrobo.safety.enforcer import SafetyViolation
 
         before = len(self.enforcer.interventions)
+        violations_before = len(self.enforcer.violations)
         try:
             action()
         except SafetyViolation as exc:
+            recorded = self.enforcer.violations[violations_before:]
+            policy = self.enforcer.policy.name
             raise ToolError(
-                f"REFUSED by safety policy '{self.enforcer.policy.name}': {exc}. "
-                "The robot did not move. Choose a different target."
+                f"REFUSED by safety policy '{policy}': {exc}. "
+                "The robot did not move. Choose a different target.",
+                structured=_refusal_content(policy, recorded[-1] if recorded else None),
             ) from exc
         return self.enforcer.interventions[before:]
 
@@ -1518,6 +1554,7 @@ class MCPServer:
                     is_error=True,
                 )
         done = threading.Event()
+        structured: dict[str, Any] | None = None
         if moves:
             self._start_progress(params, name, arguments, done)
         try:
@@ -1526,6 +1563,7 @@ class MCPServer:
             is_error = False
         except ToolError as exc:
             text, is_error = str(exc), True
+            structured = exc.structured
         except Exception as exc:
             logger.warning("MCP: tool %s failed: %s", name, exc)
             text, is_error = f"{type(exc).__name__}: {exc}", True
@@ -1546,11 +1584,10 @@ class MCPServer:
             )
         if audited:
             self._audit_result(name, arguments, text, is_error, before)
-        return {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "result": {"content": [{"type": "text", "text": text}], "isError": is_error},
-        }
+        result: dict[str, Any] = {"content": [{"type": "text", "text": text}], "isError": is_error}
+        if structured is not None and self.protocol_version >= STRUCTURED_CONTENT_SINCE:
+            result["structuredContent"] = structured
+        return {"jsonrpc": "2.0", "id": msg_id, "result": result}
 
     def _start_progress(
         self,
