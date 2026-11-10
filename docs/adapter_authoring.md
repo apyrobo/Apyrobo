@@ -53,8 +53,10 @@ apyrobo discover "acme://my-robot"
 ```
 
 Scheme rules: lowercase, and it must not collide with a first-party scheme
-(`mock`, `gazebo`, `mqtt`, `http`, `ros2`, `isaac`, `unitree`, `mujoco`) —
-the scaffold enforces both.
+(`mock`, `gazebo`, `mqtt`, `http`, `ros2`, `isaac`, `unitree`, `mujoco`,
+`vda5050`) — the scaffold lowercases the name and refuses a first-party one.
+A package on a first-party scheme would never load: `Robot.discover` finds the
+built-in adapter first.
 
 ## Step 2 — Prove the baseline (1 minute)
 
