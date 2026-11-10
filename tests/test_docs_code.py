@@ -137,3 +137,45 @@ def test_the_custom_adapter_in_the_docs_runs():
     assert adapter.target == (1.0, 2.0, 0.5)
     adapter.stop()
     assert adapter.target is None
+
+
+def _video_tutorial_blocks() -> list[str]:
+    text = (ROOT / "docs" / "video_tutorial.md").read_text(encoding="utf-8")
+    return [b for b in PYTHON_BLOCK.findall(text) if "execute" in b and "result" in b]
+
+
+def test_the_video_tutorial_code_runs_and_prints_what_it_says(capsys):
+    blocks = _video_tutorial_blocks()
+    assert len(blocks) == 3  # skill graph, agent, swarm
+    for block in blocks:
+        # The LLM half of the agent block needs a model and an API key.
+        exec(compile(block.split("# LLM-powered agent")[0], "video_tutorial.md", "exec"), {})
+    out = capsys.readouterr().out.splitlines()
+    assert out.count("completed") == 3
+    assert "4/4 steps" in out
+    layers = [line for line in out if line.startswith("['")]
+    expected = ["navigate_to_0", "pick_object_1", "navigate_to_2", "place_object_3"]
+    assert layers == [f"['{skill_id}']" for skill_id in expected]
+
+
+def test_the_video_tutorial_graph_visits_both_waypoints():
+    from apyrobo import Robot
+
+    block = _video_tutorial_blocks()[0]
+    visited: list[tuple[float, float]] = []
+    real_discover = Robot.discover
+
+    def discover(uri, **kwargs):
+        robot = real_discover(uri, **kwargs)
+        real_move = robot.move
+
+        def move(x, y, speed=None):
+            visited.append((x, y))
+            return real_move(x, y, speed)
+
+        robot.move = move
+        return robot
+
+    with mock.patch.object(Robot, "discover", side_effect=discover):
+        exec(compile(block, "video_tutorial.md", "exec"), {})
+    assert visited == [(5.0, 3.0), (0.0, 0.0)]
