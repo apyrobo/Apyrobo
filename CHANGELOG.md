@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp`: a `move_to` or `rotate` refused by the safety policy now also
+  returns `structuredContent` with a stable `code` (the enforcer's violation
+  type, e.g. `collision_zone`, `outside_allowed_area`) and the zone, areas or
+  limit that tripped, for clients on MCP 2025-06-18 or later. The refusal text
+  is unchanged; older protocol versions get the text only.
 - On `ros2://` through Nav2, `apyrobo mcp` checks before each drive whether
   another node also publishes on the `speed_limit` topic (a costmap speed
   filter, for one). If so, the reply carries `speed_limit_shared: true` and a
