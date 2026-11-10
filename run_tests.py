@@ -441,7 +441,7 @@ def test_safety_collision_zone_allowed():
 
 def test_safety_stop_always_allowed():
     robot = Robot.discover("mock://tb4")
-    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(max_speed=0.0))
+    enforcer = SafetyEnforcer(robot, policy=SafetyPolicy(max_speed=0.01))
     robot.move(x=1.0, y=1.0)  # bypass enforcer
     enforcer.stop()  # stop is always allowed
     assert robot._adapter.is_moving is False

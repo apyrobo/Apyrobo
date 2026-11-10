@@ -22,6 +22,7 @@ from __future__ import annotations
 import copy
 import logging
 import math
+import numbers
 import threading
 import time
 from collections.abc import Sequence
@@ -139,13 +140,32 @@ class SafetyAuditEntry:
 # Safety Policy
 # ---------------------------------------------------------------------------
 
+def check_speed_cap(value: Any, what: str) -> float:
+    """Return *value* unchanged if it is a finite number above 0.
+
+    A cap of NaN or inf caps nothing, and 0 or a negative cap would be
+    sent to the robot as the speed, so both raise ``ValueError``. Booleans
+    and strings are refused too, at policy creation rather than at the
+    first move.
+    """
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, numbers.Real)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError(f"{what} must be a positive number, got {value!r}")
+    return value
+
+
 class SafetyPolicy:
     """
     A concrete safety policy with enforceable constraints.
 
     Constraints:
         - max_speed: Hard cap on movement speed (m/s)
-        - max_angular_speed: Hard cap on rotation speed (rad/s)
+        - max_angular_speed: Hard cap on rotation speed (rad/s); either
+          cap that is not a finite number above 0 raises ``ValueError``
         - collision_zones: List of rectangular zones the robot cannot enter;
           a zone with min > max or a bound that is not a number raises
           ``ValueError``
@@ -174,8 +194,10 @@ class SafetyPolicy:
         allowed_areas: list[dict[str, float]] | None = None,
     ) -> None:
         self.name = name
-        self.max_speed = max_speed
-        self.max_angular_speed = max_angular_speed
+        self.max_speed = check_speed_cap(max_speed, "max_speed")
+        self.max_angular_speed = check_speed_cap(
+            max_angular_speed, "max_angular_speed"
+        )
         self.collision_zones = list(collision_zones or [])
         self.allowed_areas = list(allowed_areas or [])
         for zone in self.collision_zones:
@@ -195,7 +217,7 @@ class SafetyPolicy:
         """Create a policy from a SafetyPolicyRef schema."""
         return cls(
             name=ref.policy_name,
-            max_speed=ref.max_speed or 1.5,
+            max_speed=1.5 if ref.max_speed is None else ref.max_speed,
             collision_zones=ref.collision_zones,
             human_proximity_limit=ref.human_proximity_limit or 0.5,
         )
