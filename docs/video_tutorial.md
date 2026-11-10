@@ -80,25 +80,28 @@ from apyrobo import Robot, SkillGraph, SkillExecutor, BUILTIN_SKILLS
 
 robot = Robot.discover("mock://warehouse_bot")
 
+# A skill appears once per graph, so a skill used twice gets a numbered id
+def step(name, n):
+    return BUILTIN_SKILLS[name].model_copy(update={"skill_id": f"{name}_{n}"})
+
 # Build a pick-and-place task
 graph = SkillGraph()
-graph.add_skill(BUILTIN_SKILLS["navigate_to"],
+graph.add_skill(step("navigate_to", 0),
                 parameters={"x": 5.0, "y": 3.0, "speed": 0.8})
-graph.add_skill(BUILTIN_SKILLS["pick_object"],
-                depends_on=["navigate_to"])
-graph.add_skill(BUILTIN_SKILLS["navigate_to"],
+graph.add_skill(step("pick_object", 1), depends_on=["navigate_to_0"])
+graph.add_skill(step("navigate_to", 2), depends_on=["pick_object_1"],
                 parameters={"x": 0.0, "y": 0.0, "speed": 0.5})
-graph.add_skill(BUILTIN_SKILLS["place_object"],
-                depends_on=["navigate_to"])
+graph.add_skill(step("place_object", 3), depends_on=["navigate_to_2"])
 
 # See the execution plan
 for layer in graph.get_execution_layers():
-    print([s.name for s in layer])
+    print([s.skill_id for s in layer])
+# ['navigate_to_0'] ['pick_object_1'] ['navigate_to_2'] ['place_object_3']
 
 # Execute it
 executor = SkillExecutor(robot)
 result = executor.execute_graph(graph)
-print(result.status)  # "completed"
+print(result.status.value)  # "completed"
 ```
 
 **Voiceover:**
@@ -122,8 +125,8 @@ robot = Robot.discover("mock://warehouse_bot")
 # Rule-based agent (no API key needed)
 agent = Agent(provider="rule")
 result = agent.execute("deliver package to dock 3", robot)
-print(result.status)       # "completed"
-print(result.skills_run)   # ["navigate_to", "pick_object", ...]
+print(result.status.value)  # "completed"
+print(f"{result.steps_completed}/{result.steps_total} steps")  # "4/4 steps"
 
 # LLM-powered agent (any provider via LiteLLM)
 agent = Agent(provider="llm", model="gpt-4o")
@@ -201,7 +204,7 @@ result = coordinator.execute_task(
     "deliver packages to docks 1, 2, and 3",
     agent,
 )
-print(result.status)  # "completed"
+print(result.status.value)  # "completed"
 print(coordinator.assignments)  # which robot got which sub-task
 ```
 
