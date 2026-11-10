@@ -6,11 +6,12 @@ Each drone gets an assigned sector; results stream in as sectors complete.
 
 Run:
     pip install apyrobo
-    python demo.py
+    python demo.py                   # 10 drones
+    python demo.py --fleet-size 100  # any fleet size, one 1 km² sector each
 """
 from __future__ import annotations
 
-import math
+import argparse
 import os
 import random
 import sys
@@ -38,8 +39,8 @@ def _pace() -> None:
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-NUM_DRONES = 10
-GRID_SIZE = 10          # 10×10 km² surveyed, 1 km² per sector
+NUM_DRONES = 10         # default fleet size; change it with --fleet-size
+GRID_COLUMNS = 5        # sectors per row of the survey grid
 SURVEY_SPEED = 0.8      # m/s (within safe speed envelope)
 SECTOR_SIZE_M = 1000    # metres per sector side
 
@@ -77,36 +78,53 @@ def survey_sector(drone_id: str, col: int, row: int, agent: Agent) -> SurveyResu
     anomalies: list[str] = []
     if random.random() < 0.2:
         anomaly_type = random.choice(["thermal hotspot", "debris field", "obstacle cluster"])
-        anomalies.append(f"{anomaly_type} at ({cx + random.randint(-50, 50):.0f}, {cy + random.randint(-50, 50):.0f})")
+        ax, ay = cx + random.randint(-50, 50), cy + random.randint(-50, 50)
+        anomalies.append(f"{anomaly_type} at ({ax:.0f}, {ay:.0f})")
 
-    return SurveyResult(drone_id=drone_id, sector=(col, row), anomalies=anomalies, duration_s=duration)
+    return SurveyResult(drone_id=drone_id, sector=(col, row), anomalies=anomalies,
+                        duration_s=duration)
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+def _fleet_size(text: str) -> int:
+    try:
+        n = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number: {text!r}") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {n}")
+    return n
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="APYROBO coordinated drone survey on mock://")
+    parser.add_argument("--fleet-size", type=_fleet_size, default=NUM_DRONES,
+                        help=f"number of drones, one 1 km² sector each (default {NUM_DRONES})")
+    num_drones = parser.parse_args(argv).fleet_size
+
     random.seed(42)
     print("=" * 60)
-    print("  APYROBO — 10-Drone Coordinated Survey")
-    print("  Coverage: 10 km² | Drones: 10 | Backend: mock://")
+    print(f"  APYROBO — {num_drones}-Drone Coordinated Survey")
+    print(f"  Coverage: {num_drones} km² | Drones: {num_drones} | Backend: mock://")
     print("=" * 60)
 
     agent = Agent(provider="rule")
 
-    # Assign one sector per drone (10 drones × 1 km² = 10 km² of a 10×10 grid)
-    sectors = [(col, row) for row in range(2) for col in range(5)]
-    assert len(sectors) == NUM_DRONES
+    # Assign one 1 km² sector per drone, GRID_COLUMNS sectors per row
+    sectors = [(i % GRID_COLUMNS, i // GRID_COLUMNS) for i in range(num_drones)]
 
-    drone_ids = [f"drone_{i:02d}" for i in range(NUM_DRONES)]
-    assignments = list(zip(drone_ids, sectors))
+    id_width = max(2, len(str(num_drones - 1)))
+    drone_ids = [f"drone_{i:0{id_width}d}" for i in range(num_drones)]
+    assignments = list(zip(drone_ids, sectors, strict=True))
 
-    print(f"\n  Launching {NUM_DRONES} drones simultaneously...\n")
+    print(f"\n  Launching {num_drones} drones simultaneously...\n")
     t_fleet_start = time.monotonic()
     results: list[SurveyResult] = []
 
-    with ThreadPoolExecutor(max_workers=NUM_DRONES) as pool:
+    with ThreadPoolExecutor(max_workers=min(num_drones, 32)) as pool:
         futures = {
             pool.submit(survey_sector, did, col, row, agent): did
             for did, (col, row) in assignments
@@ -129,7 +147,7 @@ def main() -> None:
         # (i.e. real flights, not instant mocks).
         print(f"  Sequential equivalent: {single_drone_estimate*1000:.0f} ms  "
               f"(fleet is {single_drone_estimate/fleet_duration:.1f}× faster)")
-    print(f"  Sectors covered: {len(results)}/{NUM_DRONES}  "
+    print(f"  Sectors covered: {len(results)}/{num_drones}  "
           f"({sum(r.coverage_pct for r in results)/len(results):.0f}% avg coverage)")
     print(f"  Anomalies detected: {anomaly_count}")
     if anomaly_count:
@@ -139,9 +157,10 @@ def main() -> None:
     print("=" * 60)
     print()
     print("  Next steps:")
-    print("  • Swap mock:// URIs for real drone URIs (DDS, MAVLink, etc.)")
+    print("  • No drone adapter ships yet: `apyrobo init my-drone --adapter` scaffolds one")
+    print("    (docs/adapter_authoring.md), then swap mock:// for my-drone://")
     print("  • Add `apyrobo policy add \"never exceed 0.5 m/s near humans\"`")
-    print("  • Scale to 100 drones with --fleet-size flag")
+    print("  • Scale up: `python demo.py --fleet-size 100`")
     print()
 
 

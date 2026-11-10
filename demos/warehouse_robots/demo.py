@@ -165,7 +165,8 @@ def main() -> None:
     print()
     print("  Next steps:")
     print("  • Add `apyrobo policy add \"keep 1.5m away from humans\"` for safe co-working")
-    print("  • Connect real robots: `Robot('unitree://go2@192.168.1.10', ...)`")
+    print("  • Connect a real robot: `import apyrobo.core.unitree_adapter`, then")
+    print("    `Robot.discover('unitree://go2@192.168.1.10')` (needs the Unitree SDK)")
     print("  • Add `bus.broadcast('emergency_stop')` for fleet-wide safety halt")
     print()
 
