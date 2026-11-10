@@ -225,10 +225,66 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   default 1.5 m/s cap instead of strict's 0.5 m/s. Behaviour change: code that
   relied on the fallback must pass `"default"` or a `SafetyPolicy`. A refused
   `swap_policy` keeps the active policy.
-- docs/skill_packaging.md said `apyrobo test-skill go_to_waypoint --repeat 5` runs a
-  packaged skill; test-skill does not load installed packages, so it reported the skill
-  as not found. The guide now says so and shows the form that works (a `.py` file named
-  after the skill), and a test runs every test-skill command it shows.
+- `apyrobo execute`, `apyrobo serve --execute`, `apyrobo voice` (and `VoiceAgent`)
+  and `apyrobo skill compose` now drive the robot through the `SafetyEnforcer`.
+  Each handed the raw robot to the planner or skill, so "go to (3, 4) at speed 5"
+  was sent at 5 m/s and no no-go zone was checked; `execute --max-speed 0.2` built
+  an enforcer and then did not use it. Speed is capped at 1.5 m/s, the `default`
+  policy's limit, unless set lower; `execute` and `serve` take `--max-speed` and refuse a value
+  that is not a finite number above 0 before connecting. A robot that is already a
+  `SafetyEnforcer` is used as it is. `apyrobo shell` still gives the raw robot.
+- `SafetyEnforcer.rotate` without a speed now turns at the policy's
+  `max_angular_speed`. It passed no speed on, so the robot turned at its own
+  default rate (up to 1.0 rad/s on `unitree://`) even under a lower limit.
+- `SafetyPolicy`, `SafetyEnforcer.add_collision_zone` and a config file's
+  `safety.collision_zones` raise `ValueError` for a zone or allowed area with
+  min > max, a NaN bound or a bound that is not a number. Such a zone used to
+  block nothing. Behaviour change for code that built inverted zones.
+- `PolicyRunner` (the `run_policy` skill) ends the episode with `stop_reason`
+  `error` when a policy action or the observed position is NaN or inf, before any
+  move is sent; NaN used to get past `max_step_m` and reach `robot.move()`. A
+  `max_step_m` that is NaN, inf, 0 or negative is refused.
+- `ToolCallingAgent.run` no longer runs a tool the model did not ask for. Without
+  litellm, or on any LLM error, it fell back to a mock that called the first tool
+  with zeroed arguments, so "stop the robot now" could drive a `navigate_to` tool
+  to (0, 0). The offline mock now runs no tool, and an LLM error returns
+  `LLM call failed: ...` and runs nothing more. Behaviour change in a stable API.
+- `NLPolicyParser(agent=...)` raises `TypeError` for an agent without a callable
+  `complete()`. With any `Agent` the LLM fallback failed silently and every rule
+  the patterns missed was stored as custom. docs/concepts/nl_safety_policies.md
+  shows a small litellm wrapper that has `complete()`.
+- `apyrobo policy check` fails closed: it reads every m/s speed in an action,
+  reports any other way of writing a speed (`7 km/h`, `at speed 2`) as a
+  violation, and exits 1 on a violation with `--json` too. A 0.5 m/s policy used
+  to pass "at speed 2" and the second speed in "0.4 m/s then 2 m/s". The concept
+  doc now says this is a pre-flight text check, not enforcement on motion.
+- `apyrobo mcp config` applies the server's own checks: `--max-speed` must be
+  finite and above 0, and a local `--policy-file` is read the way the server
+  reads it. It used to print a config for `--max-speed nan` or a policy file the
+  server then refused at start, an error the user never saw.
+- `apyrobo mcp keepout` (experimental) writes the map YAML's origin and
+  resolution with every digit. Six significant digits moved a mask for a map
+  with large coordinates by metres (y = 5412344.68 was written as 5.41234e+06).
+- `apyrobo init <name> --adapter` refuses every scheme APYROBO already registers,
+  including `vda5050`, `gazebo_native` and `isaac_sim`; such a package never ran,
+  because `Robot.discover` kept loading the built-in adapter.
+- TypeScript client: `ApyroboClient.connect` rejects when the server closes or
+  never answers the WebSocket handshake, after a per-attempt timeout
+  (`timeoutMs`, default 10 s, 0 waits forever). It used to wait forever.
+- Docs that did not run now do, each with a test: the video tutorial's skill
+  graph visits both waypoints and prints real result fields; the adapter pattern
+  guide uses registered schemes (`ros2://` for Nav2, no `nav2://` or
+  `moveit://`); the drone, warehouse and humanoid demos' next steps name things
+  that exist, and the drone survey gains `--fleet-size N`.
+- `apyrobo test-skill <id>` now runs a skill from an installed skill package. It
+  never loaded the `apyrobo.skills` entry point that `apyrobo init` scaffolds and
+  docs/skill_packaging.md tells authors to declare, so with the guide's own package
+  installed, `apyrobo test-skill go_to_waypoint --repeat 5` said the skill was not
+  found. When an ID is not built in, test-skill now loads every installed
+  `apyrobo.skills` entry point, reports a broken one on stderr and goes on; a `.py`
+  file runs the skill named after the file, else its only `@skill`. Nothing else in
+  APYROBO loads the entry point yet; call `register()` after importing. A test runs
+  every test-skill command the guide shows.
 - `TaskBus.broadcast()` sent every copy through `dispatch()`, which picks the
   least-loaded agent, so one agent could get them all and the rest none: a
   broadcast `stop` to three `mock://` robots reached only one. Each registered
@@ -245,7 +301,7 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `apyrobo mcp` `execute_task` and `plan_task` with the rule planner no longer read a number in part or drop a speed with a plus sign. "go to (0x10, 1)" drove to (10, 1), "go to (1.5.2, 1)" to (5.2, 1), "go to (2:30, 1)" to (30, 1), and "at speed +0.2" ran at the default speed, each reported `completed`. A task with a base prefix (`0x`, `0b`, `0o`), two decimal points in a number, a colon between digits, or a plus sign on its speed is now refused with a "Not planned:" reason, and the robot does not move.
 - `apyrobo mcp` `execute_task` and `plan_task` with the rule planner no longer ignore a speed unit or a speed wording they do not read. "go to (3, 3) at speed 0.2 m/min" drove at 0.2 m/s, and so did m/h, in/s and m/s²; "at most 0.2 m/s", "max 0.2 m/s", "at a speed of about 0.2", "at 0.2 mps", "at 20 cm per second" and "at 0.2 meters/second" ran at the default 0.5 m/s; each reported `completed`. These are now refused with a "Not planned:" reason, and the robot does not move; write the speed as "at 0.2 m/s" or "at speed 0.2".
 - `--max-speed` and a policy's `max_speed` now limit a Nav2 drive on `ros2://`. A `navigate_to_pose` goal carries no speed, so the robot drove as fast as Nav2's controller allowed; before each goal `ros2://` now publishes the move's speed as a `nav2_msgs/SpeedLimit` (m/s) on Nav2's `speed_limit` topic, and a move without a speed lifts it. The Nav2-in-Gazebo test checks the controller's commanded speed under `--max-speed 0.1`, with `/odom` as a looser check (Humble, DWB). When nothing subscribes to the topic, replies still say `speed_limit_applied: false` and the audit log `not_limited`. The limit stays set in Nav2 after `apyrobo mcp` exits.
-- A Nav2 drive on `ros2://` no longer goes faster than the robot's own controller setting. Regulated Pure Pursuit and MPPI take a speed limit above their configured top speed as a new, higher target, and DWB ignores one, keeping an earlier lower limit. At start `ros2://` now reads the controller's top speed from `controller_server` (DWB `max_speed_xy`, Regulated Pure Pursuit `desired_linear_vel`, MPPI `vx_max`) and sends a move's speed only when it is below it; otherwise it lifts the limit so the controller runs at its own speed. With an unknown controller, several controllers, or no answer, the speed is sent unchecked and replies carry `speed_limit_checked: false` with a note, also in the audit log's `detail`. The decision is unit-tested for each controller; only DWB runs in CI.
+- A Nav2 drive on `ros2://` no longer goes faster than the robot's own controller setting. Regulated Pure Pursuit and MPPI take a speed limit above their configured top speed as a new, higher target, and DWB ignores one, keeping an earlier lower limit. At start `ros2://` now reads the controller's top speed from `controller_server` (DWB `max_speed_xy`, Regulated Pure Pursuit `desired_linear_vel` or, under its Nav2 Lyrical name, `max_linear_vel`, MPPI `vx_max`) and sends a move's speed only when it is below it; otherwise it lifts the limit so the controller runs at its own speed. With an unknown controller, several controllers, or no answer, the speed is sent unchecked and replies carry `speed_limit_checked: false` with a note, also in the audit log's `detail`. The decision is unit-tested for each controller; only DWB runs in CI.
 - `apyrobo init <name>` generates a skill package that works: its `skills.py`
   used to crash on import (an unknown `@skill` argument) and `register()` called
   a method that does not exist, so both generated tests failed. `register()` now
@@ -396,6 +452,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   simulated AGV, not hardware.
 
 ### Changed
+
+- docs/comparison.md names armguard-mcp, a safety-first MCP server for ROS 2
+  arms, as the arm-side neighbour of `apyrobo mcp`. docs/mcp.md says a Nav2
+  costmap speed filter publishes on the same `speed_limit` topic and replaces the
+  `ros2://` limit mid-drive (read in Nav2 source, not run).
 
 - `llms.txt` now leads with `apyrobo mcp`, its one-line try-out, the config
   command and what it doesn't guarantee. It no longer says safety cannot be
