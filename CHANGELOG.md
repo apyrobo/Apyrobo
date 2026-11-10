@@ -219,6 +219,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `TaskBus.broadcast()` sent every copy through `dispatch()`, which picks the
+  least-loaded agent, so one agent could get them all and the rest none: a
+  broadcast `stop` to three `mock://` robots reached only one. Each registered
+  agent now gets exactly one copy. docs/concepts/multi_agent_coordination.md now
+  says a broadcast task waits behind the task each agent is already running.
 - `SafetyPolicy` now raises `ValueError` when `max_speed` or `max_angular_speed` is not a finite number above 0. A cap of NaN or inf (for example `max_speed: .nan` in a config file) let any speed through, 0 or a negative cap was sent to the robot as the speed, and a string or null failed only at the first move. The CLI flags already refused these. `SafetyPolicy.from_ref` no longer turns a `max_speed` of 0 into 1.5; it is refused like any other.
 - `apyrobo test-skill --robot <uri>` now runs the skill through the `SafetyEnforcer` with the default policy. It called the skill on the raw robot it connected to, so `--params '{"x": 1, "y": 1, "speed": 9}'` sent 9 m/s and no no-go zone was checked; `--robot` can name a real robot. A new test drives every robot-moving command (`execute`, `serve --execute`, `voice`, `plan --simulate --auto-deploy`, `skill compose`, `test-skill`, `mcp`) on mock:// and checks the speed is clamped and a target in a no-go zone never reaches the robot.
 - Sim-to-real (`SimToRealTransfer`, used by `apyrobo plan --simulate --auto-deploy`) now drives both the simulation robot and the real robot through the `SafetyEnforcer`. It discovered both robots itself and drove them raw, so "go to (3, 4) at speed 5" was sent to the real robot at 5 m/s and no no-go zone was checked. Speeds are now clamped to the policy's max speed (the `default` policy unless `SimToRealTransfer(..., safety_policy=...)` names one), and a plan into a no-go zone fails in simulation and is not deployed.
