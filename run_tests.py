@@ -290,11 +290,15 @@ def test_executor_graph():
     graph = SkillGraph()
     graph.add_skill(BUILTIN_SKILLS["navigate_to"], parameters={"x": 1.0, "y": 2.0})
     graph.add_skill(BUILTIN_SKILLS["pick_object"], depends_on=["navigate_to"])
-    graph.add_skill(BUILTIN_SKILLS["navigate_to"],)  # will have same id — test dedup
+    try:
+        graph.add_skill(BUILTIN_SKILLS["navigate_to"])  # same id: refused
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("duplicate skill_id should be refused")
     result = executor.execute_graph(graph)
-    # Note: duplicate skill_id in graph means only 2 unique skills
     assert result.status == TaskStatus.COMPLETED
-    assert result.steps_completed >= 2
+    assert result.steps_completed == 2
 
 def test_executor_stop_skill():
     robot = Robot.discover("mock://tb4")
