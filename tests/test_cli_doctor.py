@@ -82,7 +82,18 @@ class TestCheckRclpy:
         assert result.status == "warn"
         assert ok is False
         assert result.hint is not None
-        assert "Docker" in result.hint
+        assert "docs/first-real-robot.md" in result.hint
+        assert "ROS_DOMAIN_ID" in result.hint
+        assert "setup.bash" in result.hint
+
+    def test_missing_hint_names_no_missing_compose_service(self, monkeypatch):
+        # The old hint sent users to `docker compose -f docker/docker-compose.yml
+        # exec apyrobo bash`: that file defines no `apyrobo` service, and the
+        # apyrobo-api image it would point at has no ROS 2.
+        monkeypatch.setitem(sys.modules, "rclpy", None)
+        result, _ = _check_rclpy()
+        assert "docker compose" not in result.hint
+        assert "exec apyrobo" not in result.hint
 
     def test_present_passes(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "rclpy", MagicMock())
