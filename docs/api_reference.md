@@ -163,7 +163,7 @@ from apyrobo import SafetyPolicy
 | `collision_zones` | `list[dict]` | `[]` | No-go rectangles (`x_min`, `x_max`, `y_min`, `y_max`; a bound left out is open); `ValueError` if min > max or a bound is not a number |
 | `human_proximity_limit` | `float` | `0.5` | Min human distance (m) |
 | `move_timeout` | `float` | `120.0` | Auto-stop after (s) |
-| `watchdog_tolerance` | `float` | `2.0` | Max odometry divergence (m): how far the robot may fall back from its closest approach to the commanded position before the watchdog stops it. A robot still driving toward a distant goal is not stopped |
+| `watchdog_tolerance` | `float` | `2.0` | Max odometry divergence (m): how far the robot may fall back from its closest approach to the commanded position before the watchdog stops it. A robot still driving toward a distant goal is not stopped. The watchdog checks every `watchdog_interval` (2 s) after a move until `stop()`, `cancel()` or `disconnect()`, or until the enforcer is no longer referenced and its `move_timeout` has passed |
 | `min_battery_pct` | `float` | `15.0` | Min battery to accept tasks |
 
 **Built-in policies:** `"default"`, `"strict"`
