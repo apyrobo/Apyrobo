@@ -231,6 +231,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo doctor` no longer tells users without `rclpy` to run
+  `docker compose -f docker/docker-compose.yml exec apyrobo bash` (that file
+  has no `apyrobo` service, and the `apyrobo-api` image has no ROS 2). The
+  hint now says to source ROS 2 and run APYROBO with its Python, and points
+  at `docs/first-real-robot.md`.
 - `apyrobo policy add` warns on stderr when a rule is stored in a type that
   `apyrobo policy check` does not read (for example "never exceed 30 cm/s" or
   "keep out of the lab", stored as `custom`), and `--json` adds

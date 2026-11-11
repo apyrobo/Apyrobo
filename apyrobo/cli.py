@@ -718,9 +718,12 @@ def _check_rclpy() -> tuple[_CheckResult, bool]:
         return _CheckResult(
             "warn", "rclpy not found",
             hint=(
-                "Run inside Docker to use ros2://: "
-                "docker compose -f docker/docker-compose.yml exec apyrobo bash. "
-                "Once inside, test: apyrobo connect --verify ros2://<robot>"
+                "ros2:// needs ROS 2's Python. Source ROS 2 "
+                "(source /opt/ros/<distro>/setup.bash) and run APYROBO with "
+                "that Python, on the robot or on a machine on its "
+                "ROS_DOMAIN_ID; the apyrobo-api Docker image has no ROS 2. "
+                "See docs/first-real-robot.md. "
+                "Then test: apyrobo connect --verify ros2://<robot>"
             ),
         ), False
 
