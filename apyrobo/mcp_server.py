@@ -962,18 +962,30 @@ class RobotToolbox:
         outcome.update(self.speed_notes(moves_before))
         if status != "completed":
             reason = getattr(result, "error", None) or "execution failed"
+            structured = None
             if refusals:
                 refusal = refusals[-1]
+                policy = self.enforcer.policy.name
+                step = result.steps_completed + 1
                 still = "The robot did not move. " if not result.steps_completed else ""
                 reason = (
-                    f"REFUSED by safety policy '{self.enforcer.policy.name}' at step "
-                    f"{result.steps_completed + 1}: "
+                    f"REFUSED by safety policy '{policy}' at step "
+                    f"{step}: "
                     f"{refusal.get('message', refusal.get('type'))}. "
                     f"{still}Choose a different target."
                 )
                 outcome["refusal"] = refusal
+                structured = _refusal_content(policy, refusal)
+                structured.update(
+                    step=step,
+                    steps_completed=result.steps_completed,
+                    steps_total=len(plan["steps"]),
+                )
             outcome["error"] = reason
-            raise ToolError(f"{reason}\n\n{json.dumps(_jsonable(outcome), indent=2)}")
+            raise ToolError(
+                f"{reason}\n\n{json.dumps(_jsonable(outcome), indent=2)}",
+                structured=structured,
+            )
         return outcome
 
     def _safety_report(self, args: dict[str, Any]) -> dict[str, Any]:
