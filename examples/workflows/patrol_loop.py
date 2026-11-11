@@ -1,7 +1,7 @@
 """Patrol loop — continuously navigate a fixed set of waypoints.
 
-Works out of the box with mock:// robots. Swap the URI for ros2:// or
-gazebo:// to run on real hardware or in simulation.
+Works out of the box with mock:// robots. Swap the URI for ros2:// to run on
+a real ROS 2 robot or against a running Gazebo simulation.
 
 Usage:
     python examples/workflows/patrol_loop.py
@@ -10,7 +10,7 @@ Usage:
 import argparse
 import time
 
-from apyrobo import Robot, Agent
+from apyrobo import Agent, Robot
 
 WAYPOINTS = [
     "entrance",
