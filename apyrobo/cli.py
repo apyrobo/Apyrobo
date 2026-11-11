@@ -123,7 +123,7 @@ def _rule_plan_check(
     The rule planner drives to one place per step and falls back to a status
     report on a task it does not recognise, so on its own it can drop a
     waypoint, or end in "completed" with nothing done. ``apyrobo mcp`` refuses
-    such tasks; this gives ``plan`` and ``execute`` the same checks.
+    such tasks; this gives ``plan``, ``execute`` and ``listen`` the same checks.
 
     Returns the graph to show, the task text to run (coordinates spelled the
     way the planner reads them) and why the task was not planned, or None.
@@ -1538,6 +1538,12 @@ def cmd_listen(args: argparse.Namespace) -> None:
 
     print(f"Heard: {text!r}")
     graph = agent.plan(text, robot)
+    graph, _, reason = _rule_plan_check(
+        agent, robot, SafetyEnforcer(robot), args.robot, text, graph
+    )
+    if reason is not None:
+        print(reason)
+        sys.exit(1)
     print(f"Plan: {len(graph)} skill(s)")
     for i, skill in enumerate(graph.get_execution_order(), 1):
         params = graph.get_parameters(skill.skill_id)
