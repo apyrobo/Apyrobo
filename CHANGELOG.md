@@ -229,6 +229,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo dashboard` escapes robot names, URIs, connection errors, safety
+  event details and installed skill descriptions before putting them in its
+  pages; before, a `<script>` in any of them ran in the viewer's browser.
 - `apyrobo shell` binds `robot` to a `SafetyEnforcer` capped at `--max-speed`
   (default 1.5 m/s; NaN, inf, 0 or a negative value exits 2), like the other
   robot-driving commands, instead of the raw adapter. The unwrapped adapter
