@@ -231,6 +231,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo serve --execute` no longer runs a rule-planner plan that drops part
+  of the task: 'go to (3, 3) then go to (-2, 1)' drove only to (-2, 1), and
+  'go 2 meters forward' ended execution "completed" with nothing moved. With
+  the rule planner it now makes the same checks as `apyrobo mcp`, `plan`,
+  `execute` and `voice`: the task is not run and the response's execution is
+  "failed" (0 steps) with the reason.
 - `apyrobo voice` (and `VoiceAgent`) no longer runs a rule-planner plan that
   drops part of the heard task: 'go to (3, 3) then go to (-2, 1)' drove only to
   (-2, 1), and 'go 2 meters forward' ended "completed" with nothing moved. With
