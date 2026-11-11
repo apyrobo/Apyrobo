@@ -805,8 +805,17 @@ class OperationsApiServer:
         return None
 
     def _run_task_background(self, task_id: str, task_desc: str, robot_id: str | None) -> None:
-        """Execute a task via the agent in a background thread."""
-        self._tasks[task_id]["status"] = "running"
+        """Execute a task via the agent in a background thread.
+
+        A task runs only when an agent is configured and ``robot_id`` names a
+        robot on the swarm bus; otherwise it is marked ``failed`` with the
+        reason, never ``completed``. A task cancelled with DELETE keeps the
+        ``cancelled`` status: if it is still queued it never starts.
+        """
+        task = self._tasks[task_id]
+        if task.get("status") == "cancelled":
+            return
+        task["status"] = "running"
         if self._store and hasattr(self._store, "begin_task"):
             self._store.begin_task(task_id, {"task": task_desc, "robot_id": robot_id})
 
@@ -818,20 +827,29 @@ class OperationsApiServer:
                 except KeyError:
                     pass
 
-            if self._agent and robot:
-                result = self._agent.execute(task_desc, robot, state_store=self._store)
-                self._tasks[task_id]["status"] = getattr(result, "status", "completed")
-                self._tasks[task_id]["result"] = getattr(result, "to_dict", lambda: {})()
-            else:
-                # No agent or robot — just mark accepted (manual processing)
-                self._tasks[task_id]["status"] = "completed"
+            if not self._agent:
+                raise RuntimeError("no agent configured on this server; nothing was run")
+            if not robot_id:
+                raise RuntimeError("no robot_id given; nothing was run")
+            if robot is None:
+                raise RuntimeError(
+                    f"robot {robot_id!r} is not on the swarm bus; nothing was run"
+                )
+
+            result = self._agent.execute(task_desc, robot, state_store=self._store)
+            if task.get("status") == "cancelled":
+                return
+            task["status"] = getattr(result, "status", "completed")
+            task["result"] = getattr(result, "to_dict", lambda: {})()
 
             if self._store and hasattr(self._store, "complete_task"):
-                self._store.complete_task(task_id, self._tasks[task_id].get("result"))
+                self._store.complete_task(task_id, task.get("result"))
         except Exception as e:
             logger.warning("Background task %s failed: %s", task_id, e)
-            self._tasks[task_id]["status"] = "failed"
-            self._tasks[task_id]["error"] = str(e)
+            if task.get("status") == "cancelled":
+                return
+            task["status"] = "failed"
+            task["error"] = str(e)
             if self._store and hasattr(self._store, "fail_task"):
                 self._store.fail_task(task_id, str(e))
 

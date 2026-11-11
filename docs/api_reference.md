@@ -279,7 +279,14 @@ from apyrobo.persistence import StateStore, SQLiteStateStore, RedisStateStore
 | `GET` | `/robots` | List robots with capabilities | Optional |
 | `POST` | `/tasks` | Submit a task (returns 202) | Optional |
 | `GET` | `/tasks/{id}` | Get task status | Optional |
-| `DELETE` | `/tasks/{id}` | Cancel a task | Optional |
+| `DELETE` | `/tasks/{id}` | Mark a task cancelled | Optional |
+
+A task runs only when the server has an `agent` and the request's `robot_id`
+names a robot on the `swarm_bus`. Otherwise its status becomes `failed`, with
+an `error` saying why; nothing is run. `DELETE` sets the status to `cancelled`:
+a task still queued never starts, and the status stays `cancelled` however a
+running task ends. It does not stop a robot that is already driving; call
+`stop()` on the robot for that.
 
 ### Authentication
 
