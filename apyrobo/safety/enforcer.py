@@ -25,6 +25,7 @@ import math
 import numbers
 import threading
 import time
+import weakref
 from collections.abc import Sequence
 from typing import Any, Callable, NoReturn
 
@@ -394,6 +395,13 @@ def route_leaves_areas(
                 start[1] + (end[1] - start[1]) * reached,
             )
     return None
+
+
+def _watchdog_tick(ref: weakref.ref[SafetyEnforcer]) -> None:
+    """Run one watchdog check, unless the enforcer has been freed."""
+    enforcer = ref()
+    if enforcer is not None:
+        enforcer._watchdog_check()
 
 
 class SafetyEnforcer:
@@ -978,8 +986,14 @@ class SafetyEnforcer:
         """Schedule the next watchdog check using threading.Timer."""
         if not self._watchdog_active:
             return
+        # The timer holds the enforcer only weakly. A strong reference here
+        # re-armed itself every interval forever, so an enforcer nobody
+        # holds any more was never freed and kept polling its robot. Its
+        # move timeout (SF-01) still holds it until that fires or is
+        # cancelled, so the watchdog runs at least that long after a move.
         self._watchdog_timer = threading.Timer(
-            self._policy.watchdog_interval, self._watchdog_check,
+            self._policy.watchdog_interval, _watchdog_tick,
+            args=(weakref.ref(self),),
         )
         self._watchdog_timer.daemon = True
         self._watchdog_timer.start()
