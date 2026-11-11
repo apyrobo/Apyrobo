@@ -1513,7 +1513,7 @@ class TestOperationsApiServer:
             srv.stop()
 
     def test_run_task_background_no_agent(self) -> None:
-        """_run_task_background completes with status 'completed' when no agent."""
+        """With no agent nothing runs, so the task fails instead of 'completed'."""
         srv = self._make_server()
         task_id = "test_bg_001"
         srv._tasks[task_id] = {
@@ -1523,15 +1523,19 @@ class TestOperationsApiServer:
             "status": "queued",
         }
         srv._run_task_background(task_id, "move", None)
-        assert srv._tasks[task_id]["status"] == "completed"
+        assert srv._tasks[task_id]["status"] == "failed"
+        assert "no agent" in srv._tasks[task_id]["error"]
 
     def test_run_task_background_with_store_begin_complete(self) -> None:
         """StateStore begin_task and complete_task are called."""
         store = MagicMock()
         store.begin_task = MagicMock()
         store.complete_task = MagicMock()
+        bus = MagicMock()
+        bus.get_robot.return_value = MagicMock()
+        bus.robot_ids = ["tb4"]
 
-        srv = self._make_server(state_store=store)
+        srv = self._make_server(state_store=store, agent=MagicMock(), swarm_bus=bus)
         task_id = "bg_store_test"
         srv._tasks[task_id] = {
             "task_id": task_id,
