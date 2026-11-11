@@ -106,6 +106,8 @@ The check works on the text of the action, not on what a robot will do.
 
 An action with no speed in it passes a speed limit.
 
+A rule the regex does not recognise (`never exceed 30 cm/s`, `keep out of the lab`, `keep 30% battery`) is stored as `custom` and never reported as violated. `apyrobo policy add` warns on stderr when a rule lands in a type the check does not read (`"checked": false` with `--json`), `apyrobo policy list` marks it `[not checked]`, and `apyrobo policy check` lists the active policies it skipped (`"not_checked"` ids with `--json`). The exit code still depends only on violations.
+
 ## Policy storage
 
 `NLPolicyStore` is a thin SQLite wrapper. Policies survive restarts.
