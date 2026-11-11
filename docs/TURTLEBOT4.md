@@ -288,17 +288,21 @@ robot.connect()
 
 ---
 
-## Gazebo alias
+## Gazebo simulation
 
-`gazebo://` is an alias for `ros2://` — it uses the same adapter. You can swap between real and simulated robots by changing the URI:
+A robot simulated in Gazebo through its ROS 2 bridge is driven with the same
+`ros2://` URI as the real one: start the simulation, source ROS 2 in the shell,
+and run your code unchanged. CI does exactly this with a TurtleBot3 in Gazebo
+(see [conformance_results.md](conformance_results.md)).
 
 ```python
-# Real robot
+# Real robot, or the same robot simulated in a running Gazebo
 robot = Robot.discover("ros2://turtlebot4")
-
-# Gazebo simulation (identical adapter, different environment)
-robot = Robot.discover("gazebo://turtlebot4")
 ```
+
+`gazebo://` is not an alias for `ros2://`: it selects `GazeboAdapter`, an
+in-memory stand-in with simulated delays that never connects to Gazebo (it logs
+a warning saying so). Use it only for tests that need no simulator.
 
 ---
 
