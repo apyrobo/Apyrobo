@@ -125,6 +125,10 @@ class OrchestrationAdapter(abc.ABC):
 # Orchestration server
 # ---------------------------------------------------------------------------
 
+# The MCP server's refusal names its own tools; serve clients have neither.
+_MCP_ONLY_HINT = "use move_to and rotate directly, or start the server with --provider llm"
+
+
 class OrchestrationServer:
     """Runs the receive→plan→send loop for a given adapter and agent.
 
@@ -300,7 +304,11 @@ class OrchestrationServer:
         echo_uri = robot_uri if self._URI_RE.match(robot_uri) else ""
         try:
             robot = self._resolve_robot(robot_uri)
-            graph = self.agent.plan(msg.task, robot)
+            refusal: str | None = None
+            if self.execute_tasks and self._rule_planned():
+                graph, refusal = self._rule_plan(robot, robot_uri, msg.task)
+            else:
+                graph = self.agent.plan(msg.task, robot)
             order = graph.get_execution_order()
             skills = [
                 {"skill_id": s.skill_id, "name": s.name}
@@ -309,7 +317,11 @@ class OrchestrationServer:
             metadata: dict[str, Any] = {
                 "status": "planned", "skills": skills, "count": len(skills),
             }
-            if self.execute_tasks and skills:
+            if refusal is not None:
+                metadata["execution"] = {
+                    "status": "failed", "steps_completed": 0, "error": refusal,
+                }
+            elif self.execute_tasks and skills:
                 metadata["execution"] = self._execute(robot, graph)
             return OrchestrationMessage(
                 task=msg.task,
@@ -325,6 +337,31 @@ class OrchestrationServer:
                 metadata={"status": "error", "error": str(exc)},
                 source="orchestration_server",
             )
+
+    def _rule_planned(self) -> bool:
+        from apyrobo.skills.agent import RuleBasedProvider
+
+        return isinstance(getattr(self.agent, "provider", None), RuleBasedProvider)
+
+    def _rule_plan(self, robot: Any, robot_uri: str, task: str) -> tuple[Any, str | None]:
+        """Plan *task* with the rule planner, held to ``apyrobo mcp``'s checks.
+
+        The rule planner drives to one place per step and falls back to a
+        status report on a task it does not recognise, so "go to (3, 3) then
+        go to (-2, 1)" would drive only to (-2, 1), and "go 2 meters forward"
+        would end in "completed" with nothing done. Returns the graph (planned
+        from the task with its coordinates spelled the way the planner reads
+        them) and why it must not run, or None.
+        """
+        from apyrobo.mcp_server import RobotToolbox
+
+        toolbox = RobotToolbox(robot, self._enforcer_for(robot), self.agent, robot_uri)
+        graph, plan = toolbox._plan(task)
+        reason = plan.get("reason")
+        if reason is not None:
+            # The MCP wording names MCP tools; a serve client has none.
+            reason = reason.replace(_MCP_ONLY_HINT, "use an LLM provider (--provider llm)")
+        return graph, reason
 
     def _execute(self, robot: Any, graph: Any) -> dict[str, Any]:
         """Run the planned graph and summarize the outcome.
