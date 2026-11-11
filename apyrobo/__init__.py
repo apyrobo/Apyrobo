@@ -112,10 +112,12 @@ if "ros2" not in _REG:
                 "With ROS 2 installed, source it in this shell, then run the "
                 "command again:\n"
                 "  source /opt/ros/<distro>/setup.bash\n\n"
-                "Or use the APYROBO Docker container, which has ROS 2:\n"
-                "  docker compose -f docker/docker-compose.yml exec apyrobo bash\n\n"
+                "Run APYROBO with the Python that ROS 2 uses, on the robot or "
+                "on a machine on its ROS_DOMAIN_ID; the apyrobo-api Docker "
+                "image does not include ROS 2.\n\n"
                 "Without ROS 2, use mock:// for testing or gazebo:// for sim.\n"
-                "See docs/mcp.md and docs/QUICKSTART.md for the full setup."
+                "See docs/first-real-robot.md, docs/mcp.md and "
+                "docs/QUICKSTART.md for the full setup."
             )
 
         def get_capabilities(self):  # type: ignore[override]

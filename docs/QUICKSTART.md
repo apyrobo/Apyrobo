@@ -1,202 +1,65 @@
-# APYROBO — From Zero to MVP Demo
+# APYROBO — Simulation and ROS 2 setup
 
-Step-by-step guide to get the full demo running. Total time: ~15 minutes.
-
----
-
-## Prerequisites
-
-- **Docker Desktop** (Apple Silicon or x86) — [download](https://www.docker.com/products/docker-desktop/)
-- **XQuartz** (macOS only, for Gazebo GUI) — `brew install --cask xquartz`
-- **Git**
+Two paths beyond `mock://`: the simulated Nav2 demo that CI runs, and a real
+ROS 2 robot. To try APYROBO without ROS first, see
+[quickstart_5min.md](quickstart_5min.md) or the `apyrobo mcp` try-out in
+[mcp.md](mcp.md).
 
 ---
 
-## Step 1: Clone and Build (5 min)
+## Simulated Nav2 in Gazebo (Linux, Docker)
+
+A TurtleBot3 in `turtlebot3_world`, Nav2 in SLAM mode, and APYROBO's rule
+planner sending a real `NavigateToPose` goal. It is the same stack CI checks
+on every commit ([test_gazebo_nav2_e2e.py](../tests/integration/test_gazebo_nav2_e2e.py)).
+Gazebo Classic does not run under Docker Desktop on macOS, so this is a Linux
+target.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/apyrobo.git
-cd apyrobo
+# From the repo root: start gzserver + robot_state_publisher + Nav2 (SLAM)
+docker compose -f docker/docker-compose.yml --profile gazebo-nav up -d gazebo-nav-sim
 
-# Build the Docker container (downloads ROS 2 + Gazebo + deps)
-docker compose -f docker/docker-compose.yml build
+# Run the narrated demo against it
+docker compose -f docker/docker-compose.yml --profile gazebo-nav \
+    run --rm gazebo-nav-demo
 ```
 
-This takes 5-10 minutes on first build (downloading ~3GB of ROS 2 packages).
-Subsequent builds are cached and take seconds.
-
----
-
-## Step 2: Enable GUI (macOS only)
-
-```bash
-# Open XQuartz, go to Preferences → Security → check "Allow network clients"
-# Then restart XQuartz and run:
-xhost +localhost
-```
-
-On Linux:
-```bash
-xhost +local:docker
-```
-
----
-
-## Step 3: Launch Everything (2 min)
-
-```bash
-# Start the container
-docker compose -f docker/docker-compose.yml up -d
-
-# Open a shell
-docker compose -f docker/docker-compose.yml exec apyrobo bash
-
-# Inside the container — launch Gazebo + Nav2 + APYROBO
-bash scripts/launch.sh
-```
-
-This opens a tmux session with 4 panes:
-- **Pane 0**: Gazebo simulator (takes 30-60s to start)
-- **Pane 1**: Nav2 navigation stack
-- **Pane 2**: APYROBO shell (ready for your commands)
-- **Pane 3**: Sensor topic monitor
-
-Wait ~40 seconds for everything to initialise. You'll see the Gazebo window
-appear with a TurtleBot4 in a warehouse environment.
-
----
-
-## Step 4: Run Tests (1 min)
-
-In the APYROBO pane (Pane 2):
-
-```bash
-# Quick sanity check — runs 72 mock tests
-python3 run_tests.py
-
-# Full integration test against live Gazebo
-python3 scripts/integration_test.py
-```
-
-The integration test validates: ROS 2 connectivity, robot discovery,
-capability detection, odometry, sensor pipeline, navigation, safety
-enforcement, skill execution, and agent planning.
-
----
-
-## Step 5: Run the Demo (2 min)
-
-```bash
-# Default demo: deliver a package
-python3 scripts/demo_gazebo.py
-
-# Custom task
-python3 scripts/demo_gazebo.py --task "go to (3, 2)"
-
-# Interactive mode — type tasks one by one
-python3 scripts/demo_gazebo.py --interactive
-```
-
----
-
-## Step 6: Record the Demo (2 min)
-
-```bash
-# Record screen + terminal + metrics
-python3 scripts/record_demo.py
-
-# Record with benchmark (20 trials)
-python3 scripts/record_demo.py --benchmark 20
-
-# Headless (no screen capture, just metrics)
-python3 scripts/record_demo.py --no-screen --benchmark 20
-```
-
-Recordings go to `recordings/demo_YYYYMMDD_HHMMSS/`:
-- `screen_capture.mp4` — Gazebo screen recording
-- `terminal_output.log` — full terminal output
-- `metrics.json` — execution metrics (timing, steps, events)
-- `benchmark.json` — aggregate results if --benchmark used
-
----
-
-## Step 7: Review Results
-
-```bash
-# View the benchmark
-cat recordings/demo_*/benchmark.json | python3 -m json.tool
-```
-
-The benchmark report gives you:
-- **Task success rate** — % of tasks completed without abort
-- **Average duration** — seconds per task
-- **Per-trial results** — individual pass/fail with timing
-
-This is what you include in grant applications and the README.
-
----
-
-## Tmux Controls
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+B` then arrow | Switch pane |
-| `Ctrl+B` then `d` | Detach (keeps running) |
-| `tmux attach -t apyrobo` | Reattach |
-| `Ctrl+B` then `z` | Zoom current pane |
-| `Ctrl+C` | Stop current process in pane |
-
----
-
-## Troubleshooting
-
-**Gazebo doesn't open / black screen:**
-- macOS: Make sure XQuartz is running and `xhost +localhost` was run
-- Linux: Make sure `xhost +local:docker` was run
-- Try headless: `bash scripts/launch.sh --no-gui`
-
-**Nav2 fails to start:**
-- It needs a map. Try the TurtleBot4-specific launch:
-  `ros2 launch turtlebot4_navigation nav2.launch.py`
-- Or use SLAM: `ros2 launch turtlebot4_navigation slam.launch.py`
-
-**"No odometry received":**
-- Gazebo might still be loading. Wait 30-60 seconds.
-- Check: `ros2 topic echo /odom --once`
-
-**Tests pass in mock but fail in Gazebo:**
-- This is expected for timing-sensitive tests. Increase `--timeout`.
-- Navigation in Gazebo is slower than mock — goals take real time.
-
-**Docker build fails:**
-- Check Docker has at least 8GB RAM allocated
-- Run `docker system prune` to free space
+More detail, and how to re-record it: [demos/nav2_gazebo](../demos/nav2_gazebo/README.md)
+and [tests/integration/README_gazebo.md](../tests/integration/README_gazebo.md).
 
 ---
 
 ## ROS 2 / Real Robot
 
-To connect to a physical robot or a full ROS 2 environment you need the Docker image — it bundles ROS 2 Humble, Nav2, and all Python dependencies.
+The `ros2://` adapter talks to ROS 2 through `rclpy` in APYROBO's own process,
+so APYROBO has to run where ROS 2 is sourced: on the robot, or on a machine on
+the robot's `ROS_DOMAIN_ID`. It needs `rclpy`, `nav2_msgs` and
+`tf_transformations`:
+`sudo apt install ros-$ROS_DISTRO-nav2-msgs ros-$ROS_DISTRO-tf-transformations`.
 
-**Prerequisites:** Docker Desktop (8 GB RAM minimum).
+The `apyrobo-api` image in `docker/docker-compose.yml` does **not** include
+ROS 2: it is a slim Python image for the REST gateway. The images that bundle
+ROS 2 (`docker/Dockerfile.integration`, `docker/Dockerfile.gazebo`) are what CI
+and the Gazebo demos use.
 
-### Launch the stack
+### Install next to ROS 2
+
+A virtualenv with `--system-site-packages` sees ROS 2's `rclpy` and keeps pip
+away from the system Python:
 
 ```bash
-# From the repo root
-docker compose -f docker/docker-compose.yml up -d apyrobo-api
+source /opt/ros/jazzy/setup.bash     # or humble
+python3 -m venv --system-site-packages ~/apyrobo-venv
+. ~/apyrobo-venv/bin/activate
+pip install "git+https://github.com/apyrobo/Apyrobo"
+python3 -c "import rclpy, nav2_msgs, tf_transformations; print('ROS 2 OK')"
 ```
 
-This starts the `apyrobo-api` container with ROS 2 sourced and the APYROBO API layer running.
-
 ### Connect from Python
-
-Once the container is running, connect using the `ros2://` URI scheme from any Python environment that can reach the container (or from inside it):
 
 ```python
 from apyrobo import Robot, Agent
 
-# Connect to the ROS 2 adapter inside Docker
 robot = Robot.discover("ros2://turtlebot4")
 print(robot.capabilities())
 
@@ -205,13 +68,21 @@ result = agent.execute("navigate to the charging dock", robot)
 print(result.status)
 ```
 
-The `ros2://` adapter requires `rclpy` (provided automatically inside the Docker image). Running it outside Docker requires a local ROS 2 Humble installation.
+For `apyrobo mcp` on a real robot (policy file, `--confirm-moves`, running over
+`--ssh` from your laptop), follow [docs/first-real-robot.md](first-real-robot.md).
 
-### Open a shell inside the container
+---
 
-```bash
-docker compose -f docker/docker-compose.yml exec apyrobo-api bash
-# Then inside:
-source /opt/ros/humble/setup.bash
-python3 -c "from apyrobo import Robot; print(Robot.discover('ros2://test'))"
-```
+## Troubleshooting
+
+**`ros2://` is unavailable / `No module named 'rclpy'`:** ROS 2 is not sourced
+in this shell, or APYROBO is installed in a Python that cannot see it. Source
+`/opt/ros/<distro>/setup.bash` and use a `--system-site-packages` virtualenv as
+above.
+
+**The robot never moves:** the most common cause is a different
+`ROS_DOMAIN_ID` from the robot's. See the troubleshooting section of
+[mcp.md](mcp.md).
+
+**Docker build fails:** give Docker at least 8 GB of RAM and run
+`docker system prune` to free space.
