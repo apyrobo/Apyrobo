@@ -9,8 +9,7 @@ Get APYROBO running on a TurtleBot4 (real or simulated) in under 15 minutes.
 | Requirement | Version | Notes |
 |---|---|---|
 | ROS 2 | Humble or Iron | Jazzy also works; older distros untested |
-| Docker + Compose | ≥ 24.0 | For the containerised workflow |
-| apyrobo | current main | `pip install -e .` inside the container |
+| apyrobo | current main | installed next to ROS 2 (step 1) |
 | nav2_msgs | bundled with Nav2 | Required for NavigateToPose action |
 
 If you only want to **develop or test without hardware**, skip to [Path B — mock adapter](#path-b--mock-adapter-no-hardware-needed).
@@ -21,25 +20,24 @@ If you only want to **develop or test without hardware**, skip to [Path B — mo
 
 The `ros2://` adapter speaks Nav2 actions and `cmd_vel` directly.
 
-### 1. Start the Docker environment
+### 1. Install apyrobo next to ROS 2
+
+`ros2://` talks to ROS 2 through `rclpy` in APYROBO's own process, so install
+it on the robot (or a machine on its `ROS_DOMAIN_ID`) where ROS 2 is sourced.
+The `apyrobo-api` image in `docker/docker-compose.yml` does not include ROS 2.
 
 ```bash
-# From the repo root
-docker compose -f docker/docker-compose.yml up -d
-
-# Open a shell inside the container
-docker compose -f docker/docker-compose.yml exec apyrobo-api bash
+source /opt/ros/humble/setup.bash
+sudo apt install ros-$ROS_DISTRO-nav2-msgs ros-$ROS_DISTRO-tf-transformations
+python3 -m venv --system-site-packages ~/apyrobo-venv
+. ~/apyrobo-venv/bin/activate
+pip install "git+https://github.com/apyrobo/Apyrobo"
 ```
 
-> **Service name:** the compose file exposes `apyrobo-api` and `apyrobo-worker`.
-> Adjust if you added a custom service.
+### 2. Use the same shell for every step below
 
-### 2. Install apyrobo (inside container)
-
-```bash
-cd /app
-pip install -e .
-```
+Each new terminal needs `source /opt/ros/humble/setup.bash` and
+`. ~/apyrobo-venv/bin/activate` again.
 
 ### 3. Verify ROS 2 is available
 
@@ -48,7 +46,7 @@ python3 -c "import rclpy; print('rclpy OK')"
 ros2 topic list   # should show /odom, /cmd_vel, etc.
 ```
 
-If `rclpy` is missing, the `ros2://` adapter silently falls back and `Robot.discover('ros2://...')` raises `RuntimeError`. Install ROS 2 Humble in the container or source the environment:
+If `rclpy` is missing, importing the `ros2://` adapter warns and `Robot.discover('ros2://...')` raises `RuntimeError`. Source the ROS 2 environment:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -75,7 +73,7 @@ result = agent.execute(
 print(f"Status: {result.status.value}  ({result.steps_completed}/{result.steps_total} steps)")
 ```
 
-Save as `navigate_waypoint.py` and run inside the container:
+Save as `navigate_waypoint.py` and run it in that shell:
 
 ```bash
 python3 navigate_waypoint.py
@@ -182,12 +180,11 @@ When you call `agent.execute("navigate to 2.5 3.0", robot=robot)`, the ROS 2 ada
 
 ## Common errors and fixes
 
-### `rclpy not found` warning on import
+### `ROS 2 import failed` warning on import
 
 ```
-UserWarning: rclpy not found — the ros2:// adapter will not be available.
-To use ros2://, run APYROBO inside the Docker container:
-docker compose -f docker/docker-compose.yml exec apyrobo-api bash
+UserWarning: ROS 2 import failed (No module named 'rclpy') — the ros2:// adapter
+will not be available. ...
 ```
 
 **Fix:** source your ROS 2 environment before starting Python:
@@ -197,7 +194,8 @@ source /opt/ros/humble/setup.bash
 python3 your_script.py
 ```
 
-Or run inside the Docker container where ROS 2 is pre-installed.
+If the module named is `nav2_msgs` or `tf_transformations`, install it with
+`sudo apt install ros-$ROS_DISTRO-nav2-msgs ros-$ROS_DISTRO-tf-transformations`.
 
 ### `RuntimeError: The ros2:// adapter requires rclpy`
 

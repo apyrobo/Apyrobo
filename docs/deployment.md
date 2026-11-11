@@ -31,9 +31,11 @@ docker compose -f docker/docker-compose.yml up -d
 ```
 
 This starts:
-- `apyrobo-api` — REST gateway on port **8080**; skills execute in this
-  process (a separate distributed worker tier is a roadmap item, not a
-  current feature)
+- `apyrobo-api` — REST gateway on port **8080** (`apyrobo.api.app`). It
+  records submitted tasks and skill calls with status `queued` and returns
+  them by id; nothing in it runs them on a robot yet, and the image has no
+  ROS 2. To drive a robot, run `apyrobo mcp` or `apyrobo serve --execute`
+  where ROS 2 is sourced (see [first-real-robot.md](first-real-robot.md))
 
 Verify:
 

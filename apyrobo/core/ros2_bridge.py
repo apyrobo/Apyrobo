@@ -7,7 +7,9 @@ This adapter translates APYROBO's semantic commands into:
     - Odometry subscription for continuous pose tracking
     - Topic introspection for auto capability discovery
 
-Requires rclpy + nav2_msgs (available inside the Docker container).
+Requires rclpy, nav2_msgs and tf_transformations from a sourced ROS 2
+install (Humble or Jazzy). The images in docker/ that bundle ROS 2 are for
+CI and the Gazebo demos; the apyrobo-api image does not include it.
 
 Usage:
     robot = Robot.discover("ros2://turtlebot4")     # real robot OR live Gazebo sim
@@ -112,7 +114,7 @@ def _ros_compat_layer() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# ROS 2 imports — fail gracefully outside Docker
+# ROS 2 imports — fail gracefully without a sourced ROS 2
 # ---------------------------------------------------------------------------
 
 try:
@@ -137,8 +139,10 @@ except ImportError as _exc:
     warnings.warn(
         f"ROS 2 import failed ({_exc}) — the ros2:// adapter will not be "
         "available. Robot.discover('ros2://...') will raise RuntimeError. "
-        "To use ros2://, run APYROBO inside the Docker container: "
-        "docker compose -f docker/docker-compose.yml exec apyrobo bash",
+        "To use ros2://, source ROS 2 first (for example "
+        "'source /opt/ros/jazzy/setup.bash') and run APYROBO with that "
+        "Python, on the robot or on a machine on its ROS_DOMAIN_ID. "
+        "See docs/first-real-robot.md.",
         stacklevel=1,
     )
 
@@ -291,8 +295,9 @@ class _ROS2NodeManager:
     def get_node(cls) -> Any:
         if not _HAS_ROS2:
             raise RuntimeError(
-                "rclpy is not installed. Run inside the Docker container "
-                "or install ROS 2 Humble. Use 'mock://' for testing."
+                "rclpy is not installed. Source ROS 2 (Humble or Jazzy) "
+                "before starting APYROBO; see docs/first-real-robot.md. "
+                "Use 'mock://' for testing."
             )
         with cls._lock:
             if cls._instance is None:
