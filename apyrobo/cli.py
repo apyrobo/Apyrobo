@@ -115,6 +115,40 @@ def cmd_discover(args: argparse.Namespace) -> None:
         print("  (none)")
 
 
+def _rule_plan_check(
+    agent: Any, robot: Any, enforcer: Any, uri: str, task: str, graph: Any
+) -> tuple[Any, str, str | None]:
+    """Hold a rule-planner plan to the checks ``apyrobo mcp`` makes.
+
+    The rule planner drives to one place per step and falls back to a status
+    report on a task it does not recognise, so on its own it can drop a
+    waypoint, or end in "completed" with nothing done. ``apyrobo mcp`` refuses
+    such tasks; this gives ``plan`` and ``execute`` the same checks.
+
+    Returns the graph to show, the task text to run (coordinates spelled the
+    way the planner reads them) and why the task was not planned, or None.
+    """
+    from apyrobo.skills.agent import RuleBasedProvider
+
+    if not isinstance(getattr(agent, "planned_by", None), RuleBasedProvider):
+        return graph, task, None
+    from apyrobo.mcp_server import RobotToolbox
+
+    toolbox = RobotToolbox(robot, enforcer, agent, uri)
+    graph, plan = toolbox._plan(task)
+    text = task
+    if isinstance(getattr(agent, "provider", None), RuleBasedProvider):
+        text = toolbox._rule_planner_text(task)
+    reason = plan.get("reason")
+    if reason is not None:
+        # The MCP wording names MCP tools and the server; say it for the CLI.
+        reason = reason.replace(
+            "use move_to and rotate directly, or start the server with --provider llm",
+            "use --provider llm",
+        )
+    return graph, text, reason
+
+
 def cmd_plan(args: argparse.Namespace) -> None:
     """Plan a task and show the skill graph (without executing)."""
     robot = Robot.discover(args.robot)
@@ -132,8 +166,14 @@ def cmd_plan(args: argparse.Namespace) -> None:
         print(f"Error: {exc}\n\nAvailable providers:\n{_PROVIDER_TABLE}", file=sys.stderr)
         sys.exit(1)
     graph = agent.plan(args.task, robot)
+    graph, _, reason = _rule_plan_check(
+        agent, robot, SafetyEnforcer(robot), args.robot, args.task, graph
+    )
 
     print(f"Task: {args.task!r}")
+    if reason is not None:
+        print(reason)
+        sys.exit(1)
     print(f"Plan: {len(graph)} skills")
     print()
 
@@ -202,6 +242,14 @@ def cmd_execute(args: argparse.Namespace) -> None:
 
     # Confidence check
     graph = agent.plan(args.task, robot)
+    graph, task, reason = _rule_plan_check(
+        agent, robot, enforcer, args.robot, args.task, graph
+    )
+    if reason is not None:
+        # Not a confidence call, so --force does not override it.
+        print(f"Task:       {args.task!r}")
+        print(reason)
+        sys.exit(1)
     estimator = ConfidenceEstimator()
     report = estimator.assess(graph, robot)
 
@@ -232,7 +280,7 @@ def cmd_execute(args: argparse.Namespace) -> None:
         }.get(event.status, "  ")
         print(f"  {icon} [{elapsed:5.1f}s] {event.skill_id}: {event.message}")
 
-    result = agent.execute(task=args.task, robot=enforcer, on_event=on_event)
+    result = agent.execute(task=task, robot=enforcer, on_event=on_event)
     duration = time.time() - t0
 
     print("-" * 50)

@@ -231,6 +231,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo plan` and `apyrobo execute` no longer run a rule-planner plan that
+  drops part of the task. A task with two waypoints drove only to the last one,
+  and one the planner could not read ('go 2 meters forward') ended in
+  "completed" after a status report. With the rule planner, both commands now
+  make the same checks as `apyrobo mcp` and exit 1 with the reason; `--force`
+  does not override it.
 - `gazebo://` is no longer presented as a real robot or a live Gazebo. It is
   `GazeboAdapter`, an in-memory stand-in that never connects to Gazebo. The
   two `examples/` demos, `examples/workflows/patrol_loop.py`,
