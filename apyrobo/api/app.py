@@ -24,6 +24,8 @@ import time
 import uuid
 from typing import Any
 
+from apyrobo.__version__ import __version__
+
 try:
     from fastapi import Depends, FastAPI, HTTPException, Header, status
     from fastapi.responses import JSONResponse
@@ -69,7 +71,7 @@ def create_app(api_key: str | None = None) -> "FastAPI":
     _tasks: dict[str, dict[str, Any]] = {}
     _robots: dict[str, dict[str, Any]] = {}
 
-    app = FastAPI(title="Apyrobo API", version="0.4.0")
+    app = FastAPI(title="Apyrobo API", version=__version__)
 
     # ------------------------------------------------------------------
     # Auth dependency
