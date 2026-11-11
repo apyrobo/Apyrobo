@@ -231,6 +231,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The operations API server (`apyrobo.operations`) no longer reports a
+  `POST /tasks` task "completed" when nothing ran: with no agent configured, no
+  `robot_id`, or a robot not on the swarm bus, the task now ends "failed" with
+  the reason. A task cancelled with `DELETE` stays "cancelled" (it does not
+  stop a robot already driving).
 - `apyrobo plan` and `apyrobo execute` no longer run a rule-planner plan that
   drops part of the task. A task with two waypoints drove only to the last one,
   and one the planner could not read ('go 2 meters forward') ended in
