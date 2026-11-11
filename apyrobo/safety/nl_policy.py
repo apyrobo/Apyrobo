@@ -58,6 +58,10 @@ CONSTRAINT_TYPES = {
     "custom",            # catch-all for unrecognised patterns
 }
 
+# The constraint types check_compliance reads; the others are stored and
+# listed but never produce a violation.
+CHECKED_CONSTRAINT_TYPES = frozenset({"speed_limit", "battery_reserve", "no_go_zone"})
+
 # Regex patterns for common constraint types (unit: SI base units)
 _SPEED_RE = re.compile(
     r"(?:never\s+exceed|max(?:imum)?\s+speed|speed\s+limit)\s+"

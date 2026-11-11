@@ -1803,7 +1803,11 @@ _DEFAULT_POLICY_DB = "./apyrobo_policies.db"
 
 def cmd_policy(args: argparse.Namespace) -> None:
     """apyrobo policy — manage natural language safety policies."""
-    from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
+    from apyrobo.safety.nl_policy import (
+        CHECKED_CONSTRAINT_TYPES,
+        NLPolicyParser,
+        NLPolicyStore,
+    )
 
     sub: str = getattr(args, "policy_command", "") or ""
     db_path: str = getattr(args, "db", _DEFAULT_POLICY_DB)
@@ -1817,13 +1821,24 @@ def cmd_policy(args: argparse.Namespace) -> None:
             parser = NLPolicyParser(severity=severity)
             policy = parser.parse(description)
             store.add(policy)
+            checked = policy.constraint_type in CHECKED_CONSTRAINT_TYPES
             if as_json:
-                print(json.dumps(policy.to_dict(), indent=2))
+                print(json.dumps({**policy.to_dict(), "checked": checked}, indent=2))
             else:
                 print(f"✓ Added policy [{policy.policy_id}]")
                 print(f"  Type: {policy.constraint_type}")
                 print(f"  Params: {policy.parameters}")
                 print(f"  Severity: {policy.severity}")
+            if not checked:
+                print(
+                    f"⚠️  Not checked: 'apyrobo policy check' never reports a "
+                    f"{policy.constraint_type} policy as violated. It reads speed "
+                    f"limits in m/s ('never exceed 0.5 m/s'), battery reserves "
+                    f"('always keep 20% battery') and no-go zones ('never enter "
+                    f"the server room'); reword the rule that way, or remove it "
+                    f"with 'apyrobo policy remove {policy.policy_id}'.",
+                    file=sys.stderr,
+                )
 
         elif sub == "list":
             show_all: bool = getattr(args, "all", False)
@@ -1838,6 +1853,8 @@ def cmd_policy(args: argparse.Namespace) -> None:
                 print("-" * 70)
                 for p in policies:
                     status = "" if p.active else " [INACTIVE]"
+                    if p.constraint_type not in CHECKED_CONSTRAINT_TYPES:
+                        status += " [not checked]"
                     print(f"  {p.summary()}{status}")
 
         elif sub == "remove":
@@ -1853,17 +1870,37 @@ def cmd_policy(args: argparse.Namespace) -> None:
             parser = NLPolicyParser()
             active_policies = store.get_active_policies()
             violations = parser.check_compliance(action, active_policies)
+            unchecked = [
+                p for p in active_policies
+                if p.constraint_type not in CHECKED_CONSTRAINT_TYPES
+            ]
             if as_json:
-                print(json.dumps({"action": action, "violations": violations}, indent=2))
+                print(json.dumps({
+                    "action": action,
+                    "violations": violations,
+                    "not_checked": [p.policy_id for p in unchecked],
+                }, indent=2))
                 if violations:
                     sys.exit(1)
-            elif violations:
-                print(f"⚠️  {len(violations)} violation(s) for: {action!r}")
-                for v in violations:
-                    print(f"  • {v}")
-                sys.exit(1)
             else:
-                print(f"✓ No policy violations for: {action!r}")
+                if violations:
+                    print(f"⚠️  {len(violations)} violation(s) for: {action!r}")
+                    for v in violations:
+                        print(f"  • {v}")
+                else:
+                    print(f"✓ No policy violations for: {action!r}")
+                if unchecked:
+                    print(
+                        f"  {len(unchecked)} active polic"
+                        f"{'y was' if len(unchecked) == 1 else 'ies were'} not checked:"
+                    )
+                    for p in unchecked:
+                        print(
+                            f"    [{p.policy_id}] {p.constraint_type}"
+                            f" — {p.description[:60]}"
+                        )
+                if violations:
+                    sys.exit(1)
 
         else:
             print("Usage: apyrobo policy <add|list|remove|check> [options]")

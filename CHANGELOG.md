@@ -231,6 +231,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy add` warns on stderr when a rule is stored in a type that
+  `apyrobo policy check` does not read (for example "never exceed 30 cm/s" or
+  "keep out of the lab", stored as `custom`), and `--json` adds
+  `checked: false`. `policy list` marks such rules `[not checked]` and
+  `policy check` lists the active rules it skipped (`not_checked` with
+  `--json`). Exit codes are unchanged.
 - `apyrobo dashboard` escapes robot names, URIs, connection errors, safety
   event details and installed skill descriptions before putting them in its
   pages; before, a `<script>` in any of them ran in the viewer's browser.
