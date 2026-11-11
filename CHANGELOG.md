@@ -18,8 +18,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - `apyrobo mcp`: a task that `execute_task` stops at a refused step returns the
   same `structuredContent` as a refused `move_to`, plus `step` (from 1),
   `steps_completed` and `steps_total`. The refusal text is unchanged. With
-  `--confirm-moves`, a task refused before the question is asked stays
-  text-only.
+  `--confirm-moves`, a task refused before the question is asked carries the
+  same fields with `steps_completed` 0.
+- `SafetyEnforcer.move_violation(x, y, start)` returns the violation a move
+  would record (with its message) without recording or moving anything.
 - On `ros2://` through Nav2, `apyrobo mcp` checks before each drive whether
   another node also publishes on the `speed_limit` topic (a costmap speed
   filter, for one). If so, the reply carries `speed_limit_shared: true` and a

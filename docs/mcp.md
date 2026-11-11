@@ -794,8 +794,10 @@ same sentence as before, so a model reading it sees no change; an agent or a
 test can branch on `code` instead of parsing words. Older protocol versions
 get the text only. A task that `execute_task` stops at a refused step
 carries the same fields plus `step` (the refused step, counted from 1),
-`steps_completed` and `steps_total`. With `--confirm-moves`, a task refused
-before the question is asked still gets the text only. Unit-tested on
+`steps_completed` and `steps_total`. With `--confirm-moves`, a task whose
+plan the policy refuses is refused before the question is asked, and that
+refusal carries the same fields with `steps_completed` 0. Unit-tested on
 `mock://` (`tests/test_mcp_refusal_codes.py`,
-`tests/test_mcp_execute_task_refusal_codes.py`); whether a desktop host
+`tests/test_mcp_execute_task_refusal_codes.py`,
+`tests/test_mcp_confirm_refusal_codes.py`); whether a desktop host
 shows `structuredContent` on an error has not been checked.

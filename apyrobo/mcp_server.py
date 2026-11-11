@@ -344,6 +344,7 @@ class RobotToolbox:
         self.last_plan: tuple[str, Any, dict[str, Any]] | None = None
         self.approved_plan: tuple[str, Any, dict[str, Any]] | None = None
         self.last_refusal: str | None = None
+        self.last_refusal_structured: dict[str, Any] | None = None
         self._tools: dict[str, tuple[dict[str, Any], Callable[[dict[str, Any]], Any]]] = {}
         self._register()
 
@@ -524,12 +525,13 @@ class RobotToolbox:
             speed = _turn_speed(arguments)
             return f"Allow the robot to rotate by {angle} rad at {self._turn_speed_text(speed)}?"
         task = _str(arguments, "task")
-        self.last_plan = self.last_refusal = None
+        self.last_plan = self.last_refusal = self.last_refusal_structured = None
         graph, plan = self._plan(task)
         if plan.get("reason") or not plan["steps"]:
             return None  # execute_task refuses it without moving
-        self.last_refusal = self._plan_refusal(plan["steps"], "The robot did not move.")
-        if self.last_refusal is not None:
+        refused = self._plan_refusal_detail(plan["steps"], "The robot did not move.")
+        if refused is not None:
+            self.last_refusal, self.last_refusal_structured = refused
             return None
         self.last_plan = (task, graph, plan)
         lines = [f"Allow the robot to carry out the task {task!r}? It will run this plan:"]
@@ -912,9 +914,22 @@ class RobotToolbox:
         tail: str = "Nothing was moved; execute_task would be refused at this step.",
     ) -> str | None:
         """The refusal the first drive in *steps* would get, checked without moving."""
+        refused = self._plan_refusal_detail(steps, tail)
+        return None if refused is None else refused[0]
+
+    def _plan_refusal_detail(
+        self, steps: list[dict[str, Any]], tail: str
+    ) -> tuple[str, dict[str, Any] | None] | None:
+        """:meth:`_plan_refusal`'s text and its structuredContent, or None.
+
+        The structured side is the same as a refused ``execute_task`` run
+        carries (code, policy, violation, step, steps_completed=0,
+        steps_total); None on an enforcer that offers no ``move_violation``.
+        """
         check = getattr(self.enforcer, "move_problem", None)
         if check is None:
             return None
+        detail = getattr(self.enforcer, "move_violation", None)
         start: tuple[float, float] | None = None
         for number, step in enumerate(steps, start=1):
             if not step["skill_id"].startswith("navigate_to"):
@@ -923,10 +938,17 @@ class RobotToolbox:
             y = float(step["parameters"].get("y", 0.0))
             problem = check(x, y, start)
             if problem is not None:
-                return (
-                    f"REFUSED by safety policy '{self.enforcer.policy.name}' at step "
+                policy = self.enforcer.policy.name
+                text = (
+                    f"REFUSED by safety policy '{policy}' at step "
                     f"{number}: {problem}. {tail} Choose a different target."
                 )
+                structured = None
+                violation = detail(x, y, start) if callable(detail) else None
+                if isinstance(violation, dict):
+                    structured = _refusal_content(policy, violation)
+                    structured.update(step=number, steps_completed=0, steps_total=len(steps))
+                return text, structured
             start = (x, y)
         return None
 
@@ -1396,7 +1418,11 @@ class MCPServer:
         refusal = self.toolbox.last_refusal if name == "execute_task" else None
         if refusal is None:
             return None
-        return _tool_result(msg_id, refusal, is_error=True)
+        result = _tool_result(msg_id, refusal, is_error=True)
+        structured = self.toolbox.last_refusal_structured
+        if structured is not None and self.protocol_version >= STRUCTURED_CONTENT_SINCE:
+            result["result"]["structuredContent"] = structured
+        return result
 
     def _legacy_confirm(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any] | None:
         """Ask the user to confirm a motion command (initialize-era sessions).
