@@ -25,16 +25,17 @@ def main() -> None:
     # Send commands
     print("\nCommands:")
     robot.move(x=2.0, y=3.0, speed=0.5)
-    print(f"  Moved to (2.0, 3.0)")
+    print("  Moved to (2.0, 3.0)")
 
     robot.move(x=5.0, y=1.0)
-    print(f"  Moved to (5.0, 1.0)")
+    print("  Moved to (5.0, 1.0)")
 
     robot.stop()
-    print(f"  Stopped")
+    print("  Stopped")
 
     print("\nDone! The APYROBO capability API works.")
-    print("Next step: connect to a real ROS 2 robot via the gazebo:// or ros2:// adapter.")
+    print("Next step: connect to a real ROS 2 robot or a running Gazebo with ros2:// "
+          "(see docs/first-real-robot.md).")
 
 
 if __name__ == "__main__":

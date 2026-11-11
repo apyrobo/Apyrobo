@@ -231,6 +231,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `gazebo://` is no longer presented as a real robot or a live Gazebo. It is
+  `GazeboAdapter`, an in-memory stand-in that never connects to Gazebo. The
+  two `examples/` demos, `examples/workflows/patrol_loop.py`,
+  `docs/TURTLEBOT4.md` (which called it an alias for `ros2://`) and
+  `docs/conformance_results.md` now point at `ros2://` for a real robot or a
+  running Gazebo.
 - The REST gateway's OpenAPI docs (`/docs`, `/openapi.json`) reported version
   0.4.0; they now report the installed package version.
 - The `SafetyEnforcer` odometry watchdog no longer stops a robot that is still

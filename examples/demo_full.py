@@ -66,4 +66,5 @@ else:
 
 print()
 print("Done! This demo runs entirely in-memory with the mock adapter.")
-print("To run against a real robot, use: Robot.discover('gazebo://turtlebot4')")
+print("To run against a real ROS 2 robot or a running Gazebo, use: "
+      "Robot.discover('ros2://turtlebot4') (see docs/first-real-robot.md)")

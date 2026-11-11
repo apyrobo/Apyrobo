@@ -18,7 +18,7 @@ Last updated: 2026-07-19 (spec 1.0).
 | `gazebo_native://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `isaac://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**² | `conformance` CI job, every commit |
 | `mujoco://` | **Conformant** — 21/21, 0 warnings, vs **real MuJoCo physics** (the bridge loads and steps an actual model; fail-fast on disconnect) | `conformance` CI job + `tests/test_mujoco_bridge.py`, every commit |
-| `gazebo://` | Not CI-covered — needs a live ROS-topic Gazebo Classic rig; run `apyrobo conformance gazebo://<robot>` inside the `gazebo` compose profile | — |
+| `gazebo://` | Conformant — 20/20, 1 SHOULD warning¹ · **in-memory stand-in**², never connects to Gazebo; for a live Gazebo use `ros2://` (above) | `tests/test_conformance.py`, every commit |
 | `http://` | Not CI-covered — needs a live HTTP robot endpoint; run `apyrobo conformance http://<host>` against yours | — |
 | `mqtt://` | Not CI-covered — needs a live MQTT broker + robot; run `apyrobo conformance mqtt://<broker>` against yours | — |
 
@@ -28,7 +28,7 @@ instead of failing fast. `vda5050://` and `mujoco://` pass this check
 CI run, `ros2://` — accept the command. Recorded, not hidden; making the
 ros2 adapter fail fast is a flagged follow-up.
 
-² The in-memory stand-ins (`gazebo_native://`, `isaac://`) satisfy the
+² The in-memory stand-ins (`gazebo://`, `gazebo_native://`, `isaac://`) satisfy the
 adapter *contract* but do not drive a real simulator — that is exactly what
 [Arc 3 of the roadmap](../ROADMAP.md#arc-3--modern-simulation-no-stand-ins)
 exists to fix (`mujoco://` already graduated to a real bridge).
