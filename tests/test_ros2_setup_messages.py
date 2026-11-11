@@ -21,6 +21,8 @@ CHECKED = [
     "docs/QUICKSTART.md",
     "docs/TURTLEBOT4.md",
     "docs/deployment.md",
+    "docs/pilot_quickstart.md",
+    "docs/quickstart_5min.md",
 ]
 
 EXEC_RE = re.compile(r"docker compose -f docker/docker-compose\.yml (?:exec|up -d) ([\w-]+)")
@@ -63,10 +65,30 @@ def test_turtlebot4_has_no_worker_service_claim():
     assert "apyrobo-worker" not in (ROOT / "docs/TURTLEBOT4.md").read_text()
 
 
-def test_quickstart_links_resolve():
-    text = (ROOT / "docs/QUICKSTART.md").read_text()
-    for target in re.findall(r"\]\(([\w./-]+\.md)\)", text):
-        assert (ROOT / "docs" / target).exists(), target
+@pytest.mark.parametrize(
+    "rel", ["docs/QUICKSTART.md", "docs/pilot_quickstart.md", "docs/quickstart_5min.md"]
+)
+def test_quickstart_links_resolve(rel):
+    text = (ROOT / rel).read_text()
+    for target in re.findall(r"\]\(([\w./-]+\.(?:md|py))\)", text):
+        assert (ROOT / "docs" / target).exists(), f"{rel} links {target}"
+
+
+PROFILE_RE = re.compile(
+    r"docker compose -f docker/docker-compose\.yml --profile ([\w-]+)\s+(?:\\\s*)?"
+    r"(?:up -d|run --rm) ([\w-]+)"
+)
+
+
+@pytest.mark.parametrize("rel", ["docs/pilot_quickstart.md", "docs/quickstart_5min.md"])
+def test_profile_commands_name_real_services_and_profiles(rel):
+    data = yaml.safe_load((ROOT / "docker/docker-compose.yml").read_text())
+    profiles = {p for svc in data["services"].values() for p in svc.get("profiles", [])}
+    found = PROFILE_RE.findall((ROOT / rel).read_text())
+    assert found, f"{rel} has no compose profile command"
+    for profile, svc in found:
+        assert profile in profiles, f"{rel} names compose profile {profile!r}"
+        assert svc in data["services"], f"{rel} names compose service {svc!r}"
 
 
 def test_discover_without_ros2_points_at_the_real_guide():
