@@ -10,7 +10,8 @@ are built on, over a real stdio subprocess, in both protocol eras:
 * the stateless 2026-07-28 era (``server/discover``, no handshake).
 
 Each era lists the tools and calls them: a normal move, an over-limit move
-that is clamped and a no-go move that is refused with a readable error.
+that is clamped and a no-go move that is refused with a readable error
+and its refusal code in ``structuredContent``.
 The module is skipped when the ``mcp`` package is not installed.
 """
 from __future__ import annotations
@@ -130,6 +131,24 @@ def test_no_go_move_is_refused_with_a_readable_error(era):
     assert text.startswith("REFUSED by safety policy")
     assert "collision zone" in text
     assert "did not move" in text
+
+
+def test_no_go_refusal_carries_its_code_to_the_official_client(era):
+    # Both eras here are 2025-06-18 or later, so the refusal carries
+    # structuredContent next to the text. The client must hand it through on
+    # an isError result, not drop it or reject it against an outputSchema.
+    _, out = era
+    refused = out["refused"]
+    assert refused.is_error
+    structured = refused.structured_content
+    assert structured is not None, refused
+    assert structured["status"] == "refused"
+    assert structured["code"] == "collision_zone"
+    assert structured["policy"] == "default+cli"
+    assert structured["violation"]["zone"] == {
+        "x_min": 2.0, "y_min": 2.0, "x_max": 4.0, "y_max": 4.0
+    }
+    assert structured["violation"]["requested_position"] == [3.0, 3.0]
 
 
 def test_safety_report_records_the_clamp_and_the_refusal(era):
