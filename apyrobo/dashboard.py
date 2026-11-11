@@ -21,6 +21,7 @@ Usage (embedded):
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import threading
@@ -411,21 +412,32 @@ def _ts(t: float) -> str:
     return datetime.datetime.fromtimestamp(t).strftime("%H:%M:%S")
 
 
+def _e(value: Any) -> str:
+    """Escape a value for HTML text or a quoted attribute.
+
+    Robot names, URIs, error messages, safety details and skill descriptions
+    come from adapters, policy files and installed skill packages, so they are
+    escaped before they reach the page.
+    """
+    return html.escape(str(value), quote=True)
+
+
 def _render_status_partial(s: dict) -> str:
     if not s.get("connected"):
-        return f'<div class="panel-error">⚠ Not connected: {s.get("error", "")}</div>'
+        return f'<div class="panel-error">⚠ Not connected: {_e(s.get("error", ""))}</div>'
     pos = s.get("position")
-    pos_str = f"({pos['x']}, {pos['y']})" if pos else "—"
+    pos_str = f"({_e(pos['x'])}, {_e(pos['y'])})" if pos else "—"
     batt = s.get("battery_pct")
-    batt_str = f"{batt}%" if batt is not None else "—"
-    caps = ", ".join(c["type"] for c in s.get("capabilities", []))
+    batt_str = f"{_e(batt)}%" if batt is not None else "—"
+    caps = ", ".join(_e(c["type"]) for c in s.get("capabilities", []))
     return (
-        f'<div class="kv"><span>Name</span><span>{s["name"]}</span></div>'
-        f'<div class="kv"><span>URI</span><span>{s["uri"]}</span></div>'
+        f'<div class="kv"><span>Name</span><span>{_e(s["name"])}</span></div>'
+        f'<div class="kv"><span>URI</span><span>{_e(s["uri"])}</span></div>'
         f'<div class="kv"><span>Position</span><span>{pos_str}</span></div>'
         f'<div class="kv"><span>Battery</span><span>{batt_str}</span></div>'
         f'<div class="kv"><span>Capabilities</span><span>{caps}</span></div>'
-        f'<div class="kv"><span>Max speed</span><span>{s.get("max_speed", "—")} m/s</span></div>'
+        f'<div class="kv"><span>Max speed</span>'
+        f'<span>{_e(s.get("max_speed", "—"))} m/s</span></div>'
     )
 
 
@@ -437,9 +449,9 @@ def _render_history_partial(history: list) -> str:
         icon = "✅" if h["status"] == "ok" else "❌"
         rows += (
             f'<tr><td>{_ts(h["timestamp"])}</td>'
-            f'<td class="skill-id">{h["skill_id"]}</td>'
-            f'<td>{icon} {h["status"]}</td>'
-            f'<td>{h["elapsed_ms"]}ms</td></tr>'
+            f'<td class="skill-id">{_e(h["skill_id"])}</td>'
+            f'<td>{icon} {_e(h["status"])}</td>'
+            f'<td>{_e(h["elapsed_ms"])}ms</td></tr>'
         )
     return f"<table><tr><th>Time</th><th>Skill</th><th>Status</th><th>Time</th></tr>{rows}</table>"
 
@@ -451,8 +463,8 @@ def _render_safety_partial(events: list) -> str:
     for e in events[:15]:
         rows += (
             f'<tr><td>{_ts(e["timestamp"])}</td>'
-            f'<td class="warn">{e["event_type"]}</td>'
-            f'<td>{e["detail"]}</td></tr>'
+            f'<td class="warn">{_e(e["event_type"])}</td>'
+            f'<td>{_e(e["detail"])}</td></tr>'
         )
     return f"<table><tr><th>Time</th><th>Event</th><th>Detail</th></tr>{rows}</table>"
 
@@ -463,9 +475,9 @@ def _render_skills_partial(skills: list) -> str:
     rows = ""
     for s in skills[:30]:
         rows += (
-            f'<tr><td class="skill-id">{s["skill_id"]}</td>'
-            f'<td>{s["name"]}</td>'
-            f'<td class="muted">{s.get("description", "")[:60]}</td></tr>'
+            f'<tr><td class="skill-id">{_e(s["skill_id"])}</td>'
+            f'<td>{_e(s["name"])}</td>'
+            f'<td class="muted">{_e(str(s.get("description", ""))[:60])}</td></tr>'
         )
     return (
         f"<div class='muted'>{len(skills)} built-in skills</div>"
@@ -511,7 +523,7 @@ a {{ color: #58a6ff; }}
 <header>
   <span class="dot"></span>
   <h1>APYROBO Dashboard</h1>
-  <span class="uri">{robot_uri}</span>
+  <span class="uri">{_e(robot_uri)}</span>
 </header>
 <div class="grid">
   <div class="panel">
@@ -640,8 +652,8 @@ def _render_dashboard_html(health: dict[str, Any]) -> str:
             state = tier.get("circuit_state", "unknown")
             color = "#4CAF50" if state == "closed" else "#f44336" if state == "open" else "#ff9800"
             tiers_html += (
-                f"<tr><td>{tier['name']}</td>"
-                f"<td style='color:{color}'>{state}</td>"
+                f"<tr><td>{_e(tier['name'])}</td>"
+                f"<td style='color:{color}'>{_e(state)}</td>"
                 f"<td>{tier.get('avg_latency_ms', 0):.0f}ms</td>"
                 f"<td>{tier.get('error_rate', 0):.1%}</td>"
                 f"<td>{tier.get('total_calls', 0)}</td></tr>"
@@ -673,7 +685,7 @@ a {{ color: #00d4ff; }}
 </style></head>
 <body>
 <h1><span class="status"></span>APYROBO Dashboard</h1>
-<p>Status: {health.get('status', 'unknown')}</p>
+<p>Status: {_e(health.get('status', 'unknown'))}</p>
 
 <h2>Inference Tiers</h2>
 <table>
