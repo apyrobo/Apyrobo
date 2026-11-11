@@ -231,6 +231,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo voice` (and `VoiceAgent`) no longer runs a rule-planner plan that
+  drops part of the heard task: 'go to (3, 3) then go to (-2, 1)' drove only to
+  (-2, 1), and 'go 2 meters forward' ended "completed" with nothing moved. With
+  the rule planner it now makes the same checks as `apyrobo mcp`, `plan` and
+  `execute`: the task is not run, the turn's result is "failed" with the
+  reason, and the reason is spoken and printed.
 - The operations API server (`apyrobo.operations`) no longer reports a
   `POST /tasks` task "completed" when nothing ran: with no agent configured, no
   `robot_id`, or a robot not on the swarm bus, the task now ends "failed" with

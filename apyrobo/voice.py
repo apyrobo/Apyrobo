@@ -38,6 +38,38 @@ def _through_enforcer(robot: Any, safety_policy: Any = None) -> Any:
     return SafetyEnforcer(robot, policy=policy)
 
 
+# The MCP wording names MCP tools and the server; a voice user has neither.
+_MCP_ONLY_HINT = "use move_to and rotate directly, or start the server with --provider llm"
+
+
+def _run_task(agent: Any, robot: Any, text: str, robot_uri: str | None = None) -> Any:
+    """Run a heard task, held to the checks ``apyrobo mcp`` makes.
+
+    The rule planner drives to one place per step and falls back to a status
+    report on a task it does not recognise, so "go to (3, 3) then go to
+    (-2, 1)" would drive only to (-2, 1), and "go 2 meters forward" would end
+    in "completed" with nothing done. With the rule planner, such a task is not
+    run: the result is "failed" with the reason ``apyrobo mcp`` gives. Other
+    tasks run with their coordinates spelled the way the planner reads them.
+    """
+    from apyrobo.skills.agent import RuleBasedProvider
+
+    if not isinstance(getattr(agent, "provider", None), RuleBasedProvider):
+        return agent.execute(task=text, robot=robot)
+
+    from apyrobo.core.schemas import TaskResult, TaskStatus
+    from apyrobo.mcp_server import RobotToolbox
+
+    uri = robot_uri or str(getattr(robot, "robot_id", "this robot"))
+    toolbox = RobotToolbox(robot, robot, agent, uri)
+    _, plan = toolbox._plan(text)
+    reason = plan.get("reason")
+    if reason is not None:
+        reason = reason.replace(_MCP_ONLY_HINT, "use an LLM provider (--provider llm)")
+        return TaskResult(task_name=text, status=TaskStatus.FAILED, error=reason)
+    return agent.execute(task=toolbox._rule_planner_text(text), robot=robot)
+
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
@@ -434,8 +466,10 @@ class VoiceAgent:
         stt: VoiceAdapter,
         tts: VoiceAdapter | None = None,
         safety_policy: Any = None,
+        robot_uri: str | None = None,
     ) -> None:
         self._agent = agent
+        self._robot_uri = robot_uri
         # Every task runs through a SafetyEnforcer (see _through_enforcer).
         self._robot = _through_enforcer(robot, safety_policy)
         self._stt = stt
@@ -459,7 +493,7 @@ class VoiceAgent:
         if not text:
             return ""
 
-        result = self._agent.execute(task=text, robot=self._robot)
+        result = _run_task(self._agent, self._robot, text, self._robot_uri)
         summary = (
             f"Task {result.status}: "
             f"{result.steps_completed}/{result.steps_total} steps completed"
@@ -628,6 +662,7 @@ def voice_loop(
     on_listen: Any = None,
     on_result: Any = None,
     safety_policy: Any = None,
+    robot_uri: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Run a voice interaction loop: listen -> plan+execute -> speak result.
@@ -642,6 +677,11 @@ def voice_loop(
         safety_policy: SafetyPolicy or registered policy name every task is
             enforced with (None = "default"); a robot that is already a
             SafetyEnforcer is used as it is
+        robot_uri: The robot's URI, named in a refusal (None = its robot_id)
+
+    With the rule planner, a task it would drop part of, or not read, is not
+    run: its turn's result is "failed" with the reason, as ``apyrobo mcp``
+    refuses it.
 
     Returns:
         List of turn records: [{"input": str, "result": TaskResult, "summary": str}]
@@ -665,7 +705,7 @@ def voice_loop(
             break
 
         # Execute
-        result = agent.execute(task=text, robot=robot)
+        result = _run_task(agent, robot, text, robot_uri)
         summary = f"Task {result.status.value}: {result.steps_completed}/{result.steps_total} steps completed"
         if result.error:
             summary += f". Error: {result.error}"

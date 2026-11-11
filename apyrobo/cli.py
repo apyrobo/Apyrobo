@@ -1579,6 +1579,8 @@ def cmd_voice(args: argparse.Namespace) -> None:
         def on_result(result: Any) -> None:
             print(f"  Result: {result.status.value} "
                   f"({result.steps_completed}/{result.steps_total})")
+            if result.error:
+                print(f"  {result.error}")
 
         turns = voice_loop(
             agent=agent,
@@ -1587,6 +1589,7 @@ def cmd_voice(args: argparse.Namespace) -> None:
             max_turns=args.max_turns,
             on_listen=on_listen,
             on_result=on_result,
+            robot_uri=args.robot,
         )
         print("-" * 50)
         print(f"Completed {len(turns)} turn(s)")
