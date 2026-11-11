@@ -231,6 +231,17 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The REST gateway's OpenAPI docs (`/docs`, `/openapi.json`) reported version
+  0.4.0; they now report the installed package version.
+- The `SafetyEnforcer` odometry watchdog no longer stops a robot that is still
+  on its way to a goal more than `watchdog_tolerance` (2 m) away. It measured
+  the distance left to the target, so any longer move was halted at the first
+  check; it now measures how far the robot has fallen back from the closest it
+  has been, and after arrival, its drift off the target.
+- The odometry watchdog's timer no longer keeps an enforcer nobody holds alive:
+  it held the enforcer strongly and re-armed every `watchdog_interval` until
+  `stop()`, `cancel()` or `disconnect()`, so a dropped enforcer kept polling its
+  robot on its own timer thread.
 - `docs/pilot_quickstart.md` and the Gazebo section of
   `docs/quickstart_5min.md` sent users into
   `docker compose -f docker/docker-compose.yml exec apyrobo bash` (no such
