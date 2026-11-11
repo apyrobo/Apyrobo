@@ -449,6 +449,10 @@ class SafetyEnforcer:
 
         # SF-05: Watchdog state
         self._last_commanded_position: tuple[float, float] | None = None
+        # Closest the robot has been to the commanded position since the
+        # move was sent. Divergence is measured from here, so a robot that
+        # is still on its way is not taken for one that went astray.
+        self._closest_to_target: float | None = None
         self._watchdog_active = False
         self._watchdog_timer: threading.Timer | None = None
         self._watchdog_triggered_count = 0
@@ -684,6 +688,8 @@ class SafetyEnforcer:
 
         # --- SF-05: Track commanded position for watchdog ---
         self._last_commanded_position = (x, y)
+        self._closest_to_target = None
+        self._observe_progress()
         self._move_start_time = time.time()
 
         # --- SF-01: Start move timeout timer ---
@@ -701,6 +707,9 @@ class SafetyEnforcer:
         self.last_speed = speed
         self.moves_sent += 1
         self._robot.move(x=x, y=y, speed=speed)
+        # A move that blocks until arrival leaves the robot at the target:
+        # from here on, drifting away by more than the tolerance trips.
+        self._observe_progress()
 
     def _adapter_default_speed(self) -> float | None:
         """The robot's speed for a move sent without one, or None if unknown."""
@@ -975,11 +984,40 @@ class SafetyEnforcer:
         self._watchdog_timer.daemon = True
         self._watchdog_timer.start()
 
+    def _observe_progress(self) -> None:
+        """Note how close the robot is to its target now, if it can say."""
+        try:
+            self._divergence(self._robot.get_position())
+        except Exception as e:  # a position read must never fail a move
+            logger.debug("Watchdog could not read the position: %s", e)
+
+    def _divergence(self, actual: tuple[float, float]) -> float:
+        """
+        How far *actual* has fallen back from the closest approach to the
+        commanded position, in metres.
+
+        Measured against the distance left to the target, a robot driving
+        to a goal 5 m away was "diverged" by 5 m the moment it set off, and
+        any move that still had more than watchdog_tolerance to go at the
+        first check was stopped mid-way. A robot making progress gets
+        closer, so this stays at 0; once it has arrived, it is the
+        distance it has drifted off the target.
+        """
+        assert self._last_commanded_position is not None
+        cx, cy = self._last_commanded_position
+        dist = math.sqrt((actual[0] - cx) ** 2 + (actual[1] - cy) ** 2)
+        closest = self._closest_to_target
+        if closest is None or dist < closest:
+            self._closest_to_target = closest = dist
+        return dist - closest
+
     def _watchdog_check(self) -> None:
         """
         Timer callback: compare actual odometry vs commanded position.
 
-        If divergence exceeds tolerance, stop the robot, record audit,
+        If the robot has fallen back from its closest approach to the
+        commanded position by more than the tolerance (see _divergence),
+        stop the robot, record audit,
         and raise SafetyViolation. Otherwise, reschedule for the next check.
         """
         if self._last_commanded_position is None:
@@ -987,8 +1025,7 @@ class SafetyEnforcer:
             return
 
         actual = self._robot.get_position()
-        cx, cy = self._last_commanded_position
-        dist = math.sqrt((actual[0] - cx) ** 2 + (actual[1] - cy) ** 2)
+        dist = self._divergence(actual)
 
         if dist > self._policy.watchdog_tolerance:
             self._watchdog_triggered_count += 1
@@ -1020,16 +1057,17 @@ class SafetyEnforcer:
         """
         Compare actual odometry position against last commanded position.
 
-        Returns a dict with divergence info, or None if everything is OK.
+        ``divergence_m`` is how far the robot has fallen back from its
+        closest approach to that position (see _divergence), so a robot
+        still on its way is not stopped. Returns a dict with divergence
+        info, or None if everything is OK.
         Calls stop() if divergence exceeds watchdog_tolerance.
         """
         if self._last_commanded_position is None:
             return None
 
         actual = self._robot.get_position()
-        cmd_x, cmd_y = self._last_commanded_position
-        act_x, act_y = actual
-        divergence = math.sqrt((act_x - cmd_x) ** 2 + (act_y - cmd_y) ** 2)
+        divergence = self._divergence(actual)
 
         result = {
             "commanded": self._last_commanded_position,
