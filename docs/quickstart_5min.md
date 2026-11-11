@@ -151,31 +151,28 @@ print(f"Result: {result.status}")
 
 | Goal | Guide |
 |------|-------|
-| Write custom skills | [Skill Authoring Guide](docs/skill_authoring.md) |
-| Add new robot hardware | [Adapter Authoring Guide](docs/adapter_authoring.md) |
-| Run with real ROS 2 | [Simulation and ROS 2 setup](docs/QUICKSTART.md) |
-| Understand the architecture | [Architecture Overview](docs/architecture.md) |
-| API reference | [API Docs](docs/api_reference.md) |
+| Write custom skills | [Skill Authoring Guide](skill_authoring.md) |
+| Add new robot hardware | [Adapter Authoring Guide](adapter_authoring.md) |
+| Run with real ROS 2 | [Simulation and ROS 2 setup](QUICKSTART.md) |
+| Understand the architecture | [Architecture Overview](architecture.md) |
+| API reference | [API Docs](api_reference.md) |
 
 ---
 
-## Full Docker Setup (with ROS 2 + Gazebo)
+## Simulated Nav2 in Gazebo (Linux, Docker)
 
-For the full simulation experience with Gazebo:
+The same stack CI checks on every commit: a TurtleBot3 in Gazebo, Nav2 in
+SLAM mode, and a natural-language task sent as a real `NavigateToPose` goal.
+Gazebo Classic does not run under Docker Desktop on macOS.
 
 ```bash
-# Build the Docker container (downloads ROS 2 + Gazebo + deps)
-docker compose -f docker/docker-compose.yml build
+# Start gzserver + robot_state_publisher + Nav2 (SLAM)
+docker compose -f docker/docker-compose.yml --profile gazebo-nav up -d gazebo-nav-sim
 
-# Start and enter the container
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml exec apyrobo bash
-
-# Launch Gazebo + Nav2 + APYROBO
-bash scripts/launch.sh
-
-# Run integration tests against live Gazebo
-python3 scripts/integration_test.py
+# Run the narrated demo against it
+docker compose -f docker/docker-compose.yml --profile gazebo-nav \
+    run --rm gazebo-nav-demo
 ```
 
-See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the simulated Nav2 demo and ROS 2 setup.
+Step by step, with CI's end-to-end check: [pilot_quickstart.md](pilot_quickstart.md).
+Running on a real ROS 2 robot: [QUICKSTART.md](QUICKSTART.md).

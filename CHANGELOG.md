@@ -231,6 +231,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `docs/pilot_quickstart.md` and the Gazebo section of
+  `docs/quickstart_5min.md` sent users into
+  `docker compose -f docker/docker-compose.yml exec apyrobo bash` (no such
+  service) and a tmux/`launch.sh` flow inside it. Both now walk through the
+  simulated Nav2 stack CI runs (the `gazebo-nav` profile: start the sim, run
+  the demo, run the end-to-end check), and the broken `docs/…` links in
+  `quickstart_5min.md` are fixed.
 - `apyrobo doctor` no longer tells users without `rclpy` to run
   `docker compose -f docker/docker-compose.yml exec apyrobo bash` (that file
   has no `apyrobo` service, and the `apyrobo-api` image has no ROS 2). The
