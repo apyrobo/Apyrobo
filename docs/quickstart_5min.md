@@ -153,7 +153,7 @@ print(f"Result: {result.status}")
 |------|-------|
 | Write custom skills | [Skill Authoring Guide](docs/skill_authoring.md) |
 | Add new robot hardware | [Adapter Authoring Guide](docs/adapter_authoring.md) |
-| Run with real ROS 2 | [Full Docker Setup](docs/QUICKSTART.md) |
+| Run with real ROS 2 | [Simulation and ROS 2 setup](docs/QUICKSTART.md) |
 | Understand the architecture | [Architecture Overview](docs/architecture.md) |
 | API reference | [API Docs](docs/api_reference.md) |
 
@@ -178,4 +178,4 @@ bash scripts/launch.sh
 python3 scripts/integration_test.py
 ```
 
-See the [full Docker quickstart](docs/QUICKSTART.md) for GUI setup and troubleshooting.
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the simulated Nav2 demo and ROS 2 setup.
