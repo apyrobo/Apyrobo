@@ -493,6 +493,34 @@ class RuleBasedProvider(AgentProvider):
         )
         return any(word in text for word in pick_words)
 
+    # A way back with no place of its own: "and come back", "then return",
+    # "and back", "go home", "back to the start".
+    _RETURN_LEG = re.compile(
+        r"\b(?:come|go|drive|head|get|walk|move|turn)\s+back\b"
+        r"|\breturn(?:s|ing)?\b"
+        r"|\b(?:and|then)\s+back\b"
+        r"|\b(?:go|come|head|drive|back)\s+home\b"
+        r"|\bround[- ]trip\b"
+    )
+
+    @classmethod
+    def drops_return_leg(cls, task: str) -> bool:
+        """True when ``task`` names a place, then asks to come back with no place.
+
+        The planner drives to the places a task names, one per step, so in
+        "go to (1, 1) and come back" the way back has no target and would be
+        dropped. A way back that names its place ("then return to (0, 0)")
+        is a second target, which the many-targets check handles; a way back
+        alone ("return to base") names no place at all.
+        """
+        text = task.lower()
+        found = cls._RETURN_LEG.search(text)
+        if found is None:
+            return False
+        before = cls._extract_coordinates(text[: found.start()])
+        after = cls._extract_coordinates(text[found.end():])
+        return bool(before) and not after
+
     def plan(self, task: str, available_skills: list[dict[str, Any]],
              capabilities: list[str]) -> list[dict[str, Any]]:
         task_lower = task.lower()

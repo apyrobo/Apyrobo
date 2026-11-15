@@ -362,6 +362,10 @@ A drive followed by a pick-up ("go to (5, 3) then pick up the box") is refused
 the same way: it used to plan the drive alone, drop the pick-up and report
 `completed`. Say where to pick up instead, "pick up the box at (5, 3)", which
 drives there and picks.
+A drive followed by a way back with no place ("go to (1, 1) and come back",
+"then return", "and back", "then go home") is refused too: it used to drive
+out, drop the way back and report `completed` with the robot still out there.
+Send each leg as its own call with its coordinates.
 
 `plan_task` checks each drive in the plan against the policy without moving:
 a target in a no-go zone, a target outside every allowed area, and a straight
