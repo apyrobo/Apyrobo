@@ -197,6 +197,41 @@ def _refusal_content(policy: str, violation: dict[str, Any] | None) -> dict[str,
     }
 
 
+# What an agent can do next, for refusals where "Choose a different target."
+# is not the whole answer. Added after the existing sentence, so the text
+# a client already matches on stays a prefix.
+_NEXT_STEP = {
+    "collision_zone_path": (
+        "The route is checked as a straight line from where the robot starts, "
+        "so a target past the zone may still be reached in shorter moves whose "
+        "straight lines go around it."
+    ),
+    "allowed_area_path": (
+        "The route is checked as a straight line from where the robot starts, "
+        "so the target may still be reached in shorter moves that each stay "
+        "inside the allowed areas."
+    ),
+    "path_unchecked": (
+        "A different target will not help while the position is unknown: call "
+        "robot_status, and send the move again once it reports a position."
+    ),
+    "battery_below_minimum": (
+        "No move will run until the battery is back above that minimum: charge "
+        "the robot before sending another move."
+    ),
+    "battery_insufficient": (
+        "A nearer target may still be in range; otherwise charge the robot first."
+    ),
+}
+
+
+def _next_step(violation: dict[str, Any] | None) -> str:
+    """The sentence a refusal adds after 'Choose a different target.', or ''."""
+    code = (violation or {}).get("type")
+    extra = _NEXT_STEP.get(code) if isinstance(code, str) else None
+    return f" {extra}" if extra else ""
+
+
 class AuditLog:
     """``--audit-log``: one JSON line per motion decision, on disk at once.
 
@@ -664,11 +699,13 @@ class RobotToolbox:
             action()
         except SafetyViolation as exc:
             recorded = self.enforcer.violations[violations_before:]
+            violation = recorded[-1] if recorded else None
             policy = self.enforcer.policy.name
             raise ToolError(
                 f"REFUSED by safety policy '{policy}': {exc}. "
-                "The robot did not move. Choose a different target.",
-                structured=_refusal_content(policy, recorded[-1] if recorded else None),
+                "The robot did not move. Choose a different target."
+                + _next_step(violation),
+                structured=_refusal_content(policy, violation),
             ) from exc
         return self.enforcer.interventions[before:]
 
@@ -957,12 +994,13 @@ class RobotToolbox:
             problem = check(x, y, start)
             if problem is not None:
                 policy = self.enforcer.policy.name
+                violation = detail(x, y, start) if callable(detail) else None
                 text = (
                     f"REFUSED by safety policy '{policy}' at step "
                     f"{number}: {problem}. {tail} Choose a different target."
+                    + _next_step(violation if isinstance(violation, dict) else None)
                 )
                 structured = None
-                violation = detail(x, y, start) if callable(detail) else None
                 if isinstance(violation, dict):
                     structured = _refusal_content(policy, violation)
                     structured.update(step=number, steps_completed=0, steps_total=len(steps))
@@ -1013,6 +1051,7 @@ class RobotToolbox:
                     f"{step}: "
                     f"{refusal.get('message', refusal.get('type'))}. "
                     f"{still}Choose a different target."
+                    + _next_step(refusal)
                 )
                 outcome["refusal"] = refusal
                 structured = _refusal_content(policy, refusal)
