@@ -119,6 +119,12 @@ _TWO_DIRECTIONS = (
     "robot will not move. Send one turn per call with one direction, like 'turn "
     "right 90 degrees', or call rotate with angle_rad (positive turns left)."
 )
+_DROPPED_PICK = (
+    "Not planned: this task asks for a drive and then a pick-up, and the rule "
+    "planner would make only the drive and drop the pick-up, so the robot will "
+    "not move. Say where to pick up in one task, like 'pick up the box at (5, 3)', "
+    "which drives there and picks."
+)
 _REPEAT_WORD = re.compile(r"\b(?:twice|thrice|again|times)\b")
 _NO_ANGLE = (
     "Not planned: this task asks to turn but gives no angle with a unit, and the "
@@ -843,6 +849,18 @@ class RobotToolbox:
             # Its last resort is a status report: for a task that did not ask
             # for one, that would end in "completed" with nothing done.
             ids = [step["skill_id"].rsplit("_", 1)[0] for step in steps]
+            # It plans the first kind of task it recognises: "go to (5, 3) then
+            # pick up the box" planned the drive alone, dropped the pick-up with
+            # no word and reported completed.
+            if (
+                "navigate_to" in ids
+                and "pick_object" not in ids
+                and RuleBasedProvider.is_pick_ask(text)
+            ):
+                plan.update(
+                    steps=[], confidence=0.0, can_proceed=False, reason=_DROPPED_PICK
+                )
+                return graph, plan
             if ids == ["report_status"] and not RuleBasedProvider.is_status_ask(text):
                 turn = RuleBasedProvider._TURN_WORD.search(text.lower())
                 reason = _NO_ANGLE if turn else _NOT_UNDERSTOOD

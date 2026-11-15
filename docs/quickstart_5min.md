@@ -80,7 +80,7 @@ robot = Robot.discover("mock://turtlebot4")
 agent = Agent(provider="rule")
 
 # Natural language → skill plan → execution
-result = agent.execute("go to position 5, 3 then pick up the object", robot)
+result = agent.execute("pick up the object at (5, 3)", robot)
 print(f"Task: {result.task_name}")
 print(f"Status: {result.status}")
 print(f"Steps: {result.steps_completed}/{result.steps_total}")

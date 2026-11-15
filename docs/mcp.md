@@ -346,6 +346,10 @@ rest and report `completed`. A turn that names both directions ("rotate 90
 degrees left then right", "turn right 90 degrees and back left", "left or
 right") is refused too: it used to turn one way, sometimes the wrong one.
 "counterclockwise", "anti-clockwise" and "anti clockwise" all turn left.
+A drive followed by a pick-up ("go to (5, 3) then pick up the box") is refused
+the same way: it used to plan the drive alone, drop the pick-up and report
+`completed`. Say where to pick up instead, "pick up the box at (5, 3)", which
+drives there and picks.
 
 `plan_task` checks each drive in the plan against the policy without moving:
 a target in a no-go zone, a target outside every allowed area, and a straight
