@@ -166,6 +166,24 @@ MCP_NO_GO = (0.0, 0.0, 1.0, 1.0)
 MCP_NO_GO_TARGET = (0.5, 0.5)
 
 
+# The adapter's node is spun by a MultiThreadedExecutor on its own thread.
+# Destroying a subscription or client from the test thread while that
+# executor waits on it raises InvalidHandle inside the spin thread
+# (rclpy Humble), which ends the thread: the node then answers nothing for
+# the rest of the session, and the next readiness check reports every Nav2
+# node as 'no answer'. So test helpers never destroy what they create on the
+# shared node: subscriptions stay alive with their callbacks switched off, and
+# the get_state clients are created once and reused.
+_KEPT: list[Any] = []
+_GET_STATE_CLIENTS: dict[tuple[int, str], Any] = {}
+
+
+def _keep_subscription(sub: Any) -> Any:
+    """Hold a reference so the subscription is never garbage-collected mid-spin."""
+    _KEPT.append(sub)
+    return sub
+
+
 @contextlib.contextmanager
 def _odom_speeds(adapter: Any):
     """Collect (time, forward speed) from /odom while the block runs."""
@@ -174,16 +192,20 @@ def _odom_speeds(adapter: Any):
     from apyrobo.core.ros2_bridge import _sensor_qos
 
     speeds: list[tuple[float, float]] = []
-    sub = adapter._node.create_subscription(
-        Odometry, "/odom",
-        lambda msg: speeds.append((time.monotonic(), abs(msg.twist.twist.linear.x))),
-        _sensor_qos(),
-    )
+    collecting = threading.Event()
+    collecting.set()
+
+    def on_odom(msg: Any) -> None:
+        if collecting.is_set():
+            speeds.append((time.monotonic(), abs(msg.twist.twist.linear.x)))
+
+    _keep_subscription(adapter._node.create_subscription(
+        Odometry, "/odom", on_odom, _sensor_qos(),
+    ))
     try:
         yield speeds
     finally:
-        with contextlib.suppress(Exception):
-            adapter._node.destroy_subscription(sub)
+        collecting.clear()
 
 
 def _controller_topic(adapter: Any) -> str:
@@ -200,14 +222,20 @@ def _commanded_speeds(adapter: Any, topic: str):
     from geometry_msgs.msg import Twist
 
     speeds: list[float] = []
-    sub = adapter._node.create_subscription(
-        Twist, topic, lambda msg: speeds.append(abs(msg.linear.x)), 10,
-    )
+    collecting = threading.Event()
+    collecting.set()
+
+    def on_twist(msg: Any) -> None:
+        if collecting.is_set():
+            speeds.append(abs(msg.linear.x))
+
+    _keep_subscription(adapter._node.create_subscription(
+        Twist, topic, on_twist, 10,
+    ))
     try:
         yield speeds
     finally:
-        with contextlib.suppress(Exception):
-            adapter._node.destroy_subscription(sub)
+        collecting.clear()
 
 
 def _peak_moving_average(samples: list[tuple[float, float]], window_s: float) -> float:
@@ -452,19 +480,20 @@ def _nav2_states(adapter: Any) -> dict[str, str]:
     node = adapter._node
     states: dict[str, str] = {}
     for name in NAV2_LIFECYCLE_NODES:
-        client = node.create_client(GetState, f"/{name}/get_state")
-        try:
-            if not client.wait_for_service(timeout_sec=2.0):
-                states[name] = "no get_state service"
-                continue
-            future = client.call_async(GetState.Request())
-            deadline = time.time() + 2.0
-            while not future.done() and time.time() < deadline:
-                time.sleep(0.05)
-            result = future.result() if future.done() else None
-            states[name] = result.current_state.label if result else "no answer"
-        finally:
-            node.destroy_client(client)
+        key = (id(node), name)
+        client = _GET_STATE_CLIENTS.get(key)
+        if client is None:
+            client = node.create_client(GetState, f"/{name}/get_state")
+            _GET_STATE_CLIENTS[key] = client
+        if not client.wait_for_service(timeout_sec=2.0):
+            states[name] = "no get_state service"
+            continue
+        future = client.call_async(GetState.Request())
+        deadline = time.time() + 2.0
+        while not future.done() and time.time() < deadline:
+            time.sleep(0.05)
+        result = future.result() if future.done() else None
+        states[name] = result.current_state.label if result else "no answer"
     return states
 
 
