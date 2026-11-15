@@ -7,6 +7,7 @@ Includes throughput benchmarks and regression gating via benchmark.json.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import statistics
 import time
@@ -17,10 +18,9 @@ import pytest
 
 from apyrobo.core.robot import Robot
 from apyrobo.core.schemas import TaskStatus
-from apyrobo.skills.skill import Skill, SkillStatus, BUILTIN_SKILLS
-from apyrobo.skills.executor import SkillGraph, SkillExecutor
 from apyrobo.skills.agent import Agent
-
+from apyrobo.skills.executor import SkillExecutor, SkillGraph
+from apyrobo.skills.skill import BUILTIN_SKILLS, Skill
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -232,58 +232,94 @@ class TestThroughputBenchmark:
         }
         self._save_benchmark(benchmark_data)
 
-    def test_regression_gate(self, mock_robot: Robot) -> None:
-        """
-        Run the same 100-task workload six times back-to-back and verify
-        the last three passes aren't more than 20% slower than the first
-        three.
+    # Regression gate settings. The gate looks for throughput that decays
+    # as tasks pile up (state that grows with every execute, a leak that
+    # makes each task slower than the last). It scores PASSES timed passes
+    # before and after SOAK_TASKS more executes, by the median pass of each.
+    GATE_PASSES = 5
+    GATE_TASKS_PER_PASS = 100
+    GATE_SOAK_TASKS = 1000
+    GATE_MIN_RATIO = 0.5
 
-        Both measurements happen inside this one function, with nothing
-        else running in between. This used to compare against
-        benchmark.json's "baseline", which was actually just whatever
-        test_throughput_100_tasks measured moments earlier in the same
-        session -- with test_parallel_swarm_throughput (SwarmBus,
-        SwarmCoordinator) running in between. That intervening test
-        exercises the same shared Agent/SkillExecutor code through
-        different call shapes, which reproducibly dragged the second
-        measurement down to ~50% of the first on Python 3.11 CI runners
-        specifically (a plain warm-up before timing did not fix it).
-        Removing the intervening test from the comparison entirely
-        removes the interference, whatever its exact cause.
+    @classmethod
+    def _gate_ratio(cls, run_task: Any) -> tuple[float, list[float], list[float]]:
+        """Time ``run_task`` before and after a soak; return late/early.
 
-        Each half is scored by its median pass. One pass against one pass
-        failed now and then in CI (236 vs 1195 tasks/sec on a shared runner),
-        because a single stall decides the result. Scoring by the fastest
-        pass failed too (passes 2108, 1664, 1400, then 1468, 1435, 1484),
-        because one lucky first pass sets the bar. The median ignores one
-        odd pass in either direction. A real slowdown still fails: it hits
-        all three later passes, and the 20% limit is unchanged.
+        ``run_task()`` runs one task and returns True when it completed.
         """
-        agent = Agent(provider="rule")
 
         def measure() -> float:
             start = time.perf_counter()
             completed = 0
-            for _ in range(100):
-                result = agent.execute("go to 1 1", mock_robot)
-                if result.status == TaskStatus.COMPLETED:
+            for _ in range(cls.GATE_TASKS_PER_PASS):
+                if run_task():
                     completed += 1
-            elapsed = time.perf_counter() - start
-            return completed / elapsed
+            return completed / (time.perf_counter() - start)
 
-        passes = [measure() for _ in range(6)]
-        baseline_tps = statistics.median(passes[:3])
-        current_tps = statistics.median(passes[3:])
+        early = [measure() for _ in range(cls.GATE_PASSES)]
+        for _ in range(cls.GATE_SOAK_TASKS):
+            run_task()
+        late = [measure() for _ in range(cls.GATE_PASSES)]
+        return statistics.median(late) / statistics.median(early), early, late
 
-        threshold = baseline_tps * 0.8  # 20% degradation limit
+    def test_regression_gate(self, mock_robot: Robot) -> None:
+        """
+        Throughput must not decay as tasks pile up: the median of five
+        100-task passes after another 1000 tasks must stay above half the
+        median of five passes before them.
+
+        History. This first compared against benchmark.json's "baseline"
+        (really just test_throughput_100_tasks moments earlier, with the
+        swarm test in between, which dragged the second number to ~50% on
+        Python 3.11 runners). Then it compared three passes against the next
+        three, back to back, with a 20% limit; that still turned CI red on
+        shared runners (1058 < 1078 tasks/sec on main at 33c5fa0), because
+        three ~0.1 s passes in a row can all land in one slow stretch of a
+        loaded runner. Run to run noise of 20-30% is normal there.
+
+        Now the two halves are 1000 tasks apart and the limit is 50%. A
+        slowdown that grows with every task (what this gate is for) gets
+        much worse over those 1000 tasks, so it still fails:
+        test_regression_gate_catches_decay checks that with a task whose
+        cost grows. A one-off stall has to cover three of the five later
+        passes and halve them to fail it. Absolute speed is
+        test_throughput_100_tasks' job (100 tasks under 5 s).
+        """
+        agent = Agent(provider="rule")
+
+        def run_task() -> bool:
+            result = agent.execute("go to 1 1", mock_robot)
+            return result.status == TaskStatus.COMPLETED
+
+        ratio, early, late = self._gate_ratio(run_task)
         print(
-            f"\nRegression gate: passes={[round(p, 1) for p in passes]}, "
-            f"baseline={baseline_tps:.1f} tps, "
-            f"current={current_tps:.1f} tps, threshold={threshold:.1f} tps"
+            f"\nRegression gate: early={[round(p, 1) for p in early]}, "
+            f"late={[round(p, 1) for p in late]}, ratio={ratio:.2f} "
+            f"(limit {self.GATE_MIN_RATIO})"
         )
-        assert current_tps >= threshold, (
-            f"Throughput regression: {current_tps:.1f} tasks/sec < "
-            f"{threshold:.1f} tasks/sec (80% of baseline {baseline_tps:.1f})"
+        assert ratio >= self.GATE_MIN_RATIO, (
+            f"Throughput decayed as tasks piled up: late median is "
+            f"{ratio:.0%} of early median (limit {self.GATE_MIN_RATIO:.0%}); "
+            f"early={[round(p, 1) for p in early]}, "
+            f"late={[round(p, 1) for p in late]}"
+        )
+
+    def test_regression_gate_catches_decay(self) -> None:
+        """The gate fails a task whose cost grows with every run."""
+        history: list[int] = []
+
+        def leaky_task() -> bool:
+            # Each run scans everything earlier runs left behind: the kind
+            # of per-task growth the gate is there to catch.
+            history.append(len(history))
+            total = 0
+            for item in history:
+                total += item
+            return total >= 0
+
+        ratio, _, _ = self._gate_ratio(leaky_task)
+        assert ratio < self.GATE_MIN_RATIO, (
+            f"gate missed a growing per-task cost (ratio {ratio:.2f})"
         )
 
     @staticmethod
@@ -291,9 +327,7 @@ class TestThroughputBenchmark:
         """Merge benchmark data into benchmark.json."""
         existing = {}
         if BENCHMARK_PATH.exists():
-            try:
+            with contextlib.suppress(json.JSONDecodeError, OSError):
                 existing = json.loads(BENCHMARK_PATH.read_text())
-            except (json.JSONDecodeError, OSError):
-                pass
         existing.update(data)
         BENCHMARK_PATH.write_text(json.dumps(existing, indent=2))
