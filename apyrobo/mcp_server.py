@@ -125,6 +125,12 @@ _DROPPED_PICK = (
     "not move. Say where to pick up in one task, like 'pick up the box at (5, 3)', "
     "which drives there and picks."
 )
+_DROPPED_RETURN = (
+    "Not planned: this task asks the robot to come back, but names no place to "
+    "come back to, and the rule planner would make only the drive out and drop "
+    "the way back, so the robot will not move. Send each leg as its own call "
+    "with its coordinates, like 'go to (1, 1)', then 'go to (0, 0)'."
+)
 _REPEAT_WORD = re.compile(r"\b(?:twice|thrice|again|times)\b")
 _NO_ANGLE = (
     "Not planned: this task asks to turn but gives no angle with a unit, and the "
@@ -896,6 +902,13 @@ class RobotToolbox:
             ):
                 plan.update(
                     steps=[], confidence=0.0, can_proceed=False, reason=_DROPPED_PICK
+                )
+                return graph, plan
+            # "go to (1, 1) and come back" planned the drive out alone, dropped
+            # the way back with no word and reported completed.
+            if "navigate_to" in ids and RuleBasedProvider.drops_return_leg(text):
+                plan.update(
+                    steps=[], confidence=0.0, can_proceed=False, reason=_DROPPED_RETURN
                 )
                 return graph, plan
             if ids == ["report_status"] and not RuleBasedProvider.is_status_ask(text):

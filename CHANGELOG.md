@@ -239,6 +239,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A rule-planned task such as 'go to (1, 1) and come back' (or 'then return',
+  'and back', 'then go home') planned the drive out alone and reported
+  completed with the robot left at (1, 1). `apyrobo mcp`, `plan` and `execute`
+  now refuse it with a 'Not planned:' reason that says to send each leg as its
+  own call with its coordinates.
 - A rule-planned task such as 'go to (5, 3) then pick up the object' planned
   the drive alone and reported completed with nothing picked up. `apyrobo
   mcp`, `plan` and `execute` now refuse it with a 'Not planned:' reason that
