@@ -799,5 +799,8 @@ plan the policy refuses is refused before the question is asked, and that
 refusal carries the same fields with `steps_completed` 0. Unit-tested on
 `mock://` (`tests/test_mcp_refusal_codes.py`,
 `tests/test_mcp_execute_task_refusal_codes.py`,
-`tests/test_mcp_confirm_refusal_codes.py`); whether a desktop host
-shows `structuredContent` on an error has not been checked.
+`tests/test_mcp_confirm_refusal_codes.py`), and a refused `move_to`'s
+`status`, `code` and `violation` are checked in CI as the official MCP
+Python SDK client receives them, on 2025-11-25 and 2026-07-28
+(`tests/test_mcp_official_client.py`); whether a desktop host shows
+`structuredContent` on an error has not been checked.
