@@ -164,7 +164,7 @@ def main() -> None:
     print("=" * 65)
     print()
     print("  Next steps:")
-    print("  • Add `apyrobo policy add \"keep 1.5m away from humans\"` for safe co-working")
+    print("  • Cap speed near people: `apyrobo policy add \"never exceed 0.5 m/s near humans\"`")
     print("  • Connect a real robot: `import apyrobo.core.unitree_adapter`, then")
     print("    `Robot.discover('unitree://go2@192.168.1.10')` (needs the Unitree SDK)")
     print("  • Add `bus.broadcast('emergency_stop')` for fleet-wide safety halt")
