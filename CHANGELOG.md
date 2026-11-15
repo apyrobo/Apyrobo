@@ -20,6 +20,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   `steps_completed` and `steps_total`. The refusal text is unchanged. With
   `--confirm-moves`, a task refused before the question is asked carries the
   same fields with `steps_completed` 0.
+- `apyrobo mcp`: a refusal's text now says what the agent can do next when
+  "Choose a different target." is not the whole answer, for clients that drop
+  `structuredContent` and show the model only the text: a route through a
+  no-go zone or out of the allowed areas says the route is a straight line, so
+  shorter moves around it may work; an unknown position says to call
+  `robot_status` first; a low battery says to charge (or, for a trip too long,
+  to try a nearer target). The new sentence comes after today's wording, which
+  is unchanged.
 - `SafetyEnforcer.move_violation(x, y, start)` returns the violation a move
   would record (with its message) without recording or moving anything.
 - On `ros2://` through Nav2, `apyrobo mcp` checks before each drive whether
