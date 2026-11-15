@@ -18,22 +18,24 @@ Run from the repo root:
 
 import time
 
-from apyrobo import Robot, Agent
+from apyrobo import Agent, Robot
 from apyrobo.fleet.manager import FleetManager, RobotInfo
-
 
 FLEET_SIZE = 3
 
+# The rule planner reads coordinates, not place names: "navigate to dock 1"
+# alone gives it no target (apyrobo plan refuses it), so each dock task says
+# where the dock is.
 TASKS = [
-    "navigate to dock 1",
+    "navigate to dock 1 at (1, 0)",
     "deliver package from (0, 0) to (5, 3)",
-    "navigate to dock 2",
+    "navigate to dock 2 at (2, 0)",
     "deliver package from (2, 1) to (8, 6)",
-    "navigate to dock 3",
+    "navigate to dock 3 at (3, 0)",
 ]
 
 
-def main() -> None:
+def main() -> list[tuple[str, str, str, tuple[float, float]]]:
     # ── 1. Build the fleet ───────────────────────────────────
     fleet = FleetManager()
     robots: dict[str, Robot] = {}
@@ -57,8 +59,10 @@ def main() -> None:
     agent = Agent(provider="rule")
 
     print(f"Executing {len(TASKS)} tasks across fleet:\n")
-    print(f"  {'Robot':<10} {'Task':<45} {'Result'}")
-    print(f"  {'-'*10} {'-'*45} {'-'*10}")
+    print(f"  {'Robot':<10} {'Task':<45} {'Result':<10} {'Ends at'}")
+    print(f"  {'-'*10} {'-'*45} {'-'*10} {'-'*10}")
+
+    results: list[tuple[str, str, str, tuple[float, float]]] = []
 
     for task in TASKS:
         # Assign to least-recently-used idle robot
@@ -77,13 +81,16 @@ def main() -> None:
         fleet.complete_task(robot_id)
         fleet.heartbeat(robot_id)
 
-        print(f"  {robot_id:<10} {task:<45} {result.status.value}")
+        x, y = robots[robot_id].get_position()
+        results.append((robot_id, task, result.status.value, (x, y)))
+        print(f"  {robot_id:<10} {task:<45} {result.status.value:<10} ({x:g}, {y:g})")
 
     # ── 3. Final fleet status ────────────────────────────────
     print()
     status = fleet.get_status()
     print(f"Fleet summary: {status['total']} robots, "
           f"{status['idle']} idle, {status['busy']} busy")
+    return results
 
 
 if __name__ == "__main__":

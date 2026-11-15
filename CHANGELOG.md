@@ -231,6 +231,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `examples/03_fleet.py` sent 'navigate to dock 1/2/3', which the rule planner
+  turned into a drive to (0, 0) reported as completed. Each dock task now names
+  where the dock is ('navigate to dock 1 at (1, 0)'), and the example prints
+  where each robot ends.
 - `apyrobo policy add` now reads upper-bound speed rules such as 'Speed must
   stay below 1 m/s', 'do not exceed 0.8 mps' or 'must not go faster than 0.3
   meters per second' as speed limits, using the same m/s spellings the action
