@@ -85,23 +85,36 @@ def test_dropped_enforcer_is_freed_and_stops_polling() -> None:
 
 
 def test_dropped_enforcers_leave_no_timer_threads() -> None:
-    def watchdog_threads() -> int:
-        return sum(
-            1 for t in threading.enumerate()
-            if isinstance(t, threading.Timer) and t.is_alive()
-        )
-
-    before = watchdog_threads()
     robot = CountingRobot()
+
+    def timers_of_this_robot() -> int:
+        # Count only the timers of enforcers on this test's robot. Counting
+        # every live Timer made the result depend on the watchdogs of other
+        # tests' enforcers re-arming, which on a loaded runner moved the
+        # total by more than this test's own twenty.
+        count = 0
+        for t in threading.enumerate():
+            if not (isinstance(t, threading.Timer) and t.is_alive()):
+                continue
+            owner = getattr(t.function, "__self__", None)
+            if owner is None and t.args and isinstance(t.args[0], weakref.ref):
+                owner = t.args[0]()
+            if getattr(owner, "_robot", None) is robot:
+                count += 1
+            owner = None
+        return count
+
     for _ in range(20):
         SafetyEnforcer(robot, policy=_policy(move_timeout=0.05)).move(0.0, 0.0)
 
     def settled() -> bool:
         gc.collect()
-        return watchdog_threads() <= before
+        return timers_of_this_robot() == 0
 
-    assert _wait_until(settled), (
-        f"{watchdog_threads() - before} timer threads outlived their enforcers"
+    # A leaked enforcer re-arms its watchdog forever, so a longer wait only
+    # gives a slow runner time to finish; it never lets a leak pass.
+    assert _wait_until(settled, timeout=10.0), (
+        f"{timers_of_this_robot()} timer threads outlived their enforcers"
     )
 
 
