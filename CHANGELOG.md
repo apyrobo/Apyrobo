@@ -231,6 +231,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo tutorial` and the `apyrobo shell` banner suggested planning
+  'navigate to the dock', which the rule planner turned into a drive to (0, 0)
+  and `apyrobo plan` refuses ("No target"). Both now plan 'go to (2, 1)', and
+  the tutorial says the rule planner reads coordinates, not place names.
 - `apyrobo listen` no longer prints a rule-planner plan that drops part
   of the heard task: 'go to (3, 3) then go to (-2, 1)' showed a one-step plan to
   (-2, 1), and 'go 2 meters forward' a status report, both exit 0. It now makes

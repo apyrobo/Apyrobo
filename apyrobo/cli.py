@@ -2686,7 +2686,7 @@ def cmd_shell(args: argparse.Namespace) -> None:
         f"  skills   → {len(BUILTIN_SKILLS)} built-in skills available\n"
         "\n"
         "  Try:\n"
-        "    graph = agent.plan('navigate to dock', robot)\n"
+        "    graph = agent.plan('go to (2, 1)', robot)\n"
         "    graph.get_execution_order()\n"
         "    robot.move(1.0, 0.0)\n"
         "    robot.capabilities()\n"
@@ -2732,9 +2732,10 @@ _TUTORIAL_STEPS = [
         "title": "Step 3 — Plan a task",
         "description": (
             "The Agent turns a natural-language task into a skill graph.\n"
-            "The built-in rule-based planner works without any API key."
+            "The built-in rule-based planner works without any API key; it reads\n"
+            "coordinates, so give it a place like (2, 1) rather than a name."
         ),
-        "code": "agent = Agent(provider='rule')\ngraph = agent.plan('navigate to the dock', robot)\nfor s in graph.get_execution_order():\n    print(f'  {s.skill_id}: {s.name}')",
+        "code": "agent = Agent(provider='rule')\ngraph = agent.plan('go to (2, 1)', robot)\nfor s in graph.get_execution_order():\n    print(f'  {s.skill_id}: {s.name}')",
     },
     {
         "title": "Step 4 — Execute the plan",
