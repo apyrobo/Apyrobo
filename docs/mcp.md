@@ -16,6 +16,18 @@ robot, plan tasks and move it. Every motion command goes through APYROBO's
 It needs no extra dependencies and defaults to `mock://turtlebot4`, so you can
 try it on a laptop without ROS.
 
+## Why the limits live outside the model
+
+A model asked to respect a speed cap does not always do it. In
+[How Long Until Your Robot Ignores You?](https://arxiv.org/html/2609.07288)
+(Fraunhofer IPA, IEEE CBS 2026), LLMs drove a Unitree G1 humanoid through an
+MCP setup under five rules based on ISO 10218-2, including a 30% speed cap
+near people. GPT-4o-mini made up to 13 safety violations in a session, and
+only Gemini kept to the speed cap consistently; the authors conclude that hard
+constraints should be enforced deterministically. That is what `apyrobo mcp`
+does: the limits are checked in code on every motion call, whatever the model
+asked for. (That study did not test APYROBO.)
+
 > **Availability:** `apyrobo mcp` is newer than the latest PyPI release
 > (4.0.0), so `pip install apyrobo` does not include it yet. Until the next
 > release, run it from GitHub as shown below. After that release the shorter
