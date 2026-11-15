@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shlex
 from pathlib import Path
 
 from apyrobo import mcp_server
@@ -87,3 +89,137 @@ def test_docs_say_how_the_speed_limit_reaches_a_nav2_drive():
     assert "not applied" in llms
     robot = (DOC.parent / "first-real-robot.md").read_text(encoding="utf-8")
     assert "mcp.md#speed-on-ros2" in robot
+
+
+# --- Client snippets: a pasted block must match what `apyrobo mcp config` prints.
+
+FENCE = re.compile(r"```(\w*)\n(.*?)```", re.S)
+
+
+def _fences(lang: str) -> list[str]:
+    return [body for tag, body in FENCE.findall(_doc()) if tag == lang]
+
+
+def _config_args(argv: list[str], monkeypatch):
+    """Parse ``apyrobo mcp config ...`` with the real CLI parser."""
+    import sys
+
+    import apyrobo.cli as cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_mcp", lambda args: seen.update(args=args))
+    monkeypatch.setattr(sys, "argv", ["apyrobo", *argv])
+    cli.main()
+    return seen["args"]
+
+
+def _printed(argv: list[str], monkeypatch) -> tuple[str, str]:
+    """What ``apyrobo mcp config`` prints, with nothing on PATH (bare ``uvx``)."""
+    import io
+
+    from apyrobo import mcp_clients
+
+    out, err = io.StringIO(), io.StringIO()
+    code = mcp_clients.main(_config_args(argv, monkeypatch), stdout=out, stderr=err,
+                            which=lambda name: None)
+    assert code == 0, err.getvalue()
+    return out.getvalue(), err.getvalue()
+
+
+def _documented_config_flags() -> list[str]:
+    """Flags of the `apyrobo mcp config claude-desktop ...` example in the doc."""
+    for body in _fences("bash"):
+        for line in body.splitlines():
+            if line.startswith("apyrobo mcp config claude-desktop"):
+                return shlex.split(line)[4:]
+    raise AssertionError("docs/mcp.md has no `apyrobo mcp config claude-desktop` example")
+
+
+def _without_uvx_source(args: list[str]) -> list[str]:
+    """Drop ``--from <git source>``: both uvx forms are valid in the docs.
+
+    The tool prints the GitHub form before ``apyrobo mcp`` is on PyPI and the
+    plain form after, so the docs may show either; the rest must match.
+    """
+    from apyrobo.mcp_clients import GIT_SOURCE
+
+    if args[:2] == ["--from", GIT_SOURCE]:
+        return args[2:]
+    return args
+
+
+def test_every_json_block_parses():
+    blocks = _fences("json")
+    assert blocks
+    for body in blocks:
+        try:
+            json.loads(body)
+        except json.JSONDecodeError:
+            # JSON Lines (the audit log example): every line is one object.
+            for line in body.strip().splitlines():
+                json.loads(line)
+
+
+def _documented_server() -> dict:
+    servers = [json.loads(b)["mcpServers"] for b in _fences("json") if '"mcpServers"' in b]
+    assert len(servers) == 1, "expected one mcpServers block in docs/mcp.md"
+    return servers[0]["apyrobo"]
+
+
+def test_the_desktop_block_matches_mcp_config(monkeypatch):
+    flags = _documented_config_flags()
+    out, _ = _printed(["mcp", "config", "claude-desktop", "--launcher", "uvx", *flags],
+                      monkeypatch)
+    printed = json.loads(out)["mcpServers"]["apyrobo"]
+    documented = _documented_server()
+    assert documented["command"] == printed["command"] == "uvx"
+    assert _without_uvx_source(documented["args"]) == _without_uvx_source(printed["args"])
+    assert _without_uvx_source(documented["args"])[:2] == ["apyrobo", "mcp"]
+
+
+def test_cursor_takes_the_same_block(monkeypatch):
+    flags = _documented_config_flags()
+    desktop, _ = _printed(["mcp", "config", "claude-desktop", "--launcher", "uvx", *flags],
+                          monkeypatch)
+    cursor, _ = _printed(["mcp", "config", "cursor", "--launcher", "uvx", *flags], monkeypatch)
+    assert json.loads(cursor) == json.loads(desktop)
+    assert "Add the same `mcpServers` block to `~/.cursor/mcp.json`" in _doc()
+
+
+def test_the_pip_variant_matches_launcher_apyrobo(monkeypatch):
+    match = re.search(r'use `"command": "(\w+)"` and\s+`"args": (\[.*?\])`', _doc(), re.S)
+    assert match, "the pip variant of the Claude Desktop block is missing"
+    command, args = match.group(1), json.loads(match.group(2))
+    out, _ = _printed(
+        ["mcp", "config", "claude-desktop", "--launcher", "apyrobo", *_documented_config_flags()],
+        monkeypatch,
+    )
+    printed = json.loads(out)["mcpServers"]["apyrobo"]
+    assert (command, args) == (printed["command"], printed["args"])
+
+
+def test_the_claude_code_command_matches_mcp_config(monkeypatch):
+    lines = [line for body in _fences("bash") for line in body.splitlines()
+             if line.startswith("claude mcp add apyrobo ")]
+    assert lines, "the Claude Code `claude mcp add` example is missing"
+    documented = shlex.split(lines[0])
+    out, _ = _printed(
+        ["mcp", "config", "claude-code", "--launcher", "uvx", *_documented_config_flags()],
+        monkeypatch,
+    )
+    printed = shlex.split(out.strip())
+    split = printed.index("--")
+    assert documented[:split + 2] == printed[:split + 2]  # claude mcp add apyrobo -- uvx
+    assert (_without_uvx_source(documented[split + 2:])
+            == _without_uvx_source(printed[split + 2:]))
+
+
+def test_the_claude_code_pip_variant_matches_launcher_apyrobo(monkeypatch):
+    match = re.search(r"If you installed with `pip`, use `-- ([^`]+)`", _doc())
+    assert match, "the pip variant of the Claude Code command is missing"
+    out, _ = _printed(
+        ["mcp", "config", "claude-code", "--launcher", "apyrobo", *_documented_config_flags()],
+        monkeypatch,
+    )
+    printed = shlex.split(out.strip())
+    assert shlex.split(match.group(1)) == printed[printed.index("--") + 1:]
