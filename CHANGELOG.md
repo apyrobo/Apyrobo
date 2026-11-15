@@ -231,6 +231,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A rule-planned task such as 'go to (5, 3) then pick up the object' planned
+  the drive alone and reported completed with nothing picked up. `apyrobo
+  mcp`, `plan` and `execute` now refuse it with a 'Not planned:' reason that
+  says to name the pick-up target ('pick up the box at (5, 3)'). The quickstart
+  uses the form that plans both.
 - `examples/03_fleet.py` sent 'navigate to dock 1/2/3', which the rule planner
   turned into a drive to (0, 0) reported as completed. Each dock task now names
   where the dock is ('navigate to dock 1 at (1, 0)'), and the example prints

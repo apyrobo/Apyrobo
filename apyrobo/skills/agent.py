@@ -483,6 +483,16 @@ class RuleBasedProvider(AgentProvider):
         )
         return any(word in text for word in status_words)
 
+    @classmethod
+    def is_pick_ask(cls, task: str) -> bool:
+        """True when ``task`` asks to pick something up."""
+        text = task.lower()
+        pick_words = next(
+            words for words, steps in cls.TASK_PATTERNS
+            if [s["skill_id"] for s in steps] == ["navigate_to", "pick_object"]
+        )
+        return any(word in text for word in pick_words)
+
     def plan(self, task: str, available_skills: list[dict[str, Any]],
              capabilities: list[str]) -> list[dict[str, Any]]:
         task_lower = task.lower()
