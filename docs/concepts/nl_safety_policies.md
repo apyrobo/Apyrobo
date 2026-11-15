@@ -60,6 +60,7 @@ APYROBO uses a two-stage pipeline:
 | Pattern | Detected as |
 |---------|-------------|
 | `"never exceed 0.5 m/s"` | `speed_limit { max_speed_ms: 0.5 }` |
+| `"speed must stay below 1 m/s"`, `"do not go faster than 0.3 meters per second"` | `speed_limit` (upper bounds only: "never exceed", "max speed", "speed limit", "top speed", "no faster than", "stay/keep below", "at most", "no more than", with the speed in m/s, mps or meters per second; a lower bound such as "never go below 0.2 m/s" stays `custom`) |
 | `"keep 1.5 meters away from humans"` | `proximity_limit { min_distance_m: 1.5, target: "humans" }` |
 | `"always keep 20% battery"` | `battery_reserve { min_battery_pct: 20.0 }` |
 | `"never enter the server room"` | `no_go_zone { zone_name: "server room" }` |

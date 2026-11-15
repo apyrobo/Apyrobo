@@ -63,11 +63,6 @@ CONSTRAINT_TYPES = {
 CHECKED_CONSTRAINT_TYPES = frozenset({"speed_limit", "battery_reserve", "no_go_zone"})
 
 # Regex patterns for common constraint types (unit: SI base units)
-_SPEED_RE = re.compile(
-    r"(?:never\s+exceed|max(?:imum)?\s+speed|speed\s+limit)\s+"
-    r"([0-9]+(?:\.[0-9]+)?)\s*m/s",
-    re.IGNORECASE,
-)
 _PROXIMITY_RE = re.compile(
     r"(?:stay|keep|maintain)\s+(?:at\s+least\s+)?([0-9]+(?:\.[0-9]+)?)\s*m(?:eter|etre)?s?\s+"
     r"(?:away\s+from|from)\s+([a-z\s]+)",
@@ -81,6 +76,21 @@ _BATTERY_RE = re.compile(
 # writing a speed is reported as unreadable rather than skipped.
 _NUM = r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)"
 _MPS = r"(?:m/s|m\s*s(?:\^?-1|⁻¹)|mps|m(?:eter|etre)s?\s*(?:/|per)\s*s(?:ec(?:ond)?)?)\b"
+# A rule's speed limit: an upper-bound phrase, then a speed in m/s written any
+# way the action check reads (``m/s``, ``mps``, ``meters per second``).
+# Lower bounds ("never go below 0.2 m/s", "at least 0.2 m/s") are not matched,
+# so they stay ``custom`` instead of becoming a maximum.
+_SPEED_LEAD = (
+    r"(?:(?:never|do\s+not|don't|must\s+not|mustn't|should\s+not|shall\s+not)\s+exceed"
+    r"|max(?:imum)?(?:\s+speed)?|speed\s+limit|top\s+speed"
+    r"|(?:no|not|never)\s+(?:go\s+|drive\s+|move\s+|travel\s+)?faster\s+than"
+    r"|(?:stay|keep|remain)\s+(?:below|under|at\s+or\s+below)"
+    r"|at\s+most|no\s+more\s+than)"
+)
+_SPEED_RE = re.compile(
+    rf"\b{_SPEED_LEAD}(?:\s+(?:of|is|at))?\s*[:=]?\s*({_NUM})\s*{_MPS}",
+    re.IGNORECASE,
+)
 _ACTION_MPS_RE = re.compile(rf"(?<![0-9.])({_NUM})\s*{_MPS}", re.IGNORECASE)
 _ACTION_OTHER_SPEED_RE = re.compile(
     rf"(?<![0-9.]){_NUM}\s*(?:km/h|kmh|kph|km\s*per\s*h(?:our)?|kilomet(?:er|re)s?\s*(?:/|per)\s*h(?:our)?"
@@ -257,7 +267,7 @@ class NLPolicyParser:
         # Speed limit
         m = _SPEED_RE.search(description)
         if m:
-            context = re.sub(r".*m/s\s*", "", description, flags=re.IGNORECASE).strip()
+            context = description[m.end():].strip()
             return NLSafetyPolicy(
                 description=description,
                 constraint_type="speed_limit",

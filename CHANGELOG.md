@@ -231,6 +231,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy add` now reads upper-bound speed rules such as 'Speed must
+  stay below 1 m/s', 'do not exceed 0.8 mps' or 'must not go faster than 0.3
+  meters per second' as speed limits, using the same m/s spellings the action
+  check reads. They were stored as custom policies that `apyrobo policy check`
+  never reported. Lower bounds stay custom.
 - `apyrobo tutorial` and the `apyrobo shell` banner suggested planning
   'navigate to the dock', which the rule planner turned into a drive to (0, 0)
   and `apyrobo plan` refuses ("No target"). Both now plan 'go to (2, 1)', and
