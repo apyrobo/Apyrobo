@@ -231,6 +231,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo listen` no longer prints a rule-planner plan that drops part
+  of the heard task: 'go to (3, 3) then go to (-2, 1)' showed a one-step plan to
+  (-2, 1), and 'go 2 meters forward' a status report, both exit 0. It now makes
+  the same check as `apyrobo plan`: it prints the heard text and the reason, and
+  exits 1.
 - `apyrobo serve --execute` no longer runs a rule-planner plan that drops part
   of the task: 'go to (3, 3) then go to (-2, 1)' drove only to (-2, 1), and
   'go 2 meters forward' ended execution "completed" with nothing moved. With
