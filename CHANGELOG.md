@@ -231,6 +231,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A rule-planned task such as 'go to (5, 3) then pick up the object' planned
+  the drive alone and reported completed with nothing picked up. `apyrobo
+  mcp`, `plan` and `execute` now refuse it with a 'Not planned:' reason that
+  says to name the pick-up target ('pick up the box at (5, 3)'). The quickstart
+  uses the form that plans both.
 - `apyrobo policy add` now reads upper-bound speed rules such as 'Speed must
   stay below 1 m/s', 'do not exceed 0.8 mps' or 'must not go faster than 0.3
   meters per second' as speed limits, using the same m/s spellings the action
