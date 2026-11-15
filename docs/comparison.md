@@ -122,6 +122,16 @@ stay inside speed limits and no-go zones you set, use APYROBO. The
 [MCP guide](mcp.md#how-apyrobo-fits-with-other-robot-mcp-servers) compares
 these and other robot MCP servers side by side.
 
+A gateway is a different layer and works alongside APYROBO rather than
+instead of it. [Governing an LLM-Driven Robot Fleet with
+agentgateway](https://webofmike.com/llm-robot-fleet-agentgateway/) (Mike
+Moore) puts agentgateway between the model and the robots' MCP servers: it
+allows or denies whole MCP tools per robot identity, denies by default, uses
+CEL rules and keeps an audit log, shown on a simulated fleet without ROS. It
+does not check a tool's arguments. APYROBO checks the arguments of the tools
+it allows (speed against `--max-speed`, targets against no-go zones). We have
+not tested the two together.
+
 ---
 
 ## When to Use Each
@@ -172,3 +182,4 @@ these and other robot MCP servers side by side.
 - **RAI**: [github.com/RobotecAI/rai](https://github.com/RobotecAI/rai)
 - **ROS-LLM**: [github.com/autonohm/ros_llm](https://github.com/autonohm/ros_llm)
 - **armguard-mcp**: [github.com/Lynn-hh/armguard-mcp](https://github.com/Lynn-hh/armguard-mcp)
+- **agentgateway fleet post**: [webofmike.com/llm-robot-fleet-agentgateway](https://webofmike.com/llm-robot-fleet-agentgateway/)
