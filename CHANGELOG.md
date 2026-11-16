@@ -268,6 +268,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo listen` (Whisper by default) and `apyrobo voice --listen --adapter
+  whisper|openai` crashed with a `ModuleNotFoundError` traceback on a plain
+  `pip install apyrobo`, which has no numpy, sounddevice, Whisper or OpenAI
+  package; `apyrobo listen --adapter piper` crashed with
+  `NotImplementedError`. They now print one error naming the packages to
+  install (or that piper only speaks) and a mock command to try instead, and
+  exit 1.
 - `apyrobo skills` with no flags printed nothing and exited 0, so a new user
   saw no skills; only `apyrobo skills --list` listed them. It now lists the
   built-in skills by default. `--export` with an unknown skill id now says so

@@ -1516,6 +1516,41 @@ def cmd_skill_compose(args: argparse.Namespace) -> None:
     ComposeREPL(robot, library).run()
 
 
+# Packages a voice adapter imports only when it starts listening, and how to
+# install them. A bare `pip install apyrobo` has none of them.
+_VOICE_INSTALL = {
+    "whisper": "pip install openai-whisper sounddevice numpy",
+    "openai": "pip install openai sounddevice numpy",
+}
+_VOICE_MODULES = {"numpy", "sounddevice", "whisper", "openai"}
+
+
+def _voice_listen_failed(exc: Exception, adapter: str, command: str) -> None:
+    """One error line and exit 1 when a voice adapter cannot listen here.
+
+    Re-raises anything that is not a missing voice package or piper's
+    speech-output-only refusal, so real bugs still show their traceback.
+    """
+    mock_hint = f"Or try it without a microphone: apyrobo {command} --adapter mock"
+    if isinstance(exc, ImportError) and (exc.name or "").split(".")[0] in _VOICE_MODULES:
+        install = _VOICE_INSTALL.get(adapter, f"pip install {exc.name}")
+        print(
+            f"Error: the {adapter} voice adapter needs packages that are not "
+            f"installed ({exc}).\n"
+            f"Install them with: {install}\n{mock_hint}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if isinstance(exc, NotImplementedError) and adapter == "piper":
+        print(
+            "Error: the piper adapter only speaks; it cannot listen.\n"
+            "Use --adapter whisper or --adapter openai to listen.\n" + mock_hint,
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    raise exc
+
+
 def cmd_listen(args: argparse.Namespace) -> None:
     """VC-01: Listen for one voice utterance, plan from it, and print the plan."""
     from apyrobo.voice import (
@@ -1546,7 +1581,10 @@ def cmd_listen(args: argparse.Namespace) -> None:
     print(f"Adapter: {adapter_name}  Robot: {robot.robot_id}")
     print("Listening for one command…")
 
-    text = adapter.listen()
+    try:
+        text = adapter.listen()
+    except (ImportError, NotImplementedError) as exc:
+        _voice_listen_failed(exc, adapter_name, "listen")
     if not text:
         print("(no speech detected)")
         return
@@ -1603,15 +1641,18 @@ def cmd_voice(args: argparse.Namespace) -> None:
             if result.error:
                 print(f"  {result.error}")
 
-        turns = voice_loop(
-            agent=agent,
-            robot=robot,
-            adapter=adapter,
-            max_turns=args.max_turns,
-            on_listen=on_listen,
-            on_result=on_result,
-            robot_uri=args.robot,
-        )
+        try:
+            turns = voice_loop(
+                agent=agent,
+                robot=robot,
+                adapter=adapter,
+                max_turns=args.max_turns,
+                on_listen=on_listen,
+                on_result=on_result,
+                robot_uri=args.robot,
+            )
+        except ImportError as exc:
+            _voice_listen_failed(exc, args.adapter, "voice --listen")
         print("-" * 50)
         print(f"Completed {len(turns)} turn(s)")
     else:
