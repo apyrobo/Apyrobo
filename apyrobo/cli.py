@@ -87,9 +87,23 @@ def _resolve_provider(provider: str, model: str | None = None) -> tuple[str, str
     return provider, model
 
 
+def _discover_or_exit(uri: str) -> Robot:
+    """Robot.discover(uri), or a one-line error and exit 1 instead of a traceback.
+
+    A typo in --robot (no scheme, an unknown scheme, a missing name) is the
+    most common first mistake; it gets the same message test-skill and
+    dashboard print, not a Python stack.
+    """
+    try:
+        return Robot.discover(uri)
+    except Exception as exc:
+        print(f"Error: could not connect to {uri!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_discover(args: argparse.Namespace) -> None:
     """Discover a robot and show its capabilities."""
-    robot = Robot.discover(args.uri)
+    robot = _discover_or_exit(args.uri)
     caps = robot.capabilities()
 
     print(f"Robot: {caps.name}")
@@ -151,7 +165,7 @@ def _rule_plan_check(
 
 def cmd_plan(args: argparse.Namespace) -> None:
     """Plan a task and show the skill graph (without executing)."""
-    robot = Robot.discover(args.robot)
+    robot = _discover_or_exit(args.robot)
     _profile_name = getattr(args, "profile", None)
     if _profile_name:
         from apyrobo.profiles import get_profile as _gp
@@ -225,7 +239,7 @@ def cmd_execute(args: argparse.Namespace) -> None:
         print(f"Error: --max-speed must be a positive number, got {max_speed!r}", file=sys.stderr)
         sys.exit(2)
 
-    robot = Robot.discover(args.robot)
+    robot = _discover_or_exit(args.robot)
 
     # Safety: every motion of the task goes through the enforcer, so
     # --max-speed caps the speed the robot is actually sent.
@@ -1479,7 +1493,7 @@ def cmd_skill_compose(args: argparse.Namespace) -> None:
     robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
     library_arg: str | None = getattr(args, "library", None)
 
-    robot = Robot.discover(robot_uri)
+    robot = _discover_or_exit(robot_uri)
 
     # Build library
     from apyrobo.skills.library import SkillLibrary
@@ -1508,7 +1522,7 @@ def cmd_listen(args: argparse.Namespace) -> None:
         OpenAIVoiceAdapter,
     )
 
-    robot = Robot.discover(args.robot)
+    robot = _discover_or_exit(args.robot)
     provider, model_name = _resolve_provider(args.provider, getattr(args, "model", None))
     try:
         agent = Agent(provider=provider, **({"model": model_name} if model_name else {}))
@@ -1558,7 +1572,7 @@ def cmd_voice(args: argparse.Namespace) -> None:
         MockVoiceAdapter, WhisperAdapter, OpenAIVoiceAdapter, voice_loop,
     )
 
-    robot = Robot.discover(args.robot)
+    robot = _discover_or_exit(args.robot)
     provider, model = _resolve_provider(args.provider, getattr(args, "model", None))
     try:
         agent = Agent(provider=provider, **({"model": model} if model else {}))
@@ -1640,7 +1654,6 @@ def cmd_serve(args: argparse.Namespace) -> None:
         StdioOrchestrationAdapter,
         WebSocketOrchestrationAdapter,
     )
-    from apyrobo.core.robot import Robot
 
     robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
     profile_name: str | None = getattr(args, "profile", None)
@@ -1669,7 +1682,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    robot = Robot.discover(robot_uri)
+    robot = _discover_or_exit(robot_uri)
     mode_note = f" execute=on max_speed={max_speed:g}" if execute_tasks else ""
 
     if transport == "websocket":

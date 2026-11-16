@@ -239,6 +239,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo discover`, `plan`, `execute`, `listen`, `voice`, `serve` and
+  `skill compose`: a bad `--robot` URI (no scheme, `mock://` with no name, an
+  unknown scheme) printed a Python traceback. They now print one line,
+  `Error: could not connect to '<uri>': <reason>`, and exit 1, like `connect`,
+  `test-skill` and `dashboard` already did.
 - `apyrobo init <scheme> --adapter`: a quote or backslash in `--description`
   broke the generated `pyproject.toml` and `__init__.py`, and a scheme with a
   `.` or `+` (both accepted as URI schemes) wrote an entry point that did not
