@@ -131,6 +131,14 @@ _DROPPED_RETURN = (
     "the way back, so the robot will not move. Send each leg as its own call "
     "with its coordinates, like 'go to (1, 1)', then 'go to (0, 0)'."
 )
+_DROPPED_ACTION = (
+    "Not planned: this task asks for something after the drive (like a wait or "
+    "a photo) that the rule planner does not make, and it would make only the "
+    "drive and drop the rest, so the robot will not move. The rule planner "
+    "makes drives, pick-ups, deliveries, one turn, stop and status reports. "
+    "Send the drive alone, like 'go to (1, 1)', and do the rest yourself, or "
+    "start the server with --provider llm."
+)
 _REPEAT_WORD = re.compile(r"\b(?:twice|thrice|again|times)\b")
 _NO_ANGLE = (
     "Not planned: this task asks to turn but gives no angle with a unit, and the "
@@ -909,6 +917,16 @@ class RobotToolbox:
             if "navigate_to" in ids and RuleBasedProvider.drops_return_leg(text):
                 plan.update(
                     steps=[], confidence=0.0, can_proceed=False, reason=_DROPPED_RETURN
+                )
+                return graph, plan
+            # "go to (1, 1) then wait 5 seconds" and "go to (1, 1) and take a
+            # photo" planned the drive alone, dropped the rest with no word and
+            # reported completed.
+            if "navigate_to" in ids and RuleBasedProvider.dropped_action_after_drive(
+                _rule_coordinates_text(text)
+            ):
+                plan.update(
+                    steps=[], confidence=0.0, can_proceed=False, reason=_DROPPED_ACTION
                 )
                 return graph, plan
             if ids == ["report_status"] and not RuleBasedProvider.is_status_ask(text):

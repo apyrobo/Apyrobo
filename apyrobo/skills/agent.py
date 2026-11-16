@@ -521,6 +521,59 @@ class RuleBasedProvider(AgentProvider):
         after = cls._extract_coordinates(text[found.end():])
         return bool(before) and not after
 
+    # What joins a further step to a drive: "then", "and", "after that",
+    # "next", a comma, a semicolon or a full stop.
+    _NEXT_STEP = re.compile(
+        r"\b(?:then|and|after\s+that|afterwards?|next|also)\b|[,;.]"
+    )
+    # Words that may start what follows a drive without asking for a step the
+    # planner drops: a stop, a status report (the drive already reports where
+    # the robot is), a manner or a courtesy.
+    _AFTER_DRIVE_OK = frozenset({
+        "stop", "halt", "freeze", "report", "status", "tell", "where", "what",
+        "please", "thanks", "thank", "ok", "okay", "at", "with", "slowly",
+        "carefully", "safely", "gently", "now", "immediately",
+    })
+    # A place, as _extract_coordinates reads one: "(1, 2)" or "1, 2".
+    _PLACE_PAIR = r"\(?\s*-?\d+\.?\d*\s*,\s*-?\d+\.?\d*\s*\)?"
+    # A delivery plans the drop-off itself.
+    _PLACE_WORDS = frozenset({"place", "put", "drop", "leave", "set", "unload"})
+
+    @classmethod
+    def dropped_action_after_drive(cls, task: str) -> str | None:
+        """The step ``task`` asks for after its last place that no plan makes.
+
+        The planner plans the first kind of task it recognises, so in "go to
+        (1, 1) then wait 5 seconds" or "go to (1, 1) and take a photo" it
+        plans the drive and drops the rest with no word. Returns the first
+        word of that dropped step, or None when nothing after the last place
+        asks for a step it does not make ("and stop", "then report status",
+        "please" and a speed are fine).
+        """
+        text = task.lower()
+        places = list(re.finditer(cls._PLACE_PAIR, text))
+        if not places:
+            return None
+        tail = text[places[-1].end():]
+        delivery = any(word in text for word in cls.TASK_PATTERNS[0][0])
+        joins = list(cls._NEXT_STEP.finditer(tail))
+        for join in joins:
+            rest = tail[join.end():]
+            words = re.findall(r"[a-z]+", rest.split(".")[0])
+            # Skip the joining words themselves: "and then wait".
+            while words and words[0] in {"then", "and", "after", "that",
+                                         "afterwards", "afterward", "next", "also"}:
+                words.pop(0)
+            if not words:
+                continue
+            first = words[0]
+            if first in cls._AFTER_DRIVE_OK:
+                continue
+            if delivery and first in cls._PLACE_WORDS:
+                continue
+            return first
+        return None
+
     def plan(self, task: str, available_skills: list[dict[str, Any]],
              capabilities: list[str]) -> list[dict[str, Any]]:
         task_lower = task.lower()

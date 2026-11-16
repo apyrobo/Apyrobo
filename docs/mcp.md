@@ -366,6 +366,10 @@ A drive followed by a way back with no place ("go to (1, 1) and come back",
 "then return", "and back", "then go home") is refused too: it used to drive
 out, drop the way back and report `completed` with the robot still out there.
 Send each leg as its own call with its coordinates.
+A drive followed by a step the rule planner does not make ("go to (1, 1) then
+wait 5 seconds", "and take a photo") is refused as well: it used to drive and
+report `completed` with the wait or the photo dropped. A stop, a status report,
+a speed or "please" after the drive still plans.
 
 `plan_task` checks each drive in the plan against the policy without moving:
 a target in a no-go zone, a target outside every allowed area, and a straight
