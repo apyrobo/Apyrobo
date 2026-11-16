@@ -72,6 +72,7 @@ def server_args(
     remote: bool = False,
     allow_area: Sequence[str] | None = None,
     audit_log: str | None = None,
+    provider: str | None = None,
 ) -> list[str]:
     """The ``apyrobo mcp`` flags to pass through, in a stable order.
 
@@ -116,6 +117,8 @@ def server_args(
             raise ValueError(f"cannot write an audit log at {audit_log}: "
                              "give a file in a folder that exists")
         out += ["--audit-log", str(path)]
+    if provider and provider != "rule":
+        out += ["--provider", provider]
     return out
 
 
@@ -326,6 +329,42 @@ def ros2_hints(robot: str | None, launch: Launch) -> list[str]:
     return lines
 
 
+# ``apyrobo mcp``'s own --robot default; the server falls back to it anyway.
+_DEFAULT_ROBOT = "mock://turtlebot4"
+
+
+def _merged_flags(args: argparse.Namespace) -> dict:
+    """Server flags given on either side of "config".
+
+    ``apyrobo mcp --max-speed 0.5 config cursor`` must not print a config
+    without the limit. A flag after "config" wins over the same flag before
+    it; zones from both sides are kept.
+    """
+    def pick(name: str):
+        value = getattr(args, f"cfg_{name}", None)
+        return value if value is not None else getattr(args, name, None)
+
+    robot = getattr(args, "cfg_robot", None)
+    if robot is None:
+        parent = getattr(args, "robot", None)
+        robot = parent if parent and parent != _DEFAULT_ROBOT else None
+    return {
+        "robot": robot,
+        "policy": pick("policy"),
+        "policy_file": pick("policy_file"),
+        "max_speed": pick("max_speed"),
+        "no_go": list(getattr(args, "no_go", None) or [])
+        + list(getattr(args, "cfg_no_go", None) or []),
+        "allow_area": list(getattr(args, "allow_area", None) or [])
+        + list(getattr(args, "cfg_allow_area", None) or []),
+        "confirm_moves": bool(
+            getattr(args, "confirm_moves", False) or getattr(args, "cfg_confirm_moves", False)
+        ),
+        "audit_log": pick("audit_log"),
+        "provider": getattr(args, "provider", None),
+    }
+
+
 def main(args: argparse.Namespace, stdout: TextIO | None = None,
          stderr: TextIO | None = None, which: Which = shutil.which) -> int:
     """Entry point for ``apyrobo mcp config``. Returns the exit code."""
@@ -333,21 +372,12 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
     stderr = stderr or sys.stderr
     ssh = getattr(args, "cfg_ssh", None)
     setup = getattr(args, "cfg_ssh_setup", None)
-    robot = getattr(args, "cfg_robot", None)
+    flags_in = _merged_flags(args)
+    robot = flags_in["robot"]
     try:
         if setup and not ssh:
             raise ValueError("--ssh-setup needs --ssh")
-        flags = server_args(
-            robot=robot,
-            policy=getattr(args, "cfg_policy", None),
-            policy_file=getattr(args, "cfg_policy_file", None),
-            max_speed=getattr(args, "cfg_max_speed", None),
-            no_go=getattr(args, "cfg_no_go", None),
-            allow_area=getattr(args, "cfg_allow_area", None),
-            confirm_moves=bool(getattr(args, "cfg_confirm_moves", False)),
-            audit_log=getattr(args, "cfg_audit_log", None),
-            remote=bool(ssh),
-        )
+        flags = server_args(**flags_in, remote=bool(ssh))
         launcher = getattr(args, "launcher", "auto") or "auto"
         if ssh:
             launch = resolve_ssh_launch(ssh, flags, launcher, setup, which)
