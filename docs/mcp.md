@@ -303,7 +303,9 @@ kitchen", moves nothing: `execute_task` returns an error saying what to give,
 and `plan_task` returns `can_proceed: false` with the same reason. A delivery
 with one point starts from where the robot is; "deliver from (1, 1) to (5, 1)"
 names both. A speed in the task sets every drive's speed: "at speed 0.1",
-"speed: 0.1", "at a speed of 0.1" or "at 0.1 m/s". The policy limit still
+"speed: 0.1", "at a speed of 0.1" or "at 0.1 m/s". After a number it also reads
+km/h, mph, cm/s, mm/s, ft/s and m/min ("at 30 cm/s", "at speed 1 km/h"),
+converted to m/s and rounded down to six decimals. The policy limit still
 clamps it, and `plan_task` adds `speed_notes` for each drive that will not run
 at the speed shown (clamped, or through a Nav2 that does not take the limit,
 see [Speed on `ros2://`](#speed-on-ros2)). A task
@@ -326,9 +328,9 @@ used to drive to (10, 1)), a coordinate with a digit or an arithmetic sign next
 to it, such as `(1 000, 2)`, `(3+1, 3)` or `(3*2, 3)` (`(3+1, 3)` used to drive
 to (1, 3); write each coordinate as one plain number),
 three or more numbers for one target such as `(1, 2, 3)`, and a speed it cannot
-use: written with a decimal comma (`0,2`), in a unit other than m/s (`meters per
-second`, `km/h`, `mph`, `cm/s`, `m/min`, `in/s`, `mps`; `speed 0.2 m/min` used
-to run at 0.2 m/s), in a wording other than the ones above (`at most 0.2 m/s`,
+use: written with a decimal comma (`0,2`), in a unit other than those above
+(`knots`, `m/h`, `in/s`, `mps`, `fps`), in a wording other than the ones above (`at most 0.2 m/s`,
+`max 3 km/h`,
 `max 0.2 m/s`, `at a speed of about 0.2`, a bare `at 0.2` with no unit, `v=0.3`
 or `velocity 0.3` used to run at the default speed), a
 choice or range (`0.1 or 0.2`, `0.1-0.2 m/s`),

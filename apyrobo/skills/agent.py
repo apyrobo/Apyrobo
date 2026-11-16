@@ -230,14 +230,51 @@ class RuleBasedProvider(AgentProvider):
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
 
+    # Units a task's drive speed may be written in besides m/s, with metres
+    # per second per unit: "at 30 cm/s", "at speed 1 km/h". Any other unit
+    # (knots, m/h, in/s, fps, ...) is still refused by _OTHER_SPEED_UNIT.
+    _SPEED_UNITS = (
+        (r"m\s*/\s*sec(?:ond)?|met(?:er|re)s?\s+per\s+sec(?:ond)?", 1.0),
+        (r"km\s*/\s*h(?:r|our)?|kmh|kph|(?:km|kilomet(?:er|re)s?)\s+per\s+hour",
+         1000 / 3600),
+        (r"mph|miles?\s+per\s+hour", 0.44704),
+        (r"cm\s*/\s*s(?:ec)?|centimet(?:er|re)s?\s+per\s+second", 0.01),
+        (r"mm\s*/\s*s(?:ec)?|millimet(?:er|re)s?\s+per\s+second", 0.001),
+        (r"ft\s*/\s*s(?:ec)?|(?:feet|foot)\s+per\s+second", 0.3048),
+        (r"m\s*/\s*min(?:ute)?|met(?:er|re)s?\s+per\s+minute", 1 / 60),
+    )
+    _SPEED_UNIT = "|".join(f"(?:{unit})" for unit, _ in _SPEED_UNITS)
+
     # A drive speed in the task: "at speed 0.1", "speed: 0.3", "at a speed of
-    # 0.2 m/s", "at 0.1 m/s". The number must stand whole ("speed 1e3" is not
-    # read as 1).
+    # 0.2 m/s", "at 0.1 m/s", "at 30 cm/s", "at speed 1 km/h". The number must
+    # stand whole ("speed 1e3" is not read as 1).
     # A full stop after the number ends the sentence ("at speed 0.2.").
     _SPEED = re.compile(
         r"\bspeed\s*(?:of\s+|[:=]\s*)?(-?\d+(?:\.\d+)?)(?!\d|\.\d|\s*e\s*[+-]?\d)"
-        r"|\bat\s+(-?\d+(?:\.\d+)?)\s*m/s\b"
+        rf"(?:\s*({_SPEED_UNIT})(?![a-z/]))?"
+        r"|\bat\s+(-?\d+(?:\.\d+)?)\s*(?:m/s\b|"
+        rf"({_SPEED_UNIT})(?![a-z/]))"
     )
+
+    @classmethod
+    def speed_of(cls, found: re.Match[str]) -> float:
+        """The speed a :attr:`_SPEED` match names, in m/s.
+
+        A speed in another unit is converted and rounded down to six
+        decimals, so the robot never drives faster than the task asked.
+        """
+        number = found.group(1) if found.group(1) is not None else found.group(3)
+        unit = found.group(2) if found.group(1) is not None else found.group(4)
+        value = float(number)
+        if unit is None:
+            return value
+        for pattern, factor in cls._SPEED_UNITS:
+            if re.fullmatch(pattern, unit):
+                if factor == 1.0:
+                    return value
+                scaled = value * factor
+                return math.floor(abs(scaled) * 1e6 + 1e-6) / 1e6 * (-1 if scaled < 0 else 1)
+        raise ValueError(f"unknown speed unit {unit!r}")
 
     @classmethod
     def extract_speed(cls, task: str) -> float | None:
@@ -249,7 +286,7 @@ class RuleBasedProvider(AgentProvider):
         found = cls._SPEED.search(task.lower())
         if found is None:
             return None
-        return float(found.group(1) if found.group(1) is not None else found.group(2))
+        return cls.speed_of(found)
 
     @classmethod
     def _glued_coordinate(cls, text: str) -> bool:
@@ -307,11 +344,33 @@ class RuleBasedProvider(AgentProvider):
                 "0,2), which the rule planner would read as 0, so the robot will "
                 "not guess. Use a decimal point, like 'at 0.2 m/s'."
             )
-        if cls._OTHER_SPEED_UNIT.search(text):
+        read_units = [m.span() for m in cls._SPEED.finditer(text)]
+        unread_units = [
+            m.group()
+            for found in (
+                cls._OTHER_SPEED_UNIT.finditer(text),
+                re.finditer(rf"\d\s*(?:{cls._SPEED_UNIT})(?![a-z/])", text),
+            )
+            for m in found
+            if not any(a <= m.start() and m.end() <= b for a, b in read_units)
+        ]
+        if unread_units and all(
+            re.fullmatch(rf"\d\s*(?:{cls._SPEED_UNIT})", unit) for unit in unread_units
+        ):
+            # A unit it reads, in a wording it does not ("max 3 km/h", "30 or
+            # 40 cm/s"): the drive would run at another speed.
+            return (
+                "Not planned: this task gives a speed in a wording the rule "
+                "planner does not read (like 'at most 3 km/h' or '30 or 40 "
+                "cm/s'), so the robot will not guess. Write one speed as 'at 30 "
+                "cm/s' or 'at speed 0.3'."
+            )
+        if unread_units:
             return (
                 "Not planned: this task gives a speed in a unit the rule planner "
-                "does not read (it reads m/s only), so the robot will not guess. "
-                "Give it in m/s, like 'at 0.2 m/s'."
+                "does not read (it reads m/s, km/h, mph, cm/s, mm/s, ft/s and "
+                "m/min), so the robot will not guess. Give it like 'at 0.2 m/s' "
+                "or 'at 30 cm/s'."
             )
         if cls._UNDERSCORE_NUMBER.search(text):
             return (
@@ -401,10 +460,7 @@ class RuleBasedProvider(AgentProvider):
                 "will not guess which to drop. Give one (x, y) pair, like "
                 "'go to (1, 2)'."
             )
-        speeds = {
-            float(m.group(1) if m.group(1) is not None else m.group(2))
-            for m in cls._SPEED.finditer(text)
-        }
+        speeds = {cls.speed_of(m) for m in cls._SPEED.finditer(text)}
         if len(speeds) > 1:
             return (
                 "Not planned: this task names more than one speed, and the rule "

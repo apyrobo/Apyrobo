@@ -3,7 +3,8 @@
 "go to (3, 3) at speed 0.2 m/min" drove at 0.2 m/s, and "go to (3, 3) at
 most 0.2 m/s" ran at the default 0.5 m/s; each reported "completed". These
 tasks are now refused through MCP with a "Not planned:" reason, and the
-robot does not move.
+robot does not move. (m/min is now read and converted to m/s; see
+test_rule_planner_task_speed_units.py.)
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ import pytest
 from apyrobo.mcp_server import build_server
 
 OTHER_UNIT = [
-    "go to (3, 3) at speed 0.2 m/min",
     "go to (3, 3) at speed 0.2 m/h",
     "go to (3, 3) at speed 0.2 in/s",
     "go to (3, 3) at speed 0.2 m/s²",
@@ -46,6 +46,7 @@ STILL_READ = [
     ("go to (3, 3) at speed 0.2 m / s", 0.2),
     ("go to (3, 3) at speed 0.2 m/s.", 0.2),
     ("deliver from (1, 1) to (5, 1) at 0.2 m/s", 0.2),
+    ("go to (3, 3) at speed 0.2 m/min", 0.003333),
 ]
 
 
