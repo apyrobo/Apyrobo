@@ -239,6 +239,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A rule-planned task such as 'go to (1, 1) then wait 5 seconds' or 'go to
+  (1, 1) and take a photo' planned the drive alone and reported completed with
+  the wait or the photo dropped. `apyrobo mcp`, `plan` and `execute` now refuse
+  it with a 'Not planned:' reason that lists what the rule planner makes.
 - A rule-planned task such as 'go to (1, 1) and come back' (or 'then return',
   'and back', 'then go home') planned the drive out alone and reported
   completed with the robot left at (1, 1). `apyrobo mcp`, `plan` and `execute`
