@@ -108,3 +108,36 @@ def test_humanoid_llm_hint_points_at_a_doc_that_exists():
     assert docs, hints
     for doc in docs:
         assert (REPO / doc).exists(), doc
+
+
+# ---------------------------------------------------------------------------
+# every demo's `apyrobo policy add` hint
+# ---------------------------------------------------------------------------
+
+_POLICY_HINT = re.compile(r'apyrobo policy add \\?"([^"\\]+)\\?"')
+
+
+def _policy_hints() -> list[tuple[str, str]]:
+    found = []
+    for path in sorted(DEMOS.rglob("*")):
+        if path.suffix not in (".py", ".md"):
+            continue
+        for rule in _POLICY_HINT.findall(path.read_text()):
+            found.append((str(path.relative_to(REPO)), rule))
+    return found
+
+
+def test_demos_suggest_policy_rules():
+    assert len(_policy_hints()) >= 3
+
+
+@pytest.mark.parametrize("where,rule", _policy_hints())
+def test_demo_policy_hint_is_a_rule_policy_check_reads(where, rule):
+    """A suggested rule must not be one `apyrobo policy add` flags 'Not checked'."""
+    from apyrobo.safety.nl_policy import CHECKED_CONSTRAINT_TYPES, NLPolicyParser
+
+    policy = NLPolicyParser().parse(rule)
+    assert policy.constraint_type in CHECKED_CONSTRAINT_TYPES, (
+        f"{where} suggests {rule!r}, stored as {policy.constraint_type}, "
+        "which apyrobo policy check never reports"
+    )
