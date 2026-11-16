@@ -2491,6 +2491,20 @@ def cmd_init(args: argparse.Namespace) -> None:
         return
 
     raw_name: str = args.name.lower().strip()
+    # The name becomes a directory, a pip name, a module and a function name,
+    # so anything else (a space, a dot, a leading digit) printed a package
+    # that could not be installed or imported.
+    if not re.fullmatch(r"[a-z][a-z0-9_-]*", raw_name):
+        suggestion = re.sub(r"[^a-z0-9]+", "-", raw_name).strip("-_")
+        hint = ""
+        if suggestion and re.fullmatch(r"[a-z][a-z0-9_-]*", suggestion):
+            hint = f" Try: apyrobo init {suggestion}"
+        print(
+            f"Error: {args.name!r} is not a valid skill package name "
+            f"(a lowercase letter, then lowercase letters, digits, - or _).{hint}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     # Normalise to kebab-case for the package name, snake_case for the module
     pkg_name = "apyrobo-skills-" + raw_name.replace("_", "-")
     module_name = "apyrobo_skills_" + raw_name.replace("-", "_")
@@ -2517,10 +2531,10 @@ def cmd_init(args: argparse.Namespace) -> None:
         [project]
         name = "{pkg_name}"
         version = "0.1.0"
-        description = "{description}"
+        description = {json.dumps(description, ensure_ascii=False)}
         requires-python = ">=3.10"
         dependencies = ["apyrobo>=3.0.0"]
-        {('authors = [{name = ' + repr(author) + '}]') if author else ""}
+        {('authors = [{name = ' + json.dumps(author, ensure_ascii=False) + '}]') if author else ""}
 
         [project.entry-points."apyrobo.skills"]
         {module_name} = "{module_name}:register"
