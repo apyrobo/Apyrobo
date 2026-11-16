@@ -239,6 +239,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config`: flags given before `config` (`apyrobo mcp --max-speed
+  0.5 --no-go 2,2,4,4 config cursor`) were silently dropped, so the printed
+  config started a server without those limits. They now reach the config
+  and are checked like the ones after it, as `selftest` and `keepout` already
+  did; a flag after `config` wins, and zones from both sides are kept.
 - A typo in a zone (`--no-go 1,x,2,2`, `--allow-area`, or a string zone in a
   `--policy-file`) stopped `apyrobo mcp` and its `config`, `selftest` and
   `keepout` commands with a bare `could not convert string to float: 'x'`. The

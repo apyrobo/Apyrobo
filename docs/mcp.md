@@ -123,8 +123,10 @@ your OS. Use `cursor` or `claude-code` instead of `claude-desktop` for those
 clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
 `--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
-flags as `apyrobo mcp`, checks them, and makes relative `--policy-file` and
-`--audit-log` paths absolute. It only prints: merge the output
+flags as `apyrobo mcp`, on either side of `config`
+(`apyrobo mcp --max-speed 0.5 config cursor` works too; a flag after `config`
+wins, zones from both sides are kept), checks them, and makes relative
+`--policy-file` and `--audit-log` paths absolute. It only prints: merge the output
 into your config yourself. The `uvx` command it prints installs from GitHub
 until `apyrobo mcp` is in a PyPI release, then `uvx apyrobo mcp`: the form
 follows your installed version. Without installing, run it as
