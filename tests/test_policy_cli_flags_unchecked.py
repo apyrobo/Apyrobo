@@ -2,7 +2,7 @@
 
 `apyrobo policy check` reads speed limits in m/s, battery reserves and no-go
 zones only (docs/concepts/nl_safety_policies.md). Before this fix,
-`apyrobo policy add "never exceed 30 cm/s"` or "no robots in the lab" printed
+`apyrobo policy add "never go below 0.2 m/s"` or "no robots in the lab" printed
 "✓ Added policy" as a custom rule, and every later check printed
 "✓ No policy violations" with nothing to say that rule was skipped.
 """
@@ -25,7 +25,7 @@ def _args(sub: str, db: str, **kw) -> argparse.Namespace:
 
 
 @pytest.mark.parametrize(
-    "rule", ["never exceed 30 cm/s", "no robots in the lab", "never carry more than 20 kg"]
+    "rule", ["never go below 0.2 m/s", "no robots in the lab", "never carry more than 20 kg"]
 )
 def test_add_warns_when_rule_is_not_checked(tmp_path, capsys, rule) -> None:
     cmd_policy(_args("add", str(tmp_path / "p.db"), description=rule))

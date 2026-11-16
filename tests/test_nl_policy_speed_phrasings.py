@@ -38,11 +38,10 @@ def test_upper_bound_rules_become_speed_limits(rule, limit, context):
     [
         "never go below 0.2 m/s",  # a minimum, not a maximum
         "keep at least 0.2 m/s",
-        "never exceed 30 cm/s",  # not m/s: stays custom, as documented
-        "never exceed 2 km/h",
+        "keep speed above 0.2 m/s",
     ],
 )
-def test_lower_bounds_and_other_units_stay_custom(rule):
+def test_lower_bounds_stay_custom(rule):
     assert NLPolicyParser().parse(rule).constraint_type == "custom"
 
 

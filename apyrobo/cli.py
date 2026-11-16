@@ -1893,7 +1893,7 @@ def cmd_policy(args: argparse.Namespace) -> None:
                 print(
                     f"⚠️  Not checked: 'apyrobo policy check' never reports a "
                     f"{policy.constraint_type} policy as violated. It reads speed "
-                    f"limits in m/s ('never exceed 0.5 m/s'), battery reserves "
+                    f"limits ('never exceed 0.5 m/s', or in km/h, mph, cm/s), battery reserves "
                     f"('always keep 20% battery') and no-go zones ('never enter "
                     f"the server room'); reword the rule that way, or remove it "
                     f"with 'apyrobo policy remove {policy.policy_id}'.",
