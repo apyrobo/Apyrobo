@@ -239,6 +239,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The rule planner (`apyrobo mcp`'s `plan_task` and `execute_task`, `apyrobo
+  plan` and `execute`) refused a task speed in any unit but m/s: 'go to (1, 2)
+  at 30 cm/s' or 'at 1 km/h' moved nothing, though `apyrobo policy` reads
+  limits in those units. A speed in km/h, mph, cm/s, mm/s, ft/s or m/min is now
+  converted to m/s (rounded down, so never faster than asked) and still clamped
+  by the policy limit. Other units and wordings ('2 knots', 'max 3 km/h') are
+  still refused.
 - `apyrobo policy check` read an action's speed in m/s only, so 'drive at 30
   cm/s' against a 0.5 m/s limit was reported as unreadable (a violation) and a
   km/h limit could only be checked against actions written in m/s. A speed in

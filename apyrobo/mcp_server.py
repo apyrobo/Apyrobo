@@ -821,7 +821,11 @@ class RobotToolbox:
         # The coordinates text drops a speed so it is not read as a target;
         # hand each one back to the planner in the form it reads as a speed.
         for found in RuleBasedProvider._SPEED.finditer(task.lower()):
-            number = found.group(1) if found.group(1) is not None else found.group(2)
+            if found.group(2) is None and found.group(4) is None:
+                number = found.group(1) if found.group(1) is not None else found.group(3)
+            else:
+                # A speed in another unit goes back already in m/s.
+                number = f"{RuleBasedProvider.speed_of(found):.6f}".rstrip("0").rstrip(".")
             text = f"{text} at speed {number}"
         return text
 
