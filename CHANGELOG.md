@@ -268,6 +268,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- Docs: the rule-planner examples in `docs/TURTLEBOT4.md`,
+  `docs/video_tutorial.md`, `docs/quickstart_5min.md` and
+  `docs/concepts/index.md` gave tasks whose target the rule planner cannot
+  read ("navigate to position 2.5 3.0", "deliver package to dock 3",
+  "navigate to point A"). It made one up, (0, 0) or (5, 5), and reported
+  completed; on the TurtleBot 4 guide's real robot that meant a drive to the
+  map origin. The fleet example's "docks 1, 2, and 3" sent a robot to (1, 2).
+  They now name their coordinates, like "deliver from (1, 1) to (5, 1)", and a
+  test checks every such example plans the way `apyrobo mcp` accepts.
 - `apyrobo discover`, `plan`, `execute`, `listen`, `voice`, `serve` and
   `skill compose`: a bad `--robot` URI (no scheme, `mock://` with no name, an
   unknown scheme) printed a Python traceback. They now print one line,

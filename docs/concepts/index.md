@@ -28,7 +28,7 @@ python -c "
 from apyrobo import Agent, MockAdapter, Robot, SkillExecutor
 robot = Robot('mock://bot', MockAdapter('bot'))
 agent = Agent(provider='rule')
-plan = agent.plan('navigate to point A', robot)
+plan = agent.plan('go to (2, 3)', robot)
 result = SkillExecutor(robot).execute_graph(plan)
 print(result.status)
 "

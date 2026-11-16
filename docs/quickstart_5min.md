@@ -141,7 +141,7 @@ print(f"Swarm: {bus.robot_count} robots")
 coordinator = SwarmCoordinator(bus)
 agent = Agent(provider="rule")
 
-result = coordinator.execute_task("deliver package to dock 3", agent)
+result = coordinator.execute_task("deliver from (1, 1) to (5, 1)", agent)
 print(f"Result: {result.status}")
 ```
 
