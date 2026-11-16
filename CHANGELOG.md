@@ -239,6 +239,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The warehouse demo's next steps suggested `apyrobo policy add "keep 1.5m away
+  from humans"`, which is stored as a rule `apyrobo policy check` never reports.
+  It now suggests a speed cap near people, and a test checks every demo's
+  `policy add` hint parses to a rule `policy check` reads.
 - A rule-planned task such as 'go to (1, 1) then wait 5 seconds' or 'go to
   (1, 1) and take a photo' planned the drive alone and reported completed with
   the wait or the photo dropped. `apyrobo mcp`, `plan` and `execute` now refuse
