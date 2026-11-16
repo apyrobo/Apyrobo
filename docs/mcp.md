@@ -111,6 +111,33 @@ If you installed with `pip`, use `"command": "apyrobo"` and
 Add the same `mcpServers` block to `~/.cursor/mcp.json` (or `.cursor/mcp.json`
 in a project).
 
+### VS Code
+
+VS Code (Copilot agent mode) reads `~/.copilot/mcp-config.json`
+(`$COPILOT_HOME/mcp-config.json` if `COPILOT_HOME` is set). Its entries take a
+`"type"` and, optionally, the tools to enable:
+
+```json
+{
+  "mcpServers": {
+    "apyrobo": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/apyrobo/Apyrobo",
+        "apyrobo", "mcp", "--max-speed", "0.5", "--no-go", "2,2,4,4"
+      ],
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+An older setup with `.vscode/mcp.json` takes the same entry under a top-level
+`"servers"` key, without `"tools"`; VS Code's docs say new setups should use
+the file above. `apyrobo mcp config vscode` prints this block with the
+absolute path of `uvx`.
+
 ### Let apyrobo print the snippet
 
 ```bash
@@ -119,7 +146,7 @@ apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
 
 prints the block above with the absolute path of `uvx` on this machine (GUI
 clients don't read your shell's `PATH`) and says where the config file is on
-your OS. Use `cursor` or `claude-code` instead of `claude-desktop` for those
+your OS. Use `cursor`, `vscode` or `claude-code` instead of `claude-desktop` for those
 clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
 `--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`

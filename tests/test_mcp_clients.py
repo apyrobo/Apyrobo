@@ -423,3 +423,50 @@ def test_ssh_uvx_config_also_gets_the_pin_note(tmp_path, before_pypi):
         Launch("ssh", [*mcp_clients.SSH_OPTIONS, "host", "uvx --from x apyrobo mcp"])
     )
     assert "--with 'numpy<2'" in err
+
+
+def test_vscode_prints_a_typed_stdio_entry(tmp_path, before_pypi):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, out, err = _run(_args("vscode", cfg_max_speed=0.5, cfg_no_go=["2,2,4,4"]),
+                          _which({"uvx": str(uvx)}))
+    assert code == 0
+    block = json.loads(out)
+    assert list(block) == ["mcpServers"]
+    assert block["mcpServers"]["apyrobo"] == {
+        "type": "stdio",
+        "command": str(uvx.resolve()),
+        "args": ["--from", GIT_SOURCE, "apyrobo", "mcp", "--max-speed", "0.5",
+                 "--no-go", "2,2,4,4"],
+        "tools": ["*"],
+    }
+    assert "~/.copilot/mcp-config.json" in err
+    assert '"servers"' in err and ".vscode/mcp.json" in err
+    assert "Claude Desktop" not in err
+
+
+def test_vscode_location_is_the_same_on_every_os():
+    for platform in ("linux", "darwin", "win32"):
+        assert mcp_clients.config_location("vscode", platform).startswith(
+            "~/.copilot/mcp-config.json")
+
+
+def test_vscode_over_ssh_starts_the_server_remotely():
+    code, out, _ = _run(_args("vscode", cfg_ssh="robot"), _which({"ssh": "/usr/bin/ssh"}))
+    assert code == 0
+    server = json.loads(out)["mcpServers"]["apyrobo"]
+    assert server["type"] == "stdio"
+    assert server["command"] == str(Path("/usr/bin/ssh").resolve())
+    assert "robot" in server["args"]
+
+
+def test_cli_accepts_vscode(tmp_path):
+    exe = tmp_path / "apyrobo"
+    exe.write_text("")
+    result = subprocess.run(
+        [sys.executable, "-m", "apyrobo.cli", "mcp", "config", "vscode", "--launcher", "apyrobo"],
+        capture_output=True, text=True, cwd=tmp_path, timeout=60,
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["mcpServers"]["apyrobo"]["type"] == "stdio"
