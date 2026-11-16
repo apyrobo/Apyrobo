@@ -54,5 +54,24 @@ set up on GitHub and pypi.org, see the comment at the top of that file) and
 creates the GitHub Release. Without the Trusted Publisher, upload by hand
 with `python -m twine upload dist/*`.
 
+## 4. Check the published package
+
+Once the upload is on PyPI, from any machine with Python 3.10+:
+
+```bash
+python scripts/release_smoke.py X.Y.Z
+```
+
+It installs `apyrobo==X.Y.Z` from PyPI in a fresh temp venv with the official
+MCP Python SDK, starts `apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4` on
+`mock://` and drives it with the SDK's client. Every line must say `PASS`
+(exit 1 otherwise): the package installs, the installed version is X.Y.Z, the
+server answers and lists `move_to`, a 2 m/s move is clamped to 0.5 m/s, a move
+to (3, 3) inside the zone is refused, and the robot did not move on that
+refusal. `--wheel dist/apyrobo-X.Y.Z-py3-none-any.whl` runs the same checks on
+a local wheel before the upload. It never tags or uploads anything.
+
+## 5. Publish to the MCP Registry
+
 After the PyPI release, publish `server.json` to the MCP Registry with
 `mcp-publisher` (the registry checks the `mcp-name` marker on PyPI).
