@@ -239,6 +239,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy add` now reads a battery reserve written as 'keep 20%
+  battery', 'never go below 20% battery', 'battery must stay above 20%',
+  'never let the battery fall below 20%' or 'minimum battery 20%'; only
+  'always keep', 'maintain' or 'reserve' was read before, and the rest were
+  stored as custom rules that `apyrobo policy check` never reports. The check
+  also reads a level written as 'battery 15%' or 'battery at 15%', not only
+  '15% battery', and compares the lowest one.
 - `apyrobo policy add` now reads a no-go zone written as 'keep out of the lab',
   'stay out of the loading dock', 'don't enter' or 'never go into' the kitchen;
   these were stored as custom rules that `apyrobo policy check` never reports.
