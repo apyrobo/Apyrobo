@@ -10,6 +10,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo --version` (or `-V`) prints the installed version, e.g.
+  `apyrobo 4.1.0`, and exits. Before, the flag was an argparse error
+  (exit 2). `-v` still means verbose logging.
 - Issue forms for bug reports and feature requests. A bug report asks for
   the apyrobo version, OS, MCP client, robot URI, the full command and the
   exact reply or error, so most reports can be reproduced without a round
