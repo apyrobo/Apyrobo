@@ -124,7 +124,7 @@ robot = Robot.discover("mock://warehouse_bot")
 
 # Rule-based agent (no API key needed)
 agent = Agent(provider="rule")
-result = agent.execute("deliver package to dock 3", robot)
+result = agent.execute("deliver from (1, 1) to (5, 1)", robot)
 print(result.status.value)  # "completed"
 print(f"{result.steps_completed}/{result.steps_total} steps")  # "4/4 steps"
 
@@ -201,7 +201,7 @@ agent = Agent(provider="rule")
 
 # Split and execute across the fleet
 result = coordinator.execute_task(
-    "deliver packages to docks 1, 2, and 3",
+    "deliver from (1, 1) to (5, 1)",
     agent,
 )
 print(result.status.value)  # "completed"

@@ -65,7 +65,7 @@ robot = Robot.discover("ros2://turtlebot4")
 
 agent = Agent(provider="rule")
 result = agent.execute(
-    task="navigate to position 2.5 3.0",
+    task="navigate to position (2.5, 3.0)",
     robot=robot,
     on_event=lambda e: print(f"  [{e.status.value}] {e.skill_id}: {e.message}"),
 )
@@ -169,7 +169,7 @@ Status: completed  (1/1 steps)
 
 ## Navigation internals
 
-When you call `agent.execute("navigate to 2.5 3.0", robot=robot)`, the ROS 2 adapter:
+When you call `agent.execute("navigate to (2.5, 3.0)", robot=robot)`, the ROS 2 adapter:
 
 1. **Tries Nav2 first** — sends a `NavigateToPose` action goal with the target pose in the `map` frame, pointing toward the goal.
 2. **Falls back to cmd_vel** if Nav2 is not available — runs a proportional controller loop at 10 Hz until within 0.25 m of the target.
