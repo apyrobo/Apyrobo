@@ -239,6 +239,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy add` stored a speed limit written in another unit or with
+  other words as a `custom` rule that `apyrobo policy check` never reports:
+  'never exceed 5 km/h', 'max speed 2 mph', 'speed limit 50 cm/s', 'keep speed
+  below 0.5 m/s', 'limit speed to 0.5 m/s', 'cap speed at 0.5 m/s', 'never go
+  above 0.5 m/s', 'maximum velocity 0.5 m/s', 'slow down to 0.2 m/s near
+  people'. A rule's speed in km/h, mph, cm/s, mm/s, ft/s or m/min is now
+  stored in m/s (rounded down to six decimals, so never looser) with the
+  original kept as `as_written`. Lower bounds ('never go below 0.2 m/s') still
+  stay `custom`.
 - `apyrobo policy add` stored a no-go rule's whole tail as the zone's name:
   'never enter the kitchen during lunch' became a zone named 'kitchen during
   lunch', 'the kitchen or the lab' one zone named 'kitchen or the lab', and

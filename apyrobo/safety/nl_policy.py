@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import sqlite3
 import time
@@ -105,21 +106,57 @@ _ACTION_BATTERY_RES = (
 # writing a speed is reported as unreadable rather than skipped.
 _NUM = r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)"
 _MPS = r"(?:m/s|m\s*s(?:\^?-1|⁻¹)|mps|m(?:eter|etre)s?\s*(?:/|per)\s*s(?:ec(?:ond)?)?)\b"
-# A rule's speed limit: an upper-bound phrase, then a speed in m/s written any
-# way the action check reads (``m/s``, ``mps``, ``meters per second``).
+# A rule's speed limit: an upper-bound phrase, then a speed in one of the
+# units in ``_RULE_SPEED_UNITS`` (stored in m/s).
 # Lower bounds ("never go below 0.2 m/s", "at least 0.2 m/s") are not matched,
 # so they stay ``custom`` instead of becoming a maximum.
+_SPEED_WORD = r"(?:speed|velocity)"
+_NEVER = r"(?:never|do\s+not|don't|must\s+not|mustn't|should\s+not|shall\s+not)"
 _SPEED_LEAD = (
-    r"(?:(?:never|do\s+not|don't|must\s+not|mustn't|should\s+not|shall\s+not)\s+exceed"
-    r"|max(?:imum)?(?:\s+speed)?|speed\s+limit|top\s+speed"
+    rf"(?:{_NEVER}\s+exceed"
+    rf"|max(?:imum)?(?:\s+{_SPEED_WORD})?|{_SPEED_WORD}\s+limit|top\s+{_SPEED_WORD}"
     r"|(?:no|not|never)\s+(?:go\s+|drive\s+|move\s+|travel\s+)?faster\s+than"
-    r"|(?:stay|keep|remain)\s+(?:below|under|at\s+or\s+below)"
+    rf"|{_NEVER}\s+(?:go|drive|move|travel)\s+(?:above|over)"
+    rf"|(?:stay|keep|remain|hold)\s+(?:(?:the\s+)?{_SPEED_WORD}\s+)?(?:below|under|at\s+or\s+below)"
+    rf"|(?:limit|cap|restrict)\s+(?:the\s+)?(?:(?:robot(?:'s|s)?|its)\s+)?(?:{_SPEED_WORD}\s+)?(?:to|at)"
+    r"|slow\s+down\s+to"
+    rf"|{_SPEED_WORD}\s*(?:<=|<|≤)"
     r"|at\s+most|no\s+more\s+than)"
 )
+# A rule's speed may be written in any of these units; it is stored in m/s.
+# (unit pattern, metres per second per unit)
+_RULE_SPEED_UNITS = (
+    (_MPS, 1.0),
+    (
+        r"(?:km\s*/\s*h(?:our|r)?|kmh|kph|km\s*per\s*h(?:our)?"
+        r"|kilomet(?:er|re)s?\s*(?:/|per|an)\s*h(?:our)?)",
+        1000 / 3600,
+    ),
+    (r"(?:mph|miles?\s*(?:/|per|an)\s*h(?:our)?)", 0.44704),
+    (r"(?:cm/s|cent(?:i)?met(?:er|re)s?\s*(?:/|per)\s*s(?:ec(?:ond)?)?)", 0.01),
+    (r"(?:mm/s|millimet(?:er|re)s?\s*(?:/|per)\s*s(?:ec(?:ond)?)?)", 0.001),
+    (r"(?:ft/s|fps|f(?:ee|oo)t\s*(?:/|per)\s*s(?:ec(?:ond)?)?)", 0.3048),
+    (r"(?:m/min|m(?:eter|etre)s?\s*(?:/|per)\s*min(?:ute)?)", 1 / 60),
+)
 _SPEED_RE = re.compile(
-    rf"\b{_SPEED_LEAD}(?:\s+(?:of|is|at))?\s*[:=]?\s*({_NUM})\s*{_MPS}",
+    rf"\b{_SPEED_LEAD}(?:\s+(?:of|is|at))?\s*[:=]?\s*({_NUM})\s*"
+    rf"({'|'.join(u for u, _ in _RULE_SPEED_UNITS)})(?![a-z/])",
     re.IGNORECASE,
 )
+
+
+def _rule_speed_ms(number: str, unit: str) -> float:
+    """Return a rule's speed in m/s from its number and the unit it was written in."""
+    for pattern, factor in _RULE_SPEED_UNITS:
+        if re.fullmatch(pattern, unit, re.IGNORECASE):
+            value = float(number) * factor
+            if factor == 1.0:
+                return value
+            # Six decimals, rounded down so the stored limit is never looser.
+            return math.floor(value * 1e6 + 1e-6) / 1e6
+    raise ValueError(f"unknown speed unit {unit!r}")
+
+
 _ACTION_MPS_RE = re.compile(rf"(?<![0-9.])({_NUM})\s*{_MPS}", re.IGNORECASE)
 _ACTION_OTHER_SPEED_RE = re.compile(
     rf"(?<![0-9.]){_NUM}\s*(?:km/h|kmh|kph|km\s*per\s*h(?:our)?|kilomet(?:er|re)s?\s*(?:/|per)\s*h(?:our)?"
@@ -331,13 +368,16 @@ class NLPolicyParser:
         m = _SPEED_RE.search(description)
         if m:
             context = description[m.end():].strip()
+            params = {
+                "max_speed_ms": _rule_speed_ms(m.group(1), m.group(2)),
+                "context": context or "always",
+            }
+            if not re.fullmatch(_MPS, m.group(2), re.IGNORECASE):
+                params["as_written"] = f"{m.group(1)} {m.group(2)}"
             return NLSafetyPolicy(
                 description=description,
                 constraint_type="speed_limit",
-                parameters={
-                    "max_speed_ms": float(m.group(1)),
-                    "context": context or "always",
-                },
+                parameters=params,
                 severity=self._default_severity,
                 source="regex",
             )
