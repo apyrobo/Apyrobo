@@ -311,8 +311,8 @@ def cmd_execute(args: argparse.Namespace) -> None:
 
 
 def cmd_skills(args: argparse.Namespace) -> None:
-    """List available skills."""
-    if args.list:
+    """List available skills (the default), or export one as JSON."""
+    if args.list or not args.export:
         print("Built-in Skills:")
         for skill in BUILTIN_SKILLS.values():
             print(f"  {skill.skill_id}")
@@ -328,7 +328,8 @@ def cmd_skills(args: argparse.Namespace) -> None:
     if args.export:
         skill = BUILTIN_SKILLS.get(args.export)
         if skill is None:
-            print(f"Unknown skill: {args.export}")
+            known = ", ".join(sorted(BUILTIN_SKILLS)) or "(none)"
+            print(f"Unknown skill: {args.export}. Known skills: {known}", file=sys.stderr)
             sys.exit(1)
         print(skill.to_json())
 
@@ -2984,8 +2985,8 @@ def main() -> None:
                         help="Compute profile (jetson-orin, raspberry-pi, workstation-gpu, cloud, cpu-only)")
 
     # skills
-    p_skills = sub.add_parser("skills", help="Manage skills")
-    p_skills.add_argument("--list", action="store_true", help="List all skills")
+    p_skills = sub.add_parser("skills", help="List built-in skills (or export one)")
+    p_skills.add_argument("--list", action="store_true", help="List all skills (the default)")
     p_skills.add_argument("--export", type=str, help="Export a skill as JSON")
 
     # config

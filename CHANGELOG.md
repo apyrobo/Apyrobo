@@ -268,6 +268,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo skills` with no flags printed nothing and exited 0, so a new user
+  saw no skills; only `apyrobo skills --list` listed them. It now lists the
+  built-in skills by default. `--export` with an unknown skill id now says so
+  on stderr and names the known skill ids.
 - Docs: the rule-planner examples in `docs/TURTLEBOT4.md`,
   `docs/video_tutorial.md`, `docs/quickstart_5min.md` and
   `docs/concepts/index.md` gave tasks whose target the rule planner cannot

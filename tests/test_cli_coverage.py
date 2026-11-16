@@ -431,13 +431,20 @@ class TestCmdSkills:
                 cmd_skills(args)
             assert exc.value.code == 1
 
-        out, _ = capfd.readouterr()
-        assert "Unknown skill" in out
+        _, err = capfd.readouterr()
+        assert "Unknown skill" in err
 
-    def test_skills_no_flags(self):
-        # Neither list nor export — should do nothing
-        args = ns(list=False, export=None)
-        cmd_skills(args)  # Should not raise
+    def test_skills_no_flags_lists(self, capfd):
+        # Neither list nor export: list the skills (plain `apyrobo skills`)
+        mock_skill = MagicMock()
+        mock_skill.skill_id = "nav.go_to_pose"
+        mock_skill.preconditions = []
+        mock_skill.postconditions = []
+        with patch("apyrobo.cli.BUILTIN_SKILLS", {"nav.go_to_pose": mock_skill}):
+            cmd_skills(ns(list=False, export=None))
+
+        out, _ = capfd.readouterr()
+        assert "nav.go_to_pose" in out
 
 
 # ---------------------------------------------------------------------------
