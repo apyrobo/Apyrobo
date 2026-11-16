@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: MCP troubleshooting
+    url: https://github.com/apyrobo/apyrobo/blob/main/docs/mcp.md#troubleshooting
+    about: Common apyrobo mcp setup problems and their fixes.
+  - name: Discord
+    url: https://discord.gg/n3uX7VmrUr
+    about: Questions and help with setup.
