@@ -1899,6 +1899,12 @@ def cmd_policy(args: argparse.Namespace) -> None:
                     f"with 'apyrobo policy remove {policy.policy_id}'.",
                     file=sys.stderr,
                 )
+            elif policy.constraint_type == "no_go_zone" and policy.parameters.get("context"):
+                print(
+                    f"Note: the condition {policy.parameters['context']!r} is not "
+                    f"checked; 'apyrobo policy check' refuses the zone at all times.",
+                    file=sys.stderr,
+                )
 
         elif sub == "list":
             show_all: bool = getattr(args, "all", False)

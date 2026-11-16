@@ -148,6 +148,35 @@ _NOGO_RE = re.compile(
     r"|avoid)\s+(?:the\s+)?(.+)",
     re.IGNORECASE,
 )
+# What may follow a zone's name in a no-go rule: a condition ("during lunch",
+# "without an escort"). The zone is refused at all times; the condition is
+# kept as ``context`` and not checked.
+_NOGO_CONDITION_RE = re.compile(
+    r"\s*,?\s+(?:during|when|whenever|while|unless|if|without|except|before|after"
+    r"|between|until|outside\s+of|at\s+night|at\s+any\s+time|at\s+all\s+times"
+    r"|on\s+weekends?|on\s+weekdays?|for\s+any\s+reason)\b.*$",
+    re.IGNORECASE,
+)
+# Several zones in one rule: "the kitchen or the lab", "the kitchen, the lab
+# and the dock".
+_NOGO_SPLIT_RE = re.compile(r"\s*,\s*(?:(?:and|or|nor)\s+)?|\s+(?:and|or|nor)\s+", re.IGNORECASE)
+_LEADING_THE_RE = re.compile(r"^(?:the|a|an)\s+", re.IGNORECASE)
+
+
+def _nogo_zones(text: str) -> tuple[list[str], str]:
+    """Split the text after a no-go lead into zone names and a condition."""
+    text = text.strip()
+    context = ""
+    m = _NOGO_CONDITION_RE.search(text)
+    if m:
+        context = text[m.start():].strip(" ,").rstrip(".!?;:")
+        text = text[: m.start()]
+    zones = []
+    for part in _NOGO_SPLIT_RE.split(text):
+        name = _LEADING_THE_RE.sub("", part.strip().rstrip(".!?;:,").strip())
+        if name and name.lower() not in (z.lower() for z in zones):
+            zones.append(name)
+    return zones, context
 
 
 @dataclass
@@ -342,11 +371,18 @@ class NLPolicyParser:
         # No-go zone
         m = _NOGO_RE.search(description)
         if m:
-            zone = m.group(1).strip().rstrip(".")
+            zones, context = _nogo_zones(m.group(1))
+            if not zones:
+                return None
+            params: dict[str, Any] = {"zone_name": zones[0]}
+            if len(zones) > 1:
+                params["zone_names"] = zones
+            if context:
+                params["context"] = context
             return NLSafetyPolicy(
                 description=description,
                 constraint_type="no_go_zone",
-                parameters={"zone_name": zone},
+                parameters=params,
                 severity=self._default_severity,
                 source="regex",
             )
@@ -454,13 +490,18 @@ class NLPolicyParser:
                     )
 
             elif policy.constraint_type == "no_go_zone":
-                zone = policy.parameters.get("zone_name", "").lower()
-                if zone and zone in action_description.lower():
-                    violations.append(
-                        f"Policy [{policy.policy_id}] violated: "
-                        f"action mentions no-go zone {zone!r} "
-                        f"({policy.description})"
-                    )
+                zones = policy.parameters.get("zone_names") or [
+                    policy.parameters.get("zone_name", "")
+                ]
+                action_lower = action_description.lower()
+                for zone in (str(z).lower() for z in zones):
+                    if zone and zone in action_lower:
+                        violations.append(
+                            f"Policy [{policy.policy_id}] violated: "
+                            f"action mentions no-go zone {zone!r} "
+                            f"({policy.description})"
+                        )
+                        break
 
         return violations
 
