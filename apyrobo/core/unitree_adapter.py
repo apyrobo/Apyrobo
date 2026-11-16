@@ -359,7 +359,10 @@ class UnitreeAdapter(CapabilityAdapter):
         vx = min(abs(x), max_speed) * (1.0 if x >= 0 else -1.0)
         vy = min(abs(y), max_speed) * (1.0 if y >= 0 else -1.0)
         if speed is not None:
-            scale = min(speed, max_speed) / max_speed
+            # A speed is a magnitude; the direction comes from x and y. A
+            # negative one used to reverse the walk and, below -max_speed,
+            # skip the model's cap.
+            scale = min(abs(speed), max_speed) / max_speed
             vx *= scale
             vy *= scale
 
@@ -450,7 +453,9 @@ class UnitreeAdapter(CapabilityAdapter):
         max_omega = 1.0  # rad/s, conservative limit for both Go2 and H1
         omega = min(abs(angle_rad), max_omega) * (1.0 if angle_rad >= 0 else -1.0)
         if speed is not None:
-            omega = min(speed, max_omega) * (1.0 if angle_rad >= 0 else -1.0)
+            # The turn direction comes from angle_rad: a negative speed used to
+            # turn the other way and, below -1 rad/s, skip max_omega.
+            omega = min(abs(speed), max_omega) * (1.0 if angle_rad >= 0 else -1.0)
 
         if self._sport_client is not None:
             try:

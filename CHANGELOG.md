@@ -239,6 +239,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `unitree://`: `move` and `rotate` with a negative `speed` walked or turned
+  the opposite way from the one asked, and a speed below minus the model's cap
+  (1.5 m/s on Go2, 1.2 on H1, 1 rad/s for turns) was not capped. The `rotate`
+  tool and `SafetyEnforcer` pass a negative turn speed on with its sign. A
+  speed is now read as a magnitude: the direction comes from the target or
+  `angle_rad`, and the cap holds.
 - The rule planner (`apyrobo mcp`'s `plan_task` and `execute_task`, `apyrobo
   plan` and `execute`) refused a task speed in any unit but m/s: 'go to (1, 2)
   at 30 cm/s' or 'at 1 km/h' moved nothing, though `apyrobo policy` reads
