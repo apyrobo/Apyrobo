@@ -428,7 +428,7 @@ checked only when the move runs.
 
 For a starting point, copy a commented policy from
 [`examples/policies/`](../examples/policies/) (warehouse aisle, lab bench, home
-with stairs), edit the zones for your map, and check it with
+with stairs, home with known rooms), edit the zones for your map, and check it with
 `apyrobo mcp selftest --policy-file your_policy.yaml`.
 
 ### Deny by default with allowed areas
