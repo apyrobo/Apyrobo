@@ -68,9 +68,38 @@ _PROXIMITY_RE = re.compile(
     r"(?:away\s+from|from)\s+([a-z\s]+)",
     re.IGNORECASE,
 )
-_BATTERY_RE = re.compile(
-    r"(?:always\s+keep|maintain|reserve)\s+(?:at\s+least\s+)?([0-9]+(?:\.[0-9]+)?)\s*%\s*battery",
-    re.IGNORECASE,
+# A battery reserve: a lower bound on the battery level, written as a
+# percentage. Each pattern's one group is the percentage.
+_PCT = r"([0-9]+(?:\.[0-9]+)?)\s*%"
+_NEG = r"(?:never|do\s+not|don't|must\s+not|mustn't|should\s+not|shall\s+not)"
+_FALL = r"(?:go|drop|fall|run|dip|get)\s+(?:below|under)"
+_BATTERY_WORD = r"(?:the\s+)?battery(?:\s+level)?"
+_BATTERY_RES = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        # "always keep 20% battery", "keep at least 20% of the battery",
+        # "maintain a 20% battery reserve", "reserve 20% battery"
+        rf"\b(?:always\s+)?(?:keep|maintain|reserve|hold|retain)\s+"
+        rf"(?:at\s+least\s+|a\s+minimum\s+of\s+|a\s+)?{_PCT}\s*(?:of\s+)?{_BATTERY_WORD}",
+        # "never go below 20% battery", "do not drop under 20% of the battery"
+        rf"\b{_NEG}\s+{_FALL}\s+{_PCT}\s*(?:of\s+)?{_BATTERY_WORD}",
+        # "never let the battery fall below 20%"
+        rf"\b{_NEG}\s+let\s+{_BATTERY_WORD}\s+{_FALL}\s+{_PCT}",
+        # "battery must stay above 20%", "keep the battery above 20%"
+        rf"\b(?:(?:keep|maintain)\s+)?{_BATTERY_WORD}\s+"
+        r"(?:(?:must|should|shall)\s+)?(?:always\s+)?(?:(?:stay|remain|be)\s+)?"
+        rf"(?:above|over|at\s+least|at\s+or\s+above)\s+{_PCT}",
+        # "minimum battery 20%", "min battery level: 20%"
+        rf"\b(?:minimum|min)\s+{_BATTERY_WORD}(?:\s+(?:of|is))?\s*[:=]?\s*{_PCT}",
+    )
+)
+# A battery level in an action: "15% battery", "battery 15%", "battery at 15%".
+_ACTION_BATTERY_RES = (
+    re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*battery", re.IGNORECASE),
+    re.compile(
+        r"\bbattery(?:\s+level)?(?:\s+(?:is|at|of))?\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*%",
+        re.IGNORECASE,
+    ),
 )
 # Speeds in an action description. Only m/s is read; any other way of
 # writing a speed is reported as unreadable rather than skipped.
@@ -299,15 +328,16 @@ class NLPolicyParser:
             )
 
         # Battery reserve
-        m = _BATTERY_RE.search(description)
-        if m:
-            return NLSafetyPolicy(
-                description=description,
-                constraint_type="battery_reserve",
-                parameters={"min_battery_pct": float(m.group(1))},
-                severity=self._default_severity,
-                source="regex",
-            )
+        for battery_re in _BATTERY_RES:
+            m = battery_re.search(description)
+            if m:
+                return NLSafetyPolicy(
+                    description=description,
+                    constraint_type="battery_reserve",
+                    parameters={"min_battery_pct": float(m.group(1))},
+                    severity=self._default_severity,
+                    source="regex",
+                )
 
         # No-go zone
         m = _NOGO_RE.search(description)
@@ -471,9 +501,13 @@ class NLPolicyParser:
 
     @staticmethod
     def _extract_battery(text: str) -> float | None:
-        """Extract a battery percentage from *text*, or None."""
-        m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%\s*battery", text, re.IGNORECASE)
-        return float(m.group(1)) if m else None
+        """The lowest battery percentage written in *text*, or None."""
+        levels = [
+            float(m.group(1))
+            for battery_re in _ACTION_BATTERY_RES
+            for m in battery_re.finditer(text)
+        ]
+        return min(levels) if levels else None
 
 
 # ---------------------------------------------------------------------------

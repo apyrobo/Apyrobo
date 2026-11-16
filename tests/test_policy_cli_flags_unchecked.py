@@ -25,7 +25,7 @@ def _args(sub: str, db: str, **kw) -> argparse.Namespace:
 
 
 @pytest.mark.parametrize(
-    "rule", ["never exceed 30 cm/s", "no robots in the lab", "keep 30% battery"]
+    "rule", ["never exceed 30 cm/s", "no robots in the lab", "never carry more than 20 kg"]
 )
 def test_add_warns_when_rule_is_not_checked(tmp_path, capsys, rule) -> None:
     cmd_policy(_args("add", str(tmp_path / "p.db"), description=rule))
@@ -80,7 +80,7 @@ def test_check_names_skipped_policies_on_violation(tmp_path, capsys) -> None:
     db = str(tmp_path / "p.db")
     cmd_policy(_args("add", db, description="never exceed 0.5 m/s"))
     cmd_policy(_args("add", db, description="no robots in the lab"))
-    cmd_policy(_args("add", db, description="keep 30% battery"))
+    cmd_policy(_args("add", db, description="never carry more than 20 kg"))
     capsys.readouterr()
     with pytest.raises(SystemExit) as exc:
         cmd_policy(_args("check", db, action="go to the lab at 2 m/s"))
