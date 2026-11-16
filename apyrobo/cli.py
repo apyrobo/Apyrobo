@@ -2233,6 +2233,11 @@ def _init_adapter_package(args: argparse.Namespace) -> None:
         getattr(args, "description", "")
         or f"APYROBO capability adapter for {scheme} robots"
     )
+    # The description lands in a TOML string and a Python docstring, and the
+    # scheme in a TOML key: written raw, a quote or backslash broke
+    # pyproject.toml or __init__.py, and a '.' or '+' in the scheme (valid in
+    # a URI scheme) split the entry-point key or failed to parse.
+    doc_description = description.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
     (out_dir / "pyproject.toml").write_text(textwrap.dedent(f"""\
         [build-system]
@@ -2242,15 +2247,15 @@ def _init_adapter_package(args: argparse.Namespace) -> None:
         [project]
         name = "{pkg_name}"
         version = "0.1.0"
-        description = "{description}"
+        description = {json.dumps(description, ensure_ascii=False)}
         requires-python = ">=3.10"
         dependencies = ["apyrobo>=4.0.0"]
-        {('authors = [{name = ' + repr(author) + '}]') if author else ""}
+        {('authors = [{name = ' + json.dumps(author, ensure_ascii=False) + '}]') if author else ""}
 
         # apyrobo resolves {scheme}://<robot> to this class automatically —
         # no import needed on the caller's side.
         [project.entry-points."apyrobo.adapters"]
-        {scheme} = "{module_name}:{class_name}"
+        "{scheme}" = "{module_name}:{class_name}"
 
         [project.optional-dependencies]
         dev = ["pytest>=8.0", "jsonschema>=4.21"]
@@ -2260,7 +2265,7 @@ def _init_adapter_package(args: argparse.Namespace) -> None:
     """))
 
     (src_dir / "__init__.py").write_text(textwrap.dedent(f"""\
-        \"\"\"{pkg_name} — {description}.\"\"\"
+        \"\"\"{pkg_name} — {doc_description}.\"\"\"
         from .adapter import {class_name}
 
         __all__ = ["{class_name}"]
