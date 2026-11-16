@@ -239,6 +239,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A typo in a zone (`--no-go 1,x,2,2`, `--allow-area`, or a string zone in a
+  `--policy-file`) stopped `apyrobo mcp` and its `config`, `selftest` and
+  `keepout` commands with a bare `could not convert string to float: 'x'`. The
+  error now names the zone, the expected `x_min,y_min,x_max,y_max` format and
+  the bad part. A whole number too big for a float in a policy file zone is
+  refused with the usual readable error instead of a traceback.
 - `unitree://`: `move` and `rotate` with a negative `speed` walked or turned
   the opposite way from the one asked, and a speed below minus the model's cap
   (1.5 m/s on Go2, 1.2 on H1, 1 rad/s for turns) was not capped. The `rotate`

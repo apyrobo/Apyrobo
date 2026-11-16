@@ -2145,7 +2145,16 @@ def parse_zone(spec: str, what: str = "no-go zone") -> dict[str, float]:
     parts = [p.strip() for p in spec.split(",")]
     if len(parts) != 4:
         raise ValueError(f"{what} must be x_min,y_min,x_max,y_max — got {spec!r}")
-    x_min, y_min, x_max, y_max = (float(p) for p in parts)
+    values = []
+    for name, part in zip(_ZONE_KEYS, parts, strict=True):
+        try:
+            values.append(float(part))
+        except ValueError:
+            raise ValueError(
+                f"{what} must be x_min,y_min,x_max,y_max in metres; "
+                f"{name} {part!r} is not a number (got {spec!r})"
+            ) from None
+    x_min, y_min, x_max, y_max = values
     if not all(math.isfinite(v) for v in (x_min, y_min, x_max, y_max)):
         raise ValueError(f"{what} must use finite numbers: {spec!r}")
     if x_min > x_max or y_min > y_max:
@@ -2193,13 +2202,13 @@ def _file_zone(
     zone: dict[str, Any] = {}
     for field in _ZONE_KEYS:
         value = raw[field]
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
+        number: float | None = None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            with contextlib.suppress(OverflowError):  # an int too big for a float
+                number = float(value)
+        if number is None or not math.isfinite(number):
             raise ValueError(f"{label}.{field} must be a finite number, got {value!r}")
-        zone[field] = float(value)
+        zone[field] = number
     if zone["x_min"] > zone["x_max"] or zone["y_min"] > zone["y_max"]:
         raise ValueError(f"{label} has min > max")
     if "name" in raw:
