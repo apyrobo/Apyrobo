@@ -10,6 +10,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `scripts/release_smoke.py VERSION`: the release-day check of the published
+  package. It installs `apyrobo==VERSION` from PyPI (or `--wheel PATH`) in a
+  fresh venv, starts `apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4` with the
+  official MCP SDK client, and prints PASS/FAIL for the installed version, a
+  2 m/s move clamped to 0.5 m/s, and a move into the zone refused with the
+  robot not moving. docs/RELEASING.md lists it as step 4.
 - `apyrobo mcp config vscode` prints the block for VS Code (Copilot agent
   mode): an `mcpServers` entry with `"type": "stdio"` and `"tools": ["*"]` for
   `~/.copilot/mcp-config.json`, with the same flags, checks and `--ssh` support
