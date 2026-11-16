@@ -239,6 +239,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo init <scheme> --adapter`: a quote or backslash in `--description`
+  broke the generated `pyproject.toml` and `__init__.py`, and a scheme with a
+  `.` or `+` (both accepted as URI schemes) wrote an entry point that did not
+  parse or never resolved (`my.bot` landed under a nested `my` table). The
+  description and author are now written as proper TOML and Python strings
+  and the entry-point key is quoted.
 - `apyrobo init <name>`: a name with a space, a dot or a leading digit
   (`apyrobo init "My Robot"`, `123bot`, `arm.v2`) printed "Created" and a
   package whose `pyproject.toml` did not parse or whose `skills.py` did not
