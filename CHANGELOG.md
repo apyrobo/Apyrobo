@@ -239,6 +239,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy add` stored a no-go rule's whole tail as the zone's name:
+  'never enter the kitchen during lunch' became a zone named 'kitchen during
+  lunch', 'the kitchen or the lab' one zone named 'kitchen or the lab', and
+  'stay out of the server room!' a zone ending in '!', so `apyrobo policy
+  check "go to the kitchen"` passed. The zone is now the name alone; a
+  condition ('during', 'when', 'while', 'unless', 'without', 'at night', ...)
+  is kept as `context`, not checked (the zone is refused at all times, and
+  `policy add` says so); several zones joined by 'and', 'or' or commas are each
+  checked (`zone_names`).
 - `apyrobo policy add` now reads a battery reserve written as 'keep 20%
   battery', 'never go below 20% battery', 'battery must stay above 20%',
   'never let the battery fall below 20%' or 'minimum battery 20%'; only
