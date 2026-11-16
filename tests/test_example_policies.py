@@ -25,9 +25,10 @@ def zone_center(zone):
     return (zone["x_min"] + zone["x_max"]) / 2, (zone["y_min"] + zone["y_max"]) / 2
 
 
-def test_three_example_policies_ship():
+def test_four_example_policies_ship():
     assert [p.name for p in POLICIES] == [
-        "home_stairs.yaml", "lab_bench.yaml", "warehouse_aisle.yaml",
+        "home_known_spots.yaml", "home_stairs.yaml", "lab_bench.yaml",
+        "warehouse_aisle.yaml",
     ]
 
 
@@ -78,3 +79,35 @@ def test_warehouse_example_refuses_a_target_off_the_allowed_floor():
     res = call(srv, "move_to", {"x": 100.0, "y": 0.0})
     assert res["isError"] is True
     assert "outside every allowed area" in res["content"][0]["text"]
+
+
+def test_home_known_spots_keeps_moves_in_the_named_rooms():
+    path = POLICY_DIR / "home_known_spots.yaml"
+    cfg = load_policy_file(path)
+    assert cfg["max_speed"] == 0.3
+    assert [a["name"] for a in cfg["allowed_areas"]] == [
+        "living-room", "kitchen", "hallway",
+    ]
+    assert [z["name"] for z in cfg["no_go_zones"]] == ["stairs-top"]
+    srv = build_server(policy_file=path)
+
+    # A target outside every room is refused and the robot stays at the dock.
+    res = call(srv, "move_to", {"x": 10.0, "y": 0.0})
+    assert res["isError"] is True
+    assert "outside every allowed area" in res["content"][0]["text"]
+
+    # A 1 m/s request is clamped to 0.3 m/s, living room to kitchen.
+    res = call(srv, "move_to", {"x": 6.5, "y": 0.0, "speed": 1.0})
+    assert not res.get("isError"), res
+    moved = json.loads(res["content"][0]["text"])
+    assert moved["status"] == "moved"
+    assert moved["safety_interventions"][0]["enforced"] == 0.3
+
+    # From the kitchen, the straight line to the hallway's far corner cuts
+    # across space outside the rooms, so mock:// refuses it.
+    res = call(srv, "move_to", {"x": 1.5, "y": 6.0})
+    assert res["isError"] is True
+
+    # stop is always allowed.
+    res = call(srv, "stop")
+    assert not res.get("isError"), res

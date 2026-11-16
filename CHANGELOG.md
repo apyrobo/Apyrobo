@@ -10,6 +10,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `examples/policies/home_known_spots.yaml`: an example policy for a home
+  robot that may only end a move in a few named rooms (allowed areas), drives
+  at 0.3 m/s at most and never onto the stairs landing. Rectangles only; an
+  example to copy and measure for your own map, not a tested home setup.
 - `examples/06_mcp_client_sdk.py`: the starting point for wiring
   `apyrobo mcp` into your own agent with the official MCP Python SDK. It
   starts the server on `mock://` over stdio, lists the tools, calls `move_to`,

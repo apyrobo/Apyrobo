@@ -1,0 +1,61 @@
+# Example safety policy: a home robot that may only drive within a few known
+# rooms, slowly, and never onto the stairs. stop is always allowed, even mid-move.
+#
+# Use it with:   apyrobo mcp --policy-file examples/policies/home_known_spots.yaml
+# Copy it first and replace the numbers with measurements from your own map.
+# This is an example to start from, not a tested home setup.
+#
+# How the checks work (read this before you rely on it):
+#   - Every zone and area is an axis-aligned rectangle in the robot's map frame,
+#     in metres. Circles, polygons and rotated rectangles are not supported.
+#   - A move is refused when its TARGET point is inside a no-go zone, or outside
+#     every allowed area. On adapters that drive straight (mock://,
+#     gazebo_native://, mujoco://, ros2:// without Nav2) it is also refused when
+#     the straight line to the target enters a zone or leaves the allowed areas.
+#     On ros2:// with Nav2 the planned route is checked, but not the path driven:
+#     add a Nav2 keepout filter for anywhere the robot must never enter.
+#   - Nothing here detects a drop: keep the robot's own cliff sensors on. A no-go
+#     zone at the top of the stairs is a second line of defence, not the only one.
+#   - Speeds above max_speed are clamped down to it, not refused.
+#   - Flags on the command line win: --max-speed replaces max_speed, each
+#     --no-go adds a zone and each --allow-area adds an area on top of these.
+
+name: home-known-spots
+
+base: default
+
+# Slow enough for pets and small children to get out of the way.
+max_speed: 0.3
+
+max_angular_speed: 0.8
+
+# The only places a move may end. The rooms touch, so the robot can drive
+# from one to the next; anything outside them is refused.
+allowed_areas:
+  # Living room, with the charging dock at (0, 0).
+  - name: living-room
+    x_min: -1.0
+    y_min: -2.0
+    x_max: 5.0
+    y_max: 3.0
+  # Kitchen, through the opening on the living room's east side.
+  - name: kitchen
+    x_min: 5.0
+    y_min: -2.0
+    x_max: 8.0
+    y_max: 3.0
+  # Hallway north of the living room, leading to the stairs.
+  - name: hallway
+    x_min: -1.0
+    y_min: 3.0
+    x_max: 2.0
+    y_max: 8.0
+
+no_go_zones:
+  # Top landing of the staircase at the end of the hallway, with a 0.5 m
+  # margin before the first step.
+  - name: stairs-top
+    x_min: -1.0
+    y_min: 6.5
+    x_max: 2.0
+    y_max: 8.0
