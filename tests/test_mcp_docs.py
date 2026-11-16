@@ -161,8 +161,9 @@ def test_every_json_block_parses():
 
 
 def _documented_server() -> dict:
-    servers = [json.loads(b)["mcpServers"] for b in _fences("json") if '"mcpServers"' in b]
-    assert len(servers) == 1, "expected one mcpServers block in docs/mcp.md"
+    servers = [json.loads(b)["mcpServers"] for b in _fences("json")
+               if '"mcpServers"' in b and '"type"' not in b]
+    assert len(servers) == 1, "expected one Claude Desktop mcpServers block in docs/mcp.md"
     return servers[0]["apyrobo"]
 
 
@@ -184,6 +185,21 @@ def test_cursor_takes_the_same_block(monkeypatch):
     cursor, _ = _printed(["mcp", "config", "cursor", "--launcher", "uvx", *flags], monkeypatch)
     assert json.loads(cursor) == json.loads(desktop)
     assert "Add the same `mcpServers` block to `~/.cursor/mcp.json`" in _doc()
+
+
+def test_the_vscode_block_matches_mcp_config(monkeypatch):
+    blocks = [json.loads(b)["mcpServers"]["apyrobo"] for b in _fences("json")
+              if '"mcpServers"' in b and '"type"' in b]
+    assert len(blocks) == 1, "expected one VS Code mcpServers block in docs/mcp.md"
+    documented = blocks[0]
+    out, _ = _printed(["mcp", "config", "vscode", "--launcher", "uvx",
+                       *_documented_config_flags()], monkeypatch)
+    printed = json.loads(out)["mcpServers"]["apyrobo"]
+    assert documented["type"] == printed["type"] == "stdio"
+    assert documented["tools"] == printed["tools"] == ["*"]
+    assert documented["command"] == printed["command"] == "uvx"
+    assert _without_uvx_source(documented["args"]) == _without_uvx_source(printed["args"])
+    assert "~/.copilot/mcp-config.json" in _doc()
 
 
 def test_the_pip_variant_matches_launcher_apyrobo(monkeypatch):

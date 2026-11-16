@@ -3283,7 +3283,8 @@ def main() -> None:
         "config",
         help="Print a ready-to-paste config for an MCP client (writes nothing)",
     )
-    p_mcp_config.add_argument("client", choices=["claude-desktop", "cursor", "claude-code"])
+    p_mcp_config.add_argument("client",
+                              choices=["claude-desktop", "cursor", "claude-code", "vscode"])
     p_mcp_config.add_argument("--launcher", default="auto", choices=["auto", "uvx", "apyrobo"],
                               help="Start the server with uvx (from git) or the installed "
                                    "apyrobo (default: uvx if found, else apyrobo)")

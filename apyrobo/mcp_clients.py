@@ -2,7 +2,7 @@
 
 ``apyrobo mcp config <client>`` prints the snippet a client needs to start
 ``apyrobo mcp``, with the executable resolved to an absolute path on this
-machine (GUI clients such as Claude Desktop and Cursor do not read your
+machine (GUI clients such as Claude Desktop, Cursor and VS Code do not read your
 shell's PATH) and the config file location for this operating system.
 
 With ``--ssh user@host`` the client on your laptop starts ``apyrobo mcp`` on
@@ -34,7 +34,7 @@ GIT_SOURCE = "git+https://github.com/apyrobo/Apyrobo"
 #: First release that ships ``apyrobo mcp`` on PyPI.
 FIRST_PYPI_MCP_RELEASE = (4, 2, 0)
 
-CLIENTS = ("claude-desktop", "cursor", "claude-code")
+CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode")
 LAUNCHERS = ("auto", "uvx", "apyrobo")
 
 #: ssh options for an unattended stdio pipe. BatchMode makes a missing key fail
@@ -248,6 +248,11 @@ def config_location(client: str, platform: str | None = None) -> str:
         return "~/.cursor/mcp.json (or .cursor/mcp.json in a project)"
     if client == "claude-code":
         return "run the command in a terminal; Claude Code stores it for you"
+    if client == "vscode":
+        # VS Code's MCP configuration reference names this user file, under
+        # $COPILOT_HOME when that is set, as the place for new setups.
+        return ("~/.copilot/mcp-config.json "
+                "(or $COPILOT_HOME/mcp-config.json if COPILOT_HOME is set)")
     raise ValueError(f"unknown client {client!r}; choose one of {', '.join(CLIENTS)}")
 
 
@@ -258,6 +263,10 @@ def render(client: str, launch: Launch, name: str = "apyrobo",
     if client in ("claude-desktop", "cursor"):
         block = {"mcpServers": {name: {"command": launch.command, "args": launch.args}}}
         return json.dumps(block, indent=2)
+    if client == "vscode":
+        entry = {"type": "stdio", "command": launch.command, "args": launch.args,
+                 "tools": ["*"]}
+        return json.dumps({"mcpServers": {name: entry}}, indent=2)
     if client == "claude-code":
         argv = ["claude", "mcp", "add", name, "--", launch.command, *launch.args]
         if platform.startswith("win"):
@@ -276,6 +285,10 @@ def hints(client: str, launch: Launch, platform: str | None = None) -> list[str]
     else:
         lines.append(f"Merge this into: {config_location(client, platform)}")
         lines.append("Keep any other servers already under \"mcpServers\".")
+    if client == "vscode":
+        lines.append("An older VS Code setup with .vscode/mcp.json: paste the same "
+                     "entry under its top-level \"servers\" key instead, without "
+                     "\"tools\".")
     if client == "claude-desktop":
         lines.append("Then fully quit Claude Desktop (menu bar or system tray) "
                      "and open it again; it reads the config only at start-up.")

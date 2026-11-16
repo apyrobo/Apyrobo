@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp config vscode` prints the block for VS Code (Copilot agent
+  mode): an `mcpServers` entry with `"type": "stdio"` and `"tools": ["*"]` for
+  `~/.copilot/mcp-config.json`, with the same flags, checks and `--ssh` support
+  as the other clients, and a note for older `.vscode/mcp.json` setups.
+  docs/mcp.md has a VS Code section.
 - `apyrobo mcp`: a `move_to` or `rotate` refused by the safety policy now also
   returns `structuredContent` with a stable `code` (the enforcer's violation
   type, e.g. `collision_zone`, `outside_allowed_area`) and the zone, areas or
