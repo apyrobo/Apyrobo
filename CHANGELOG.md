@@ -239,6 +239,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy add` now reads a no-go zone written as 'keep out of the lab',
+  'stay out of the loading dock', 'don't enter' or 'never go into' the kitchen;
+  these were stored as custom rules that `apyrobo policy check` never reports.
 - The warehouse demo's next steps suggested `apyrobo policy add "keep 1.5m away
   from humans"`, which is stored as a rule `apyrobo policy check` never reports.
   It now suggests a speed cap near people, and a test checks every demo's

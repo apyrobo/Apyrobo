@@ -110,8 +110,13 @@ _ACTION_PER_SECOND_RE = re.compile(
     rf"(?<![0-9.]){_NUM}\s*\w*\s*(?:/|per)\s*s(?:ec(?:ond)?)?\b", re.IGNORECASE
 )
 
+# A no-go zone: "never enter", "do not enter", "don't go into", "keep out of",
+# "stay out of" or "avoid", then the zone's name.
 _NOGO_RE = re.compile(
-    r"(?:never\s+enter|do\s+not\s+enter|avoid)\s+(?:the\s+)?(.+)",
+    r"(?:(?:never|do\s+not|don't|must\s+not|mustn't|should\s+not|shall\s+not)"
+    r"\s+(?:enter|go\s+into)"
+    r"|(?:keep|stay)\s+out\s+of"
+    r"|avoid)\s+(?:the\s+)?(.+)",
     re.IGNORECASE,
 )
 

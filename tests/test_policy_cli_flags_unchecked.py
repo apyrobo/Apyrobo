@@ -2,7 +2,7 @@
 
 `apyrobo policy check` reads speed limits in m/s, battery reserves and no-go
 zones only (docs/concepts/nl_safety_policies.md). Before this fix,
-`apyrobo policy add "never exceed 30 cm/s"` or "keep out of the lab" printed
+`apyrobo policy add "never exceed 30 cm/s"` or "no robots in the lab" printed
 "✓ Added policy" as a custom rule, and every later check printed
 "✓ No policy violations" with nothing to say that rule was skipped.
 """
@@ -25,7 +25,7 @@ def _args(sub: str, db: str, **kw) -> argparse.Namespace:
 
 
 @pytest.mark.parametrize(
-    "rule", ["never exceed 30 cm/s", "keep out of the lab", "keep 30% battery"]
+    "rule", ["never exceed 30 cm/s", "no robots in the lab", "keep 30% battery"]
 )
 def test_add_warns_when_rule_is_not_checked(tmp_path, capsys, rule) -> None:
     cmd_policy(_args("add", str(tmp_path / "p.db"), description=rule))
@@ -44,7 +44,7 @@ def test_add_json_says_whether_checked(tmp_path, capsys) -> None:
     db = str(tmp_path / "p.db")
     cmd_policy(_args("add", db, description="never exceed 0.5 m/s", json=True))
     assert json.loads(capsys.readouterr().out)["checked"] is True
-    cmd_policy(_args("add", db, description="keep out of the lab", json=True))
+    cmd_policy(_args("add", db, description="no robots in the lab", json=True))
     out = capsys.readouterr()
     data = json.loads(out.out)
     assert data["checked"] is False
@@ -55,31 +55,31 @@ def test_add_json_says_whether_checked(tmp_path, capsys) -> None:
 def test_list_marks_unchecked(tmp_path, capsys) -> None:
     db = str(tmp_path / "p.db")
     cmd_policy(_args("add", db, description="never exceed 0.5 m/s"))
-    cmd_policy(_args("add", db, description="keep out of the lab"))
+    cmd_policy(_args("add", db, description="no robots in the lab"))
     capsys.readouterr()
     cmd_policy(_args("list", db))
     lines = capsys.readouterr().out.splitlines()
     speed = [ln for ln in lines if "speed_limit" in ln]
-    custom = [ln for ln in lines if "keep out of the lab" in ln]
+    custom = [ln for ln in lines if "no robots in the lab" in ln]
     assert speed and "[not checked]" not in speed[0]
     assert custom and "[not checked]" in custom[0]
 
 
 def test_check_names_skipped_policies_when_passing(tmp_path, capsys) -> None:
     db = str(tmp_path / "p.db")
-    cmd_policy(_args("add", db, description="keep out of the lab"))
+    cmd_policy(_args("add", db, description="no robots in the lab"))
     capsys.readouterr()
     cmd_policy(_args("check", db, action="go to the lab"))
     out = capsys.readouterr().out
     assert "✓ No policy violations" in out
     assert "1 active policy was not checked" in out
-    assert "keep out of the lab" in out
+    assert "no robots in the lab" in out
 
 
 def test_check_names_skipped_policies_on_violation(tmp_path, capsys) -> None:
     db = str(tmp_path / "p.db")
     cmd_policy(_args("add", db, description="never exceed 0.5 m/s"))
-    cmd_policy(_args("add", db, description="keep out of the lab"))
+    cmd_policy(_args("add", db, description="no robots in the lab"))
     cmd_policy(_args("add", db, description="keep 30% battery"))
     capsys.readouterr()
     with pytest.raises(SystemExit) as exc:
@@ -92,7 +92,7 @@ def test_check_names_skipped_policies_on_violation(tmp_path, capsys) -> None:
 
 def test_check_json_lists_not_checked_ids(tmp_path, capsys) -> None:
     db = str(tmp_path / "p.db")
-    cmd_policy(_args("add", db, description="keep out of the lab", json=True))
+    cmd_policy(_args("add", db, description="no robots in the lab", json=True))
     pid = json.loads(capsys.readouterr().out)["policy_id"]
     cmd_policy(_args("check", db, action="go to the lab", json=True))
     data = json.loads(capsys.readouterr().out)

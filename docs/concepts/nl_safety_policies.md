@@ -63,7 +63,7 @@ APYROBO uses a two-stage pipeline:
 | `"speed must stay below 1 m/s"`, `"do not go faster than 0.3 meters per second"` | `speed_limit` (upper bounds only: "never exceed", "max speed", "speed limit", "top speed", "no faster than", "stay/keep below", "at most", "no more than", with the speed in m/s, mps or meters per second; a lower bound such as "never go below 0.2 m/s" stays `custom`) |
 | `"keep 1.5 meters away from humans"` | `proximity_limit { min_distance_m: 1.5, target: "humans" }` |
 | `"always keep 20% battery"` | `battery_reserve { min_battery_pct: 20.0 }` |
-| `"never enter the server room"` | `no_go_zone { zone_name: "server room" }` |
+| `"never enter the server room"`, `"keep out of the lab"` | `no_go_zone { zone_name: "server room" }` ("never enter", "do not enter", "don't go into", "keep out of", "stay out of", "avoid", then the zone's name) |
 
 **Stage 2 — LLM fallback** (optional, for complex rules)
 
@@ -107,7 +107,7 @@ The check works on the text of the action, not on what a robot will do.
 
 An action with no speed in it passes a speed limit.
 
-A rule the regex does not recognise (`never exceed 30 cm/s`, `keep out of the lab`, `keep 30% battery`) is stored as `custom` and never reported as violated. `apyrobo policy add` warns on stderr when a rule lands in a type the check does not read (`"checked": false` with `--json`), `apyrobo policy list` marks it `[not checked]`, and `apyrobo policy check` lists the active policies it skipped (`"not_checked"` ids with `--json`). The exit code still depends only on violations.
+A rule the regex does not recognise (`never exceed 30 cm/s`, `no robots in the lab`, `keep 30% battery`) is stored as `custom` and never reported as violated. `apyrobo policy add` warns on stderr when a rule lands in a type the check does not read (`"checked": false` with `--json`), `apyrobo policy list` marks it `[not checked]`, and `apyrobo policy check` lists the active policies it skipped (`"not_checked"` ids with `--json`). The exit code still depends only on violations.
 
 ## Policy storage
 
