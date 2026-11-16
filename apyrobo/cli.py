@@ -2935,12 +2935,22 @@ def _bind_rectangle_values(argv: list[str]) -> list[str]:
     return bound
 
 
+def _apyrobo_version() -> str:
+    from apyrobo.__version__ import __version__
+    return __version__
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="apyrobo",
         description="APYROBO — AI orchestration layer for robotics",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
+    parser.add_argument(
+        "-V", "--version", action="version",
+        version=f"apyrobo {_apyrobo_version()}",
+        help="Print the installed apyrobo version and exit",
+    )
     sub = parser.add_subparsers(dest="command")
 
     # discover
