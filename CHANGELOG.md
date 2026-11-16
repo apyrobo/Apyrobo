@@ -239,6 +239,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo init <name>`: a name with a space, a dot or a leading digit
+  (`apyrobo init "My Robot"`, `123bot`, `arm.v2`) printed "Created" and a
+  package whose `pyproject.toml` did not parse or whose `skills.py` did not
+  import. Such names are now refused before anything is written, with a
+  suggested name. A quote or backslash in `--description` or `--author` no
+  longer breaks the generated `pyproject.toml`.
 - `apyrobo mcp config`: flags given before `config` (`apyrobo mcp --max-speed
   0.5 --no-go 2,2,4,4 config cursor`) were silently dropped, so the printed
   config started a server without those limits. They now reach the config
