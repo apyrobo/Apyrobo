@@ -61,7 +61,7 @@ APYROBO uses a two-stage pipeline:
 |---------|-------------|
 | `"never exceed 0.5 m/s"` | `speed_limit { max_speed_ms: 0.5 }` |
 | `"speed must stay below 1 m/s"`, `"do not go faster than 0.3 meters per second"`, `"limit speed to 0.5 m/s"` | `speed_limit` (upper bounds only: "never exceed", "max speed/velocity", "speed limit", "top speed", "no faster than", "never go/drive above", "stay/keep (speed) below", "limit/cap speed to/at", "slow down to", "speed <=", "at most", "no more than"; a lower bound such as "never go below 0.2 m/s" stays `custom`) |
-| `"never exceed 5 km/h"`, `"max speed 2 mph"`, `"speed limit 50 cm/s"` | `speed_limit { max_speed_ms: 1.388888, as_written: "5 km/h" }` (a rule's speed in m/s, mps, meters per second, km/h, mph, cm/s, mm/s, ft/s or m/min is stored in m/s, rounded down to six decimals; the action being checked is still read in m/s only, see below) |
+| `"never exceed 5 km/h"`, `"max speed 2 mph"`, `"speed limit 50 cm/s"` | `speed_limit { max_speed_ms: 1.388888, as_written: "5 km/h" }` (a rule's speed in m/s, mps, meters per second, km/h, mph, cm/s, mm/s, ft/s or m/min is stored in m/s, rounded down to six decimals; the action being checked is read in the same units, see below) |
 | `"keep 1.5 meters away from humans"` | `proximity_limit { min_distance_m: 1.5, target: "humans" }` |
 | `"always keep 20% battery"`, `"never go below 20% battery"` | `battery_reserve { min_battery_pct: 20.0 }` ("keep", "maintain", "reserve" N% battery; "never go/drop/fall below N% battery"; "never let the battery fall below N%"; "battery must stay above N%", "keep the battery above N%"; "minimum battery N%") |
 | `"never enter the server room"`, `"keep out of the lab"` | `no_go_zone { zone_name: "server room" }` ("never enter", "do not enter", "don't go into", "keep out of", "stay out of", "avoid", then the zone's name). A condition after the name (`"never enter the kitchen during lunch"`) is kept as `context` and not checked: the zone is refused at all times. Several zones (`"the kitchen or the lab"`, `"the kitchen, the lab and the dock"`) are stored as `zone_names` and each is checked; a name with "and" or "or" in it is read as two zones |
@@ -101,14 +101,14 @@ The check works on the text of the action, not on what a robot will do.
 
 | Policy type | Checked how |
 |-------------|-------------|
-| `speed_limit` | Every speed written in m/s (`2 m/s`, `2.0m/s`, `2 meters per second`, `0.2 mps`) is compared with the limit; the highest counts. A speed written any other way (`2 km/h`, `30 cm/s`, `speed 2`, `0,3 m/s`) is reported as a violation, because the check cannot tell whether it is over the limit. A bare number with no unit and no "speed" word (`go to (2, 3) at 1.5`) is not read as a speed. |
+| `speed_limit` | Every speed written in m/s (`2 m/s`, `2.0m/s`, `2 meters per second`, `0.2 mps`), km/h, mph, cm/s, mm/s, ft/s or m/min (`7 km/h`, `30 cm/s`) is converted to m/s, rounded up to six decimals so it is never understated, and compared with the limit; the highest counts. A speed written any other way (`2 knots`, `2 in/s`, `2 m/h`, `speed 2`, `0,3 m/s`) is reported as a violation, because the check cannot tell whether it is over the limit. A bare number with no unit and no "speed" word (`go to (2, 3) at 1.5`) is not read as a speed. |
 | `battery_reserve` | A battery level written as `N% battery`, `battery N%` or `battery at N%` is compared with the reserve; the lowest counts. An action with no battery level in it passes. |
 | `no_go_zone` | A violation when the zone's name (any of them, for a rule naming several) appears in the action text. |
 | `proximity_limit`, `time_window`, `load_limit`, `custom` | Stored and listed, not checked. |
 
 An action with no speed in it passes a speed limit.
 
-A rule the regex does not recognise (`never exceed 30 cm/s`, `no robots in the lab`, `never carry more than 20 kg`) is stored as `custom` and never reported as violated. `apyrobo policy add` warns on stderr when a rule lands in a type the check does not read (`"checked": false` with `--json`), `apyrobo policy list` marks it `[not checked]`, and `apyrobo policy check` lists the active policies it skipped (`"not_checked"` ids with `--json`). The exit code still depends only on violations.
+A rule the regex does not recognise (`keep speed above 0.2 m/s`, `no robots in the lab`, `never carry more than 20 kg`) is stored as `custom` and never reported as violated. `apyrobo policy add` warns on stderr when a rule lands in a type the check does not read (`"checked": false` with `--json`), `apyrobo policy list` marks it `[not checked]`, and `apyrobo policy check` lists the active policies it skipped (`"not_checked"` ids with `--json`). The exit code still depends only on violations.
 
 ## Policy storage
 
