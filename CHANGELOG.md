@@ -239,6 +239,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo policy check` read an action's speed in m/s only, so 'drive at 30
+  cm/s' against a 0.5 m/s limit was reported as unreadable (a violation) and a
+  km/h limit could only be checked against actions written in m/s. A speed in
+  km/h, mph, cm/s, mm/s, ft/s or m/min is now converted to m/s (rounded up, so
+  never understated) and compared; the violation names the speed as written.
+  Other units (knots, in/s, m/h) are still reported as unreadable.
 - `apyrobo policy add` stored a speed limit written in another unit or with
   other words as a `custom` rule that `apyrobo policy check` never reports:
   'never exceed 5 km/h', 'max speed 2 mph', 'speed limit 50 cm/s', 'keep speed
