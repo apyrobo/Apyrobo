@@ -10,6 +10,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `examples/06_mcp_client_sdk.py`: the starting point for wiring
+  `apyrobo mcp` into your own agent with the official MCP Python SDK. It
+  starts the server on `mock://` over stdio, lists the tools, calls `move_to`,
+  and branches on the refusal `code` in `structuredContent` (falling back to
+  the text on older protocol versions). Tested in
+  `tests/test_example_mcp_sdk.py`.
 - `scripts/release_smoke.py VERSION`: the release-day check of the published
   package. It installs `apyrobo==VERSION` from PyPI (or `--wheel PATH`) in a
   fresh venv, starts `apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4` with the
