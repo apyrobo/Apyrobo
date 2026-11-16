@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- Issue forms for bug reports and feature requests. A bug report asks for
+  the apyrobo version, OS, MCP client, robot URI, the full command and the
+  exact reply or error, so most reports can be reproduced without a round
+  trip. The new-issue page also links the MCP troubleshooting guide and
+  Discord; blank issues stay allowed.
 - `examples/policies/home_known_spots.yaml`: an example policy for a home
   robot that may only end a move in a few named rooms (allowed areas), drives
   at 0.3 m/s at most and never onto the stairs landing. Rectangles only; an

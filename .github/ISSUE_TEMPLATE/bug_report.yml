@@ -1,0 +1,81 @@
+name: Bug report
+description: Something in apyrobo did not do what the docs say it does.
+title: "bug: <short summary>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The fields below are what we
+        need to reproduce it in one pass. Please paste text rather than
+        screenshots, and remove any API keys, hostnames or tokens first.
+
+  - type: input
+    id: version
+    attributes:
+      label: apyrobo version
+      description: 'Output of `python -c "import apyrobo; print(apyrobo.__version__)"` (or `pip show apyrobo`).'
+      placeholder: "4.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python version
+      placeholder: "Ubuntu 24.04, Python 3.12"
+    validations:
+      required: true
+
+  - type: input
+    id: mcp-client
+    attributes:
+      label: MCP client and its version
+      description: Only if the problem happens through `apyrobo mcp`. Write "none" for the CLI or the Python library.
+      placeholder: "Claude Desktop 0.x, Cursor 1.x, VS Code 1.x, none"
+    validations:
+      required: false
+
+  - type: input
+    id: robot-uri
+    attributes:
+      label: Robot URI
+      description: The URI you passed (for example `mock://`, `ros2://turtlebot`, `gazebo://`).
+      placeholder: "mock://"
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Full command line
+      description: The exact command you ran, with every flag, or the MCP config block your client uses.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The exact reply, refusal text or error, including the full traceback if there is one.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What you expected to happen instead, and where in the docs you read it, if anywhere.
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: apyrobo doctor output
+      description: Optional, but it often saves a round trip.
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,43 @@
+name: Feature request
+description: A limit, adapter or tool you need for something you are building.
+title: "feat: <short summary>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Concrete use cases help us most: tell us what
+        you are building and what stops you today.
+
+  - type: textarea
+    id: building
+    attributes:
+      label: What are you building?
+      description: The task or product, in a sentence or two.
+    validations:
+      required: true
+
+  - type: input
+    id: robot
+    attributes:
+      label: Which robot or simulator?
+      description: Hardware, stack (ROS 2 distro, Nav2, Gazebo, Isaac, ...) and the URI you use or would use.
+      placeholder: "TurtleBot 4 on ROS 2 Jazzy with Nav2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: need
+    attributes:
+      label: Which limit or feature do you need?
+      description: What should apyrobo allow, refuse or do, and what you do instead today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Links, sketches of a config or policy file, related issues.
+    validations:
+      required: false
