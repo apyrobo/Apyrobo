@@ -144,29 +144,64 @@ class TestCheckMockAdapter:
 # ---------------------------------------------------------------------------
 
 class TestCheckLlmApiKey:
+    @pytest.fixture(autouse=True)
+    def _no_keys(self, monkeypatch):
+        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"):
+            monkeypatch.delenv(key, raising=False)
+
     def test_anthropic_key_passes(self, monkeypatch):
+        monkeypatch.setattr(_cli, "_litellm_installed", lambda: True)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         result = _check_llm_api_key()
         assert result.status == "pass"
         assert "ANTHROPIC_API_KEY" in result.message
 
     def test_openai_key_passes(self, monkeypatch):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(_cli, "_litellm_installed", lambda: True)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         result = _check_llm_api_key()
         assert result.status == "pass"
 
     def test_no_keys_warns(self, monkeypatch):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setattr(_cli, "_litellm_installed", lambda: True)
         result = _check_llm_api_key()
         assert result.status == "warn"
         assert "ANTHROPIC_API_KEY" in result.message
         assert result.hint is not None
+        assert "apyrobo[llm]" not in result.hint
+
+    def test_key_without_litellm_warns_with_install_line(self, monkeypatch):
+        # A bare `pip install apyrobo` has no litellm: a key alone must not
+        # look ready, because every LLM plan would fall back to rules.
+        monkeypatch.setattr(_cli, "_litellm_installed", lambda: False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        result = _check_llm_api_key()
+        assert result.status == "warn"
+        assert "ANTHROPIC_API_KEY" in result.message
+        assert "litellm is not installed" in result.message
+        assert "pip install 'apyrobo[llm]'" in result.hint
+        assert "rule planner" in result.hint
+
+    def test_no_key_and_no_litellm_names_both(self, monkeypatch):
+        monkeypatch.setattr(_cli, "_litellm_installed", lambda: False)
+        result = _check_llm_api_key()
+        assert result.status == "warn"
+        assert result.hint.startswith("Set one to use the LLM agent")
+        assert "pip install 'apyrobo[llm]'" in result.hint
+
+    def test_litellm_installed_follows_find_spec(self, monkeypatch):
+        import importlib.util
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        assert _cli._litellm_installed() is False
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+        assert _cli._litellm_installed() is True
+
+        def broken(name):
+            raise ValueError("litellm.__spec__ is None")
+
+        monkeypatch.setattr(importlib.util, "find_spec", broken)
+        assert _cli._litellm_installed() is False
 
 
 # ---------------------------------------------------------------------------

@@ -816,14 +816,42 @@ def _check_mock_adapter() -> _CheckResult:
         )
 
 
+def _litellm_installed() -> bool:
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("litellm") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+_LLM_EXTRA_HINT = "pip install 'apyrobo[llm]'"
+
+
 def _check_llm_api_key() -> _CheckResult:
+    # The LLM agent needs both a key and litellm (the apyrobo[llm] extra).
+    # A key alone used to pass here while every LLM plan fell back to the
+    # rule planner with "litellm is required".
     found = [k for k in _LLM_KEYS if os.environ.get(k)]
-    if found:
+    has_litellm = _litellm_installed()
+    if found and has_litellm:
         return _CheckResult("pass", f"LLM API key present ({found[0]})")
+    if found:
+        return _CheckResult(
+            "warn",
+            f"LLM API key present ({found[0]}), but litellm is not installed",
+            hint=(
+                f"Install it with: {_LLM_EXTRA_HINT}. Without it, --provider llm "
+                "and LLM profiles fall back to the rule planner"
+            ),
+        )
+    hint = "Set one to use the LLM agent"
+    if not has_litellm:
+        hint += f", and install litellm with: {_LLM_EXTRA_HINT}"
     return _CheckResult(
         "warn",
         f"No LLM API key found ({', '.join(_LLM_KEYS)})",
-        hint="Set one to use the LLM agent",
+        hint=hint,
     )
 
 

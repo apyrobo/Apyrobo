@@ -268,6 +268,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo doctor` passed the LLM check as soon as an API key was set, even
+  on a plain `pip install apyrobo` without litellm, where every LLM plan
+  falls back to the rule planner. It now warns that litellm is missing and
+  prints `pip install 'apyrobo[llm]'`; with no key it names both steps.
 - `apyrobo plan` and `apyrobo execute` with `--provider llm` (or
   `--profile`) on an install without `apyrobo[llm]` printed the same "LLM
   provider failed ... falling back to rule-based" warning two or three
