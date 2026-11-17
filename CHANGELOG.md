@@ -274,6 +274,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo doctor`'s Docker warning said "Docker not found — ros2://
+  integration tests won't run" even when Docker was installed and its daemon
+  was down or slow. Each case now says what happened (not installed, `docker
+  info` failed with its first error line, or timed out), and the Docker and
+  skill-registry warnings both say they are optional and what needs them: the
+  simulated Nav2-in-Gazebo setup for Docker, the `registry` and `skill`
+  search/publish commands for the registry (with `pip install
+  'apyrobo[registry]'` first when uvicorn is missing).
 - `apyrobo registry start` no longer prints `Database: ./registry.db`: the
   registry keeps listings in memory and never wrote that file. The start-up
   line and `--help` now say listings are lost when the server stops; `--db`
