@@ -268,6 +268,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `examples/06_mcp_client_sdk.py` on a plain `pip install apyrobo` stopped
+  with a `ModuleNotFoundError` traceback for `anyio`. It now says the example
+  needs the MCP Python SDK, prints `pip install "mcp>=2.2"`, points to
+  `examples/05_mcp_safety_demo.py` (no extra packages) and exits 1.
 - `apyrobo registry search` against a registry started with `apyrobo
   registry start` said "No packages found" even when the registry held
   them, and `registry publish` never reported success. The client expected
