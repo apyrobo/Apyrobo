@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import shutil
 import subprocess
 import sys
 import threading
@@ -38,9 +39,19 @@ def main() -> int:
     parser.add_argument("--fps", type=int, default=30)
     args = parser.parse_args()
 
-    import mujoco  # after argparse so --help works without it
+    # After argparse so --help works without MuJoCo or ffmpeg.
+    try:
+        import mujoco
+    except ImportError:
+        print("This demo needs MuJoCo, which a plain 'pip install apyrobo' does not include.\n"
+              "Install it with: pip install 'apyrobo[mujoco]'", file=sys.stderr)
+        return 1
+    if shutil.which("ffmpeg") is None:
+        print("This demo needs ffmpeg on your PATH to write the video "
+              "(e.g. apt install ffmpeg, or brew install ffmpeg).", file=sys.stderr)
+        return 1
 
-    print(f"① Discovering the robot: mujoco:// (live physics, realtime pacing)")
+    print("① Discovering the robot: mujoco:// (live physics, realtime pacing)")
     robot = Robot.discover("mujoco://pickplace", realtime=True)
     adapter = robot._adapter
     print(f"   model: {adapter._model_path}")

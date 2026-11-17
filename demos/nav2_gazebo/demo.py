@@ -40,16 +40,30 @@ def main() -> int:
     say("╚══════════════════════════════════════════════════════════╝")
     say()
     say("① Discovering the robot on the ROS 2 graph …")
-    robot = Robot.discover(
-        "ros2://burger",
-        nav2_server_wait_sec=90.0,
-        odom_wait_sec=60.0,
-    )
+    try:
+        robot = Robot.discover(
+            "ros2://burger",
+            nav2_server_wait_sec=90.0,
+            odom_wait_sec=60.0,
+        )
+    except RuntimeError as exc:
+        # No ROS 2 in this Python (or no robot on the graph): say so without
+        # a traceback and point at the way this demo is meant to run.
+        say()
+        say(f"Could not reach the robot: {exc}")
+        say()
+        compose = "docker compose -f docker/docker-compose.yml --profile gazebo-nav"
+        say("This demo needs the live Gazebo + Nav2 sim. On Linux, run it with:")
+        say(f"  {compose} up -d gazebo-nav-sim")
+        say(f"  {compose} run --rm gazebo-nav-demo")
+        say("To try APYROBO without ROS 2, use mock:// (python examples/01_hello_robot.py).")
+        return 1
     adapter = robot._adapter
     x, y = adapter.position
     say(f"   ros2://burger — odometry live, position ({x:.2f}, {y:.2f})")
     nav2 = bool(getattr(adapter, "_has_nav2", False))
-    say(f"   Nav2 NavigateToPose action server: {'FOUND' if nav2 else 'not found (cmd_vel fallback)'}")
+    found = "FOUND" if nav2 else "not found (cmd_vel fallback)"
+    say(f"   Nav2 NavigateToPose action server: {found}")
     say()
 
     agent = Agent(provider="rule")
