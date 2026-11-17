@@ -113,3 +113,124 @@ def test_module_file_runs_its_only_skill(tmp_path):
     proc = _test_skill(tmp_path, "apyrobo_skills_myrobot/navigation.py")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "Skill:    go_to_waypoint" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# Section 6/7: the registry commands the guide shows must work as written.
+# ---------------------------------------------------------------------------
+
+def _shown_skill_commands(sub: str) -> list[str]:
+    """Every ``apyrobo skill <sub>`` command in the guide, continuation lines joined."""
+    cmds = []
+    for _lang, body in re.findall(r"```(\w*)\n(.*?)```", _guide(), re.S):
+        joined = re.sub(r"\\\n\s*", " ", body)
+        for line in joined.splitlines():
+            line = line.split("  #")[0].strip()
+            if line.startswith(f"apyrobo skill {sub} "):
+                cmds.append(line)
+    return cmds
+
+
+class _StubRegistry:
+    """A tiny HTTP registry that records requests and answers like the real one."""
+
+    def __init__(self) -> None:
+        import http.server
+        import json
+        import threading
+
+        self.requests: list[tuple[str, str, dict, object]] = []
+        stub = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def _reply(self, code: int, data: object) -> None:
+                raw = json.dumps(data).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def do_POST(self) -> None:  # noqa: N802
+                n = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(n).decode())
+                stub.requests.append(("POST", self.path, dict(self.headers), body))
+                pkg = body["package"]
+                self._reply(201, {"status": "published", "name": pkg["name"],
+                                  "version": pkg["version"]})
+
+            def do_GET(self) -> None:  # noqa: N802
+                stub.requests.append(("GET", self.path, dict(self.headers), None))
+                self._reply(200, [{"name": "apyrobo-skills-myrobot", "version": "1.0.0",
+                                   "description": "MyRobot skill pack for APYROBO",
+                                   "tags": []}])
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture
+def stub_registry():
+    reg = _StubRegistry()
+    yield reg
+    reg.close()
+
+
+def _run_shown(cmd: str, registry: str, token: str) -> subprocess.CompletedProcess[str]:
+    import shlex
+
+    argv = [a.replace("$APYROBO_REGISTRY_TOKEN", token) for a in shlex.split(cmd)]
+    assert argv[0] == "apyrobo"
+    return subprocess.run(
+        [sys.executable, "-m", "apyrobo", *argv[1:], "--registry", registry],
+        capture_output=True, text=True, timeout=120,
+    )
+
+
+def test_guide_shows_one_publish_and_one_search():
+    assert len(_shown_skill_commands("publish")) == 1
+    assert _shown_skill_commands("search")
+
+
+def test_guide_tells_how_to_start_the_registry_it_publishes_to():
+    text = _guide()
+    assert "apyrobo registry start" in text
+    assert "pip install 'apyrobo[registry]'" in text
+    assert "export APYROBO_REGISTRY_TOKEN=" in text
+    assert "hosted registry" not in text
+
+
+def test_publish_command_shown_publishes_the_guide_package(stub_registry):
+    from apyrobo.registry.models import PublishRequest
+
+    (cmd,) = _shown_skill_commands("publish")
+    proc = _run_shown(cmd, stub_registry.url, "change-me")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Published: apyrobo-skills-myrobot v1.0.0" in proc.stdout
+
+    (method, path, headers, body) = stub_registry.requests[-1]
+    assert (method, path) == ("POST", "/skills")
+    auth = {k.lower(): v for k, v in headers.items()}["authorization"]
+    assert auth == "Bearer change-me"
+    # What the command sends is what `apyrobo registry start` accepts.
+    req = PublishRequest.model_validate(body)
+    assert req.package.name == "apyrobo-skills-myrobot"
+    assert req.package.version == "1.0.0"
+    assert req.package.description == "MyRobot skill pack for APYROBO"
+
+
+@pytest.mark.parametrize("cmd", _shown_skill_commands("search"))
+def test_search_command_shown_finds_the_published_package(stub_registry, cmd):
+    proc = _run_shown(cmd, stub_registry.url, "")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "apyrobo-skills-myrobot" in proc.stdout
+    assert stub_registry.requests[-1][1] == "/search?q=myrobot"
