@@ -29,6 +29,19 @@ def load_seed_index() -> list[SkillPackage]:
     return [SkillPackage(**item) for item in data.get("packages", [])]
 
 
+def _items(data: object, key: str) -> list:
+    """Return the package list from a registry response.
+
+    ``apyrobo registry start`` answers ``/search`` and ``/skills`` with a bare
+    JSON list; a ``{key: [...]}`` wrapper is accepted too.
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return list(data.get(key, []))
+    return []
+
+
 class SkillRegistryClient:
     """Client for querying and publishing to an APYROBO skill registry.
 
@@ -71,7 +84,7 @@ class SkillRegistryClient:
             raise  # registry reachable but erroring — don't mask it with the seed
         except (urllib.error.URLError, OSError):
             return self._seed_fallback()
-        return [SkillPackage(**item) for item in data.get("skills", [])]
+        return [SkillPackage(**item) for item in _items(data, "skills")]
 
     def get(self, name: str, version: str = "latest") -> Optional[SkillPackage]:
         """Fetch a specific skill package.
@@ -86,7 +99,7 @@ class SkillRegistryClient:
         """
         try:
             data = self._get(f"/skills/{urllib.parse.quote(name)}")
-            if version == "latest":
+            if version in ("latest", data.get("version")):
                 return SkillPackage(**data)
             # Filter to the requested version
             versions = data.get("versions", [])
@@ -119,7 +132,7 @@ class SkillRegistryClient:
         try:
             params = urllib.parse.urlencode({"q": query})
             data = self._get(f"/search?{params}")
-            return [SkillPackage(**item) for item in data.get("results", [])]
+            return [SkillPackage(**item) for item in _items(data, "results")]
         except urllib.error.HTTPError:
             return []
         except (urllib.error.URLError, OSError):
@@ -153,8 +166,8 @@ class SkillRegistryClient:
             RuntimeError: If the publish fails.
         """
         payload = {"package": package.model_dump(), "token": token}
-        response = self._post("/skills", payload)
-        return response.get("status") == "ok"
+        response = self._post("/skills", payload, token=token)
+        return response.get("status") in ("ok", "published")
 
     def install(
         self,
@@ -224,14 +237,13 @@ class SkillRegistryClient:
         with urllib.request.urlopen(req, timeout=self._timeout) as resp:
             return json.loads(resp.read().decode())
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, token: str = "") -> dict:
         url = f"{self.base_url}{path}"
         body = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
-            method="POST",
-        )
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if token:
+            # `apyrobo registry start` checks a bearer token, not the body field.
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=self._timeout) as resp:
             return json.loads(resp.read().decode())
