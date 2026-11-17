@@ -1,4 +1,4 @@
-"""The patrol and delivery workflow examples drive to the places they name.
+"""The workflow examples drive to the places they name.
 
 They used to send "navigate to corridor A" and "navigate to office 101 and
 deliver package" to the rule planner, which reads only coordinates: on
@@ -107,21 +107,111 @@ def test_delivery_reports_a_failed_drop_as_not_delivered(capsys):
     assert "not delivered: blocked" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("name", ["patrol_loop", "delivery_run"])
+def test_charging_cycle_docks_then_returns_to_the_work_spot():
+    charging = _load("charging_cycle")
+    rec = _Recorder(charging)
+    assert charging.charging_cycle("mock://charger", threshold=20.0, max_steps=10) is True
+    (dx, dy), (wx, wy) = charging.DOCK, charging.WORK_SPOT
+    assert rec.tasks == [f"go to ({dx}, {dy})", f"go to ({wx}, {wy})"]
+    assert rec.robot.get_position() == charging.WORK_SPOT
+
+
+def test_charging_cycle_stops_when_the_dock_is_not_reached(capsys):
+    charging = _load("charging_cycle")
+    x, y = charging.DOCK
+    rec = _Recorder(charging, fail_on=f"({x}, {y})")
+    assert charging.charging_cycle("mock://charger", threshold=20.0, max_steps=10) is False
+    assert len(rec.tasks) == 1
+    out = capsys.readouterr().out
+    assert "charging dock not reached: blocked" in out
+    assert "cycle complete" not in out
+
+
+def test_charging_cycle_is_not_complete_while_still_docked(capsys):
+    charging = _load("charging_cycle")
+    _Recorder(charging)
+    assert charging.charging_cycle("mock://charger", threshold=20.0, max_steps=4) is False
+    assert "still docked" in capsys.readouterr().out
+
+
+def test_inspection_reaches_every_checkpoint_in_order():
+    inspection = _load("inspection_round")
+    rec = _Recorder(inspection)
+    records = inspection.run_inspection("mock://inspector", inspection.DEFAULT_CHECKPOINTS)
+    assert [r.reached for r in records] == [True] * len(inspection.DEFAULT_CHECKPOINTS)
+    expected = [f"go to ({float(x)}, {float(y)})"
+                for x, y in (cp["at"] for cp in inspection.DEFAULT_CHECKPOINTS)]
+    assert rec.tasks == expected
+    assert rec.robot.get_position() == tuple(inspection.DEFAULT_CHECKPOINTS[-1]["at"])
+
+
+def test_inspection_marks_unreached_and_unplaced_checkpoints(capsys):
+    inspection = _load("inspection_round")
+    rec = _Recorder(inspection, fail_on="(6.0, 2.0)")
+    checkpoints = [
+        {"id": "a", "name": "server room", "at": [6.0, 2.0], "checks": ["no water"]},
+        {"id": "b", "name": "lab", "checks": ["lights on"]},
+        {"id": "c", "name": "dock", "at": [1, 1], "checks": ["clear"]},
+    ]
+    records = inspection.run_inspection("mock://inspector", checkpoints)
+    assert [r.reached for r in records] == [False, False, True]
+    assert records[0].notes == "blocked" and records[0].checks == []
+    assert "at" in records[1].notes
+    assert rec.tasks == ["go to (6.0, 2.0)", "go to (1.0, 1.0)"]
+    out = capsys.readouterr().out
+    assert "not reached: blocked" in out
+    assert "lab (b) skipped" in out
+
+
+def test_inspection_main_exits_1_when_a_checkpoint_is_missed(tmp_path, monkeypatch):
+    inspection = _load("inspection_round")
+    _Recorder(inspection)
+    config = tmp_path / "cp.json"
+    config.write_text(json.dumps([{"id": "a", "name": "lab"}]))
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["inspection_round.py", "--robot", "mock://i", "--config", str(config),
+         "--output", str(report)],
+    )
+    with pytest.raises(SystemExit) as exc:
+        inspection.main()
+    assert exc.value.code == 1
+    assert json.loads(report.read_text())[0]["reached"] is False
+
+
+def _run_example(name: str, module: ModuleType) -> None:
+    if name == "patrol_loop":
+        module.patrol("mock://check", rounds=1, pause_s=0)
+    elif name == "delivery_run":
+        module.run_deliveries("mock://check", len(module.DELIVERIES))
+    elif name == "charging_cycle":
+        module.charging_cycle("mock://check", threshold=20.0, max_steps=10)
+    else:
+        module.run_inspection("mock://check", module.DEFAULT_CHECKPOINTS)
+
+
+@pytest.mark.parametrize(
+    "name", ["patrol_loop", "delivery_run", "charging_cycle", "inspection_round"],
+)
 def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
     module = _load(name)
     rec = _Recorder(module)
-    if name == "patrol_loop":
-        module.patrol("mock://check", rounds=1, pause_s=0)
-    else:
-        module.run_deliveries("mock://check", len(module.DELIVERIES))
+    _run_example(name, module)
     assert rec.tasks
     for task in rec.tasks:
         assert _accepted(task), task
 
 
 @pytest.mark.parametrize(
-    "task", ["navigate to corridor A", "navigate to office 101 and deliver package"],
+    "task",
+    [
+        "navigate to corridor A",
+        "navigate to office 101 and deliver package",
+        "navigate to charging dock",
+        "undock from charging station",
+        "navigate to server room",
+    ],
 )
 def test_the_old_example_tasks_were_refused(task):
     assert not _accepted(task)
