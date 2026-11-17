@@ -268,6 +268,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `examples/workflows/patrol_loop.py` and `delivery_run.py` sent the rule
+  planner place names it cannot read ("navigate to corridor A",
+  "navigate to office 101 and deliver package"): on `mock://` the patrol
+  never left the origin and every delivery ended at a made-up (5, 5), and
+  both printed success without looking at the result. Each place is now a
+  named point in metres (example values to replace with your own map's),
+  the tasks are ones `apyrobo mcp` accepts, and a waypoint or delivery that
+  does not complete is reported and exits 1.
 - `apyrobo config --file PATH` (and `apyrobo config` with `APYROBO_CONFIG`
   set) showed the default settings with exit 0 when the file was missing,
   so a mistyped path looked like your config; a YAML or TOML syntax error,
