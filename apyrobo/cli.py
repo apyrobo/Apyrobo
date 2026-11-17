@@ -2248,7 +2248,7 @@ def cmd_profiles(args: argparse.Namespace) -> None:
             print(f"  Edge infer: {'yes' if d['edge_inference'] else 'no'}")
         return
 
-    # Default: list all profiles
+    # Default (and 'list'): list all profiles
     profiles = reg.all()
     if as_json:
         print(json.dumps([p.to_dict() for p in profiles], indent=2))
@@ -3439,12 +3439,19 @@ def main() -> None:
     # profiles
     p_profiles = sub.add_parser("profiles", help="List or inspect compute profiles")
     profiles_sub = p_profiles.add_subparsers(dest="profiles_command")
+    # The subcommands' --json default to SUPPRESS so 'apyrobo profiles --json
+    # show NAME' keeps the flag given before the subcommand.
+    p_profiles_list = profiles_sub.add_parser("list", help="List the profiles (the default)")
+    p_profiles_list.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                                 help="Output as JSON")
     p_profiles_show = profiles_sub.add_parser("show", help="Show details for a profile")
     p_profiles_show.add_argument("profile_name", help="Profile name")
-    p_profiles_show.add_argument("--json", action="store_true")
+    p_profiles_show.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                                 help="Output as JSON")
     p_profiles_detect = profiles_sub.add_parser("detect",
                                                  help="Auto-detect the best profile for this machine")
-    p_profiles_detect.add_argument("--json", action="store_true", help="Output as JSON")
+    p_profiles_detect.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                                   help="Output as JSON")
     p_profiles.add_argument("--json", action="store_true", help="Output as JSON")
 
     # policy — natural language safety policies
