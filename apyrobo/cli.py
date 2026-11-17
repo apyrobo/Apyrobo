@@ -1419,11 +1419,8 @@ def cmd_test_skill(args: argparse.Namespace) -> None:
 def cmd_registry_start(args: argparse.Namespace) -> None:
     """Start the APYROBO skill registry server using uvicorn."""
     port: int = getattr(args, "port", 8080)
-    db_path: str = getattr(args, "db", "./registry.db")
+    db_path: str | None = getattr(args, "db", None)
     host: str = getattr(args, "host", "0.0.0.0")
-
-    # Surface db_path to the registry via env so SQLAlchemy can pick it up
-    os.environ.setdefault("REGISTRY_DB_PATH", db_path)
 
     try:
         import uvicorn  # type: ignore[import]
@@ -1443,7 +1440,9 @@ def cmd_registry_start(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     print(f"Starting APYROBO skill registry on http://{host}:{port}")
-    print(f"  Database: {db_path}")
+    print("  Listings are kept in memory and lost when the server stops.")
+    if db_path:
+        print(f"  Note: --db {db_path} is ignored; nothing is written to disk.")
     print("  Press Ctrl+C to stop\n")
     uvicorn.run(app, host=host, port=port, log_level="info")
 
@@ -3226,7 +3225,14 @@ def main() -> None:
     # registry — skill registry server management
     p_registry = sub.add_parser("registry", help="Manage the APYROBO skill registry server")
     registry_sub = p_registry.add_subparsers(dest="registry_command")
-    p_reg_start = registry_sub.add_parser("start", help="Start the registry server")
+    p_reg_start = registry_sub.add_parser(
+        "start",
+        help="Start the registry server (listings are kept in memory)",
+        description=(
+            "Start a local skill registry. It keeps listings in memory, so "
+            "they are lost when the server stops."
+        ),
+    )
     p_reg_start.add_argument(
         "--port", type=int, default=8080, metavar="PORT",
         help="Port to listen on (default: 8080)",
@@ -3236,8 +3242,11 @@ def main() -> None:
         help="Bind host (default: 0.0.0.0)",
     )
     p_reg_start.add_argument(
-        "--db", default="./registry.db", metavar="PATH",
-        help="Path to SQLite database (default: ./registry.db)",
+        "--db", default=None, metavar="PATH",
+        help=(
+            "Ignored, kept so older commands still run: the registry keeps "
+            "listings in memory and writes no database file"
+        ),
     )
     p_reg_start.add_argument(
         "--seed", action="store_true",
