@@ -744,6 +744,7 @@ class _CheckResult:
     status: str        # "pass" | "warn" | "fail"
     message: str       # single-line detail shown next to the icon
     hint: str | None = None  # fix hint, indented below on warn/fail
+    name: str = "check"      # stable id for JSON reports (apyrobo diagnose)
 
 
 def _icon(status: str) -> str:
@@ -893,17 +894,22 @@ def _check_skill_registry() -> _CheckResult:
 
 def run_doctor_checks() -> list[_CheckResult]:
     """Run all environment checks. Exposed for testing."""
+    import dataclasses
+
+    def named(result: _CheckResult, name: str) -> _CheckResult:
+        return dataclasses.replace(result, name=name)
+
     results: list[_CheckResult] = []
-    results.append(_check_python_version())
-    results.append(_check_apyrobo_install())
+    results.append(named(_check_python_version(), "python"))
+    results.append(named(_check_apyrobo_install(), "apyrobo"))
     rclpy_result, rclpy_ok = _check_rclpy()
-    results.append(rclpy_result)
+    results.append(named(rclpy_result, "rclpy"))
     if rclpy_ok:
-        results.append(_check_ros_domain_id())
-    results.append(_check_mock_adapter())
-    results.append(_check_llm_api_key())
-    results.append(_check_docker())
-    results.append(_check_skill_registry())
+        results.append(named(_check_ros_domain_id(), "ros_domain_id"))
+    results.append(named(_check_mock_adapter(), "mock_adapter"))
+    results.append(named(_check_llm_api_key(), "llm"))
+    results.append(named(_check_docker(), "docker"))
+    results.append(named(_check_skill_registry(), "skill_registry"))
     return results
 
 
@@ -1084,11 +1090,12 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
 
     # Always run environment doctor checks
     doctor_results = run_doctor_checks()
-    report["checks"] = [
-        {"name": r.message.split()[0] if r.message else "check",
-         "status": r.status, "message": r.message}
-        for r in doctor_results
-    ]
+    report["checks"] = []
+    for r in doctor_results:
+        check: dict[str, Any] = {"name": r.name, "status": r.status, "message": r.message}
+        if r.hint and r.status != "pass":
+            check["hint"] = r.hint
+        report["checks"].append(check)
 
     if uri:
         robot, connect_time, error = _connect_with_timeout(uri, timeout)
@@ -1100,6 +1107,11 @@ def cmd_diagnose(args: argparse.Namespace) -> None:
                 "connect_time_s": round(connect_time, 3),
                 "error": error or "unknown",
             }
+            print(
+                f"Could not connect to {uri}: {error or 'unknown error'} "
+                "(recorded in the report)",
+                file=sys.stderr,
+            )
         else:
             # Basic adapter state
             robot_info: dict[str, Any] = {
