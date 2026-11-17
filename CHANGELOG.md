@@ -268,6 +268,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo profiles list` was an argparse error (only `show` and `detect`
+  existed), and `--json` given before a subcommand (`apyrobo profiles
+  --json show cpu-only`, `--json detect`) was silently dropped, printing
+  text a script could not parse. `list` now lists the profiles like bare
+  `apyrobo profiles`, and `--json` works on either side of the subcommand.
 - `apyrobo diagnose` named each environment check in its JSON report by the
   first word of its message ("No", "Skill", "Mock"), dropped the fix hints,
   and wrote the report with no word on screen when `--robot` failed to
