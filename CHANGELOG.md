@@ -268,6 +268,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo registry search` against a registry started with `apyrobo
+  registry start` said "No packages found" even when the registry held
+  them, and `registry publish` never reported success. The client expected
+  wrapped JSON (`{"results": …}`, `{"status": "ok"}`) and sent the publish
+  token only in the body; it now reads the server's plain lists, accepts
+  `"published"`, and sends the token as a bearer header, which the server
+  checks.
 - `apyrobo profiles list` was an argparse error (only `show` and `detect`
   existed), and `--json` given before a subcommand (`apyrobo profiles
   --json show cpu-only`, `--json detect`) was silently dropped, printing
