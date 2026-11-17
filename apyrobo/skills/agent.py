@@ -229,6 +229,17 @@ class RuleBasedProvider(AgentProvider):
     _NUMBER_TRIPLE = re.compile(
         r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,\s*-?\d"
     )
+    # A list of numbered places rather than one target: "docks 1, 2, and 3",
+    # "1, 2 or 3", or a plural noun before a pair ("docks 1, 2", "rooms 3,
+    # 4"). The coordinate reader took the first two numbers as (x, y), so
+    # "deliver packages to docks 1, 2, and 3" drove to (1, 2).
+    _NUMBER_LIST = re.compile(
+        r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*,?\s*(?:and|or|&)\s+-?\d"
+    )
+    _PLURAL_NUMBERS = re.compile(
+        r"\b(?!(?:coordinates|coords|pos|this|is|was|has|its|as|us|plus"
+        r"|minus|towards|thus|yes)\b)[a-z]+s\s+-?\d+(?:\.\d+)?\s*,\s*-?\d"
+    )
 
     # Units a task's drive speed may be written in besides m/s, with metres
     # per second per unit: "at 30 cm/s", "at speed 1 km/h". Any other unit
@@ -452,6 +463,13 @@ class RuleBasedProvider(AgentProvider):
                 "planner does not read (like 'at most 0.2 m/s'), so the robot "
                 "would run at the default speed instead. Write it as 'at 0.2 "
                 "m/s' or 'at speed 0.2'."
+            )
+        if cls._NUMBER_LIST.search(text) or cls._PLURAL_NUMBERS.search(text):
+            return (
+                "Not planned: this task names places by a list of numbers (like "
+                "'docks 1, 2, and 3'), and the rule planner would read the first "
+                "two as one (x, y) target, so the robot will not guess. Give each "
+                "target as a coordinate pair, like 'go to (1, 2)'."
             )
         if cls._NUMBER_TRIPLE.search(text):
             return (

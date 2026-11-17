@@ -274,6 +274,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- Rule planner: a task that names places by a list of numbers ("deliver
+  packages to docks 1, 2, and 3", "go to 1, 2 or 3", "docks 1, 2") is now
+  refused with a reason that asks for an `(x, y)` pair. It used to read the
+  first two numbers as one target, so through `apyrobo mcp` the robot drove
+  to (1, 2).
 - `docs/skill_packaging.md`: the `apyrobo skill publish` command it showed
   stopped with an argparse error (exit 2): it passed `--name`, which the
   command does not take, and left out the required `--description`. It also
