@@ -274,6 +274,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config` with `--launcher apyrobo` (or without `uvx` on
+  `PATH`) now points the client at the `apyrobo` it was run from. Run from a
+  venv that was not activated, it used to print whichever `apyrobo` came first
+  on `PATH`, possibly another version without `apyrobo mcp`, or a bare
+  `apyrobo` that GUI clients can't start.
 - `apyrobo doctor`'s Docker warning said "Docker not found — ros2://
   integration tests won't run" even when Docker was installed and its daemon
   was down or slow. Each case now says what happened (not installed, `docker
