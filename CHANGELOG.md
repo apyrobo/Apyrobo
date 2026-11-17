@@ -268,6 +268,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo pkg validate` said a package was valid, and `apyrobo pkg pack`
+  built an archive without the skill, when `skill-package.json` listed a
+  skill with no `skills/<id>.json`; a `skills/*.json` file the manifest did
+  not list was dropped the same way. Both are now errors that name the file,
+  so `pkg validate`, `pkg pack` and `pkg install` refuse the package. The
+  `pkg init` next steps show how to start a skill file
+  (`apyrobo skills --export navigate_to > <dir>/skills/navigate_to.json`)
+  and to run `apyrobo pkg validate`.
 - `examples/06_mcp_client_sdk.py` on a plain `pip install apyrobo` stopped
   with a `ModuleNotFoundError` traceback for `anyio`. It now says the example
   needs the MCP Python SDK, prints `pip install "mcp>=2.2"`, points to
