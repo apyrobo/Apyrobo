@@ -276,6 +276,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   named point in metres (example values to replace with your own map's),
   the tasks are ones `apyrobo mcp` accepts, and a waypoint or delivery that
   does not complete is reported and exits 1.
+- `examples/workflows/charging_cycle.py` and `inspection_round.py` did the
+  same: "navigate to charging dock", "undock from charging station" and
+  "navigate to server room" were not drives to any real place, and the
+  inspection report listed every checkpoint's checks as passed without
+  looking. The dock, the work spot and each checkpoint (`"at": [x, y]`,
+  also in `--config` files) are now points in metres; the report says
+  whether each checkpoint was reached, and either script exits 1 when one
+  is not.
 - `apyrobo config --file PATH` (and `apyrobo config` with `APYROBO_CONFIG`
   set) showed the default settings with exit 0 when the file was missing,
   so a mistyped path looked like your config; a YAML or TOML syntax error,
