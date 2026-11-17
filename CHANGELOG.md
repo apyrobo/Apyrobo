@@ -274,6 +274,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo registry start` no longer prints `Database: ./registry.db`: the
+  registry keeps listings in memory and never wrote that file. The start-up
+  line and `--help` now say listings are lost when the server stops; `--db`
+  is still accepted so old commands run, and is reported as ignored.
 - Rule planner: a task that names places by a list of numbers ("deliver
   packages to docks 1, 2, and 3", "go to 1, 2 or 3", "docks 1, 2") is now
   refused with a reason that asks for an `(x, y)` pair. It used to read the
