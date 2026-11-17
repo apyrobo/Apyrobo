@@ -9,6 +9,7 @@ result. ``apyrobo mcp``, ``plan`` and ``execute`` refuse such tasks.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
@@ -252,6 +253,78 @@ def test_fleet_reports_a_missed_stop_and_main_exits_1(monkeypatch, capsys):
     assert "3/4 reached, 1 not reached" in out
 
 
+def test_pick_and_place_runs_every_arm_step_to_the_named_target(capsys):
+    pnp = _load("pick_and_place")
+    assert asyncio.run(pnp.pick_and_place("mock://arm", "red box", "bin B")) is True
+    out = capsys.readouterr().out
+    assert f"Move to bin B {pnp.PLACE_POSES['bin B']}" in out
+    assert "red box placed at bin B" in out
+
+
+def test_pick_and_place_stops_when_an_arm_step_fails(monkeypatch, capsys):
+    pnp = _load("pick_and_place")
+
+    async def slip(self):
+        return pnp.MotionResult(success=False, message="object slipped")
+
+    monkeypatch.setattr(pnp.MockMoveItAdapter, "close_gripper", slip)
+    monkeypatch.setattr("sys.argv", ["pick_and_place.py"])
+    with pytest.raises(SystemExit) as exc:
+        pnp.main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "failed: object slipped" in out
+    assert "Retreat" not in out
+    assert "placed at" not in out
+
+
+def test_pick_and_place_refuses_an_unknown_target_and_a_real_arm(capsys):
+    pnp = _load("pick_and_place")
+    assert asyncio.run(pnp.pick_and_place("mock://arm", "red box", "bin Z")) is False
+    assert "no place pose for 'bin Z'" in capsys.readouterr().out
+    assert asyncio.run(pnp.pick_and_place("ros2://ur5", "red box", "bin A")) is False
+    out = capsys.readouterr().out
+    assert "no arm integration" in out
+    assert "Home arm" not in out
+
+
+def test_shelf_restock_drives_depot_then_shelf_for_each_item():
+    restock = _load("shelf_restock")
+    rec = _Recorder(restock)
+    done, missed = asyncio.run(restock.restock("mock://restock", 3))
+    assert done == [item for item, _, _ in restock.RESTOCK[:3]]
+    assert missed == []
+    dx, dy = restock.DEPOT
+    expected = []
+    for _, _, (x, y) in restock.RESTOCK[:3]:
+        expected += [f"go to ({dx}, {dy})", f"go to ({x}, {y})"]
+    assert rec.tasks == expected
+    assert rec.robot.get_position() == restock.RESTOCK[2][2]
+
+
+def test_shelf_restock_reports_a_missed_shelf_and_main_exits_1(monkeypatch, capsys):
+    restock = _load("shelf_restock")
+    item, shelf, (x, y) = restock.RESTOCK[1]
+    _Recorder(restock, fail_on=f"({x}, {y})")
+    monkeypatch.setattr("sys.argv", ["shelf_restock.py", "--items", "3"])
+    with pytest.raises(SystemExit) as exc:
+        restock.main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert f"{item} not restocked: {shelf} not reached: blocked" in out
+    assert "2 restocked, 1 not restocked" in out
+
+
+def test_shelf_restock_does_not_drive_without_an_arm(capsys):
+    restock = _load("shelf_restock")
+    rec = _Recorder(restock)
+    done, missed = asyncio.run(restock.restock("ros2://mir100", 2))
+    assert done == []
+    assert len(missed) == 2
+    assert rec.tasks == []
+    assert "no arm integration" in capsys.readouterr().out
+
+
 def _run_example(name: str, module: ModuleType) -> None:
     if name == "patrol_loop":
         module.patrol("mock://check", rounds=1, pause_s=0)
@@ -263,6 +336,8 @@ def _run_example(name: str, module: ModuleType) -> None:
         module.navigate_multi_floor("mock://check", 1, 3)
     elif name == "fleet_coordination":
         module.coordinate_fleet(2, len(module.TASK_POOL))
+    elif name == "shelf_restock":
+        asyncio.run(module.restock("mock://check", len(module.RESTOCK)))
     else:
         module.run_inspection("mock://check", module.DEFAULT_CHECKPOINTS)
 
@@ -271,7 +346,7 @@ def _run_example(name: str, module: ModuleType) -> None:
     "name",
     [
         "patrol_loop", "delivery_run", "charging_cycle", "inspection_round",
-        "multi_floor_navigation", "fleet_coordination",
+        "multi_floor_navigation", "fleet_coordination", "shelf_restock",
     ],
 )
 def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
@@ -296,6 +371,8 @@ def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
         "navigate to third floor lab",
         "deliver package to office 101",
         "inspect corridor B",
+        "navigate to storage depot",
+        "navigate to shelf A1",
     ],
 )
 def test_the_old_example_tasks_were_refused(task):
