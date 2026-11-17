@@ -2291,7 +2291,18 @@ _LITELLM_PROVIDERS = ("llm", "tool_calling")
 
 
 def _check_provider_installed(provider: str) -> None:
-    """Refuse to start with an LLM planner that cannot be imported."""
+    """Refuse to start with a planner that is unknown or cannot be imported.
+
+    ``apyrobo mcp selftest`` calls this too: it plans with the rule planner,
+    so without the check it would pass a config whose server never starts.
+    """
+    from apyrobo.skills.agent import _PROVIDERS
+
+    known = ["rule", "auto", *(name for name in _PROVIDERS if name != "rule")]
+    if provider not in known:
+        raise ValueError(
+            f"unknown --provider {provider!r}; choose one of {', '.join(known)}"
+        )
     if provider in _LITELLM_PROVIDERS and importlib.util.find_spec("litellm") is None:
         raise ImportError(
             f"--provider {provider} needs litellm, which is not installed. "

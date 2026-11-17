@@ -274,6 +274,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp selftest` passed with an unknown `--provider` (a typo such as
+  `bogus`), although `apyrobo mcp` with the same flags refuses to start. Both
+  now stop with `unknown --provider 'bogus'; choose one of rule, auto, llm,
+  tool_calling, multi_turn`, and selftest exits 1.
 - `apyrobo mcp --provider llm config <client>` (and `tool_calling`) printed a
   uvx command that installs apyrobo without litellm, so the server refused to
   start inside the client. The uvx source now carries the `llm` extra
