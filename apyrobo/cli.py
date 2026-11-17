@@ -885,6 +885,24 @@ def _check_llm_api_key() -> _CheckResult:
     )
 
 
+#: What Docker is for, said in every Docker warning: a new user on mock:// or a
+#: robot with ROS 2 does not need it.
+_DOCKER_USE = (
+    "Optional: only the simulated Nav2-in-Gazebo setup (docs/QUICKSTART.md) needs "
+    "Docker; apyrobo mcp on mock:// and ros2:// on a robot do not."
+)
+
+
+def _first_line(data: bytes | str | None) -> str:
+    if not data:
+        return ""
+    text = data.decode(errors="replace") if isinstance(data, bytes) else data
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip()[:200]
+    return ""
+
+
 def _check_docker() -> _CheckResult:
     try:
         proc = subprocess.run(
@@ -892,22 +910,31 @@ def _check_docker() -> _CheckResult:
             capture_output=True,
             timeout=3,
         )
-        if proc.returncode == 0:
-            return _CheckResult("pass", "Docker available")
-        return _CheckResult(
-            "warn", "Docker not responding",
-            hint="Docker not found — ros2:// integration tests won't run.",
-        )
     except FileNotFoundError:
-        return _CheckResult(
-            "warn", "Docker not found",
-            hint="Docker not found — ros2:// integration tests won't run.",
-        )
+        return _CheckResult("warn", "Docker not found", hint=_DOCKER_USE)
     except subprocess.TimeoutExpired:
         return _CheckResult(
-            "warn", "Docker timed out",
-            hint="Docker not found — ros2:// integration tests won't run.",
+            "warn", "Docker did not answer within 3 s",
+            hint="'docker info' timed out: the Docker daemon may still be starting. "
+            + _DOCKER_USE,
         )
+    if proc.returncode == 0:
+        return _CheckResult("pass", "Docker available")
+    reason = _first_line(proc.stderr) or f"exit code {proc.returncode}"
+    return _CheckResult(
+        "warn", "Docker is installed but not responding",
+        hint=f"'docker info' failed ({reason}). Start the Docker daemon or Docker "
+        "Desktop, or give your user access to it. " + _DOCKER_USE,
+    )
+
+
+def _uvicorn_installed() -> bool:
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("uvicorn") is not None
+    except (ImportError, ValueError):
+        return False
 
 
 def _check_skill_registry() -> _CheckResult:
@@ -915,9 +942,13 @@ def _check_skill_registry() -> _CheckResult:
         urllib.request.urlopen("http://localhost:8080/health", timeout=2)
         return _CheckResult("pass", "Skill registry reachable at localhost:8080")
     except Exception:
+        start = "apyrobo registry start"
+        if not _uvicorn_installed():
+            start = "pip install 'apyrobo[registry]', then " + start
         return _CheckResult(
             "warn", "Skill registry not reachable at localhost:8080",
-            hint="Start with: apyrobo registry start",
+            hint="Optional: only apyrobo registry search/install/publish and apyrobo "
+            f"skill search/publish need one. To run one here: {start}",
         )
 
 
