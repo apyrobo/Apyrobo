@@ -159,7 +159,8 @@ prints the block above with the absolute path of `uvx` on this machine (GUI
 clients don't read your shell's `PATH`) and says where the config file is on
 your OS. Use `cursor`, `vscode`, `claude-code` or `codex` instead of `claude-desktop`
 for those clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
-than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
+than `uvx` (the same install you ran it from, so a venv works without
+activating it; without uvx on `PATH` that is the default). It takes the same `--robot`, `--policy`, `--policy-file`,
 `--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
 flags as `apyrobo mcp`, on either side of `config`
 (`apyrobo mcp --max-speed 0.5 config cursor` works too; a flag after `config`

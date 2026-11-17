@@ -19,11 +19,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import sysconfig
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +57,31 @@ _SSH_TARGET = re.compile(r"[A-Za-z0-9_.\[\]:%-]+(@[A-Za-z0-9_.\[\]:%-]+)?(?<![:@
 _HOST_WITH_PORT = re.compile(r"(.*@)?[^:]+:\d+\Z")
 
 Which = Callable[[str], str | None]
+
+
+def _own_script(name: str = "apyrobo") -> str | None:
+    """The ``name`` script installed beside the Python running this process.
+
+    That is the install the user just ran (a venv, a conda env, the system
+    Python), whether or not its bin directory is on ``PATH``, so the config
+    starts the same version that checked the flags.
+    """
+    exe = name + (".exe" if sys.platform == "win32" else "")
+    for folder in (sysconfig.get_path("scripts"), str(Path(sys.executable).parent)):
+        if folder:
+            script = Path(folder) / exe
+            if script.is_file() and os.access(script, os.X_OK):
+                return str(script)
+    return None
+
+
+def find_executable(name: str) -> str | None:
+    """``shutil.which``, except ``apyrobo`` is the running install's script first."""
+    if name == "apyrobo":
+        own = _own_script(name)
+        if own:
+            return own
+    return shutil.which(name)
 
 
 @dataclass(frozen=True)
@@ -139,12 +166,13 @@ def _uvx_source(version: str | None = None) -> list[str]:
 
 
 def resolve_launch(
-    flags: list[str], launcher: str = "auto", which: Which = shutil.which
+    flags: list[str], launcher: str = "auto", which: Which = find_executable
 ) -> Launch:
     """Pick the executable and arguments that start ``apyrobo mcp``.
 
     ``auto`` prefers ``uvx`` (an isolated, always-fresh environment, as in
-    docs/mcp.md), then the installed ``apyrobo`` executable.
+    docs/mcp.md), then the installed ``apyrobo`` executable: by default the
+    one beside the running Python, else the first on ``PATH``.
     """
     if launcher not in LAUNCHERS:
         raise ValueError(f"unknown launcher {launcher!r}; choose one of {', '.join(LAUNCHERS)}")
@@ -390,7 +418,7 @@ def _merged_flags(args: argparse.Namespace) -> dict:
 
 
 def main(args: argparse.Namespace, stdout: TextIO | None = None,
-         stderr: TextIO | None = None, which: Which = shutil.which) -> int:
+         stderr: TextIO | None = None, which: Which = find_executable) -> int:
     """Entry point for ``apyrobo mcp config``. Returns the exit code."""
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr

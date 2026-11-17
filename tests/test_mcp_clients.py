@@ -525,5 +525,8 @@ def test_cli_accepts_codex(tmp_path):
         env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"},
     )
     assert result.returncode == 0, result.stderr
+    # The apyrobo beside this Python (the install that ran the command) comes
+    # first; PATH only when this Python has none.
+    expected = Path(mcp_clients._own_script() or exe).resolve()
     assert shlex.split(result.stdout) == ["codex", "mcp", "add", "apyrobo", "--",
-                                          str(exe.resolve()), "mcp", "--max-speed", "0.5"]
+                                          str(expected), "mcp", "--max-speed", "0.5"]
