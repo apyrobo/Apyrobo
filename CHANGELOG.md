@@ -300,6 +300,16 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   named pose; a failed drive or arm step is reported and the script exits
   1; on any robot but `mock://` both stop before moving and exit 1 until
   you wire in your arm.
+- `examples/workflows/quality_inspection.py` sent "navigate to inspection
+  station" and "place item in pass bin" and never checked an arm step, and
+  `voice_commanded_robot.py`'s demo commands ("navigate to the kitchen",
+  "return to base") named places the rule planner cannot read, ran without
+  the safety policy and always printed success. The inspection station is
+  now a point in metres, each part goes to a pass or reject bin pose, a
+  failed step stops the run and exits 1 (any robot but `mock://` stops
+  before moving until you wire in your arm); the voice example runs each
+  command through `voice_loop`, so a command it cannot read is refused with
+  the reason, and exits 1 if any command was refused or failed.
 - `apyrobo config --file PATH` (and `apyrobo config` with `APYROBO_CONFIG`
   set) showed the default settings with exit 0 when the file was missing,
   so a mistyped path looked like your config; a YAML or TOML syntax error,

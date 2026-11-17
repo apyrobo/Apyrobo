@@ -1,27 +1,37 @@
 """Voice-commanded robot — listen for spoken instructions and execute them.
 
-Uses the voice adapter pipeline: STT → plan → execute. Works in mock mode
-(reads tasks from a list) or with a real Whisper backend.
+Each heard command goes through ``apyrobo.voice.voice_loop``: the same
+safety policy and plan checks as ``apyrobo voice --listen`` and
+``apyrobo mcp``, so a command the rule planner cannot read (a place name
+like "the kitchen") is refused with the reason instead of driving somewhere
+made up. The rule planner reads coordinates in metres: say
+"go to (2, 1)". Saying "stop" ends the session. The script exits 1 if any
+command was refused or failed.
+
+The mock adapter plays the demo commands below. Whisper needs
+``pip install openai-whisper`` and a microphone.
 
 Usage:
     python examples/workflows/voice_commanded_robot.py
     python examples/workflows/voice_commanded_robot.py --adapter whisper --robot ros2://turtlebot4
 """
 import argparse
+import sys
 
-from apyrobo import Robot, Agent
-from apyrobo.voice import MockVoiceAdapter, WhisperVoiceAdapter
+from apyrobo import Agent, Robot
+from apyrobo.core.schemas import TaskStatus
+from apyrobo.voice import MockVoiceAdapter, WhisperVoiceAdapter, voice_loop
 
 DEMO_UTTERANCES = [
-    "navigate to the kitchen",
-    "go to charging dock",
-    "move to conference room B",
+    "go to (2, 1)",
+    "rotate 90 degrees",
+    "go to (0, -1.5)",
     "stop",
-    "return to base",
 ]
 
 
-def run_voice_loop(robot_uri: str, adapter_name: str, model: str, max_commands: int) -> None:
+def run_voice_loop(robot_uri: str, adapter_name: str, model: str, max_commands: int) -> bool:
+    """Run up to ``max_commands`` commands; False if any was refused or failed."""
     robot = Robot.discover(robot_uri)
     agent = Agent(provider="rule")
 
@@ -29,37 +39,38 @@ def run_voice_loop(robot_uri: str, adapter_name: str, model: str, max_commands: 
         adapter = WhisperVoiceAdapter(model=model)
         print(f"[voice] Whisper STT (model={model})")
     else:
-        adapter = MockVoiceAdapter(listen_responses=DEMO_UTTERANCES[:max_commands])
-        print(f"[voice] mock adapter  ({len(DEMO_UTTERANCES[:max_commands])} demo commands)")
+        adapter = MockVoiceAdapter(listen_responses=DEMO_UTTERANCES)
+        print(f"[voice] mock adapter  ({len(DEMO_UTTERANCES)} demo commands)")
 
-    print(f"[voice] robot={robot_uri}  listening …\n")
+    print(f"[voice] robot={robot_uri}  listening … (say 'stop' to end)\n")
 
-    count = 0
-    while count < max_commands:
-        try:
-            utterance = adapter.listen()
-        except StopIteration:
-            print("  [end of demo commands]")
-            break
+    def on_listen(text: str) -> None:
+        print(f"  heard: {text!r}")
 
-        if not utterance:
-            continue
+    def on_result(result) -> None:
+        if result.status == TaskStatus.COMPLETED:
+            print(f"  ✓ done ({result.steps_completed}/{result.steps_total} steps)\n")
+        else:
+            print(f"  ✗ {result.status.value}: {result.error or 'no reason given'}\n")
 
-        print(f"  heard: {utterance!r}")
+    try:
+        turns = voice_loop(
+            agent=agent,
+            robot=robot,
+            adapter=adapter,
+            max_turns=max_commands,
+            on_listen=on_listen,
+            on_result=on_result,
+            robot_uri=robot_uri,
+        )
+    except ImportError as exc:
+        print(f"[voice] {adapter_name} is not installed: {exc}")
+        return False
 
-        if utterance.lower().strip() in ("stop", "halt", "exit", "quit"):
-            print("  → stop command received")
-            robot.stop()
-            break
-
-        graph = agent.plan(utterance, robot)
-        order = graph.get_execution_order()
-        print(f"  → {len(order)} skill(s): {[s.name for s in order]}")
-        agent.execute(task=utterance, robot=robot)
-        count += 1
-        print()
-
-    print(f"[voice] session complete — {count} command(s) executed")
+    failed = [t for t in turns if t["result"].status != TaskStatus.COMPLETED]
+    print(f"[voice] session ended: {len(turns) - len(failed)} command(s) done, "
+          f"{len(failed)} refused or failed")
+    return not failed
 
 
 def main() -> None:
@@ -70,7 +81,8 @@ def main() -> None:
     p.add_argument("--model", default="base", help="Whisper model size (base/small/medium)")
     p.add_argument("--max-commands", type=int, default=5)
     args = p.parse_args()
-    run_voice_loop(args.robot, args.adapter, args.model, args.max_commands)
+    if not run_voice_loop(args.robot, args.adapter, args.model, max(1, args.max_commands)):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
