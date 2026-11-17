@@ -268,6 +268,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `demos/mujoco_pickplace/demo.py` on an install without MuJoCo, and
+  `demos/nav2_gazebo/demo.py` without ROS 2, stopped with a Python
+  traceback. They now print what is missing and how to run them
+  (`pip install 'apyrobo[mujoco]'` and ffmpeg for the MuJoCo demo; the
+  `gazebo-nav` Docker Compose commands for the Nav2 demo) and exit 1.
 - `examples/workflows/patrol_loop.py` and `delivery_run.py` sent the rule
   planner place names it cannot read ("navigate to corridor A",
   "navigate to office 101 and deliver package"): on `mock://` the patrol
