@@ -161,6 +161,15 @@ def _simple_toml_dumps(data: dict, _prefix: str = "") -> str:
 # Config class
 # ---------------------------------------------------------------------------
 
+def _check_mapping(data: Any) -> None:
+    """Raise ValueError when a config file's top level is not a mapping."""
+    if not isinstance(data, dict):
+        raise ValueError(
+            "the top level must be a mapping of sections "
+            f"(robot:, safety:, ...), got a {type(data).__name__}"
+        )
+
+
 class ApyroboConfig:
     """
     Typed configuration object for APYROBO.
@@ -190,6 +199,7 @@ class ApyroboConfig:
         # Default: YAML
         with open(path) as f:
             data = yaml.safe_load(f) or {}
+        _check_mapping(data)
         logger.info("Loaded config from %s", path)
         return cls(data)
 
@@ -202,6 +212,7 @@ class ApyroboConfig:
             return cls()
         with open(path) as f:
             data = yaml.safe_load(f) or {}
+        _check_mapping(data)
         logger.info("Loaded YAML config from %s", path)
         return cls(data)
 

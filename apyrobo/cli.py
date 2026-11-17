@@ -30,6 +30,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+import yaml
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from apyrobo.core.robot import Robot
@@ -340,13 +342,35 @@ def cmd_config(args: argparse.Namespace) -> None:
         config = ApyroboConfig()
         print(config.to_yaml())
     elif args.file:
-        config = ApyroboConfig.from_file(args.file)
+        config = _load_config_or_exit(args.file, "--file")
         print(config)
         print()
         print(config.to_yaml())
     else:
-        config = ApyroboConfig.from_env()
+        env_path = os.environ.get("APYROBO_CONFIG")
+        if env_path:
+            config = _load_config_or_exit(env_path, "APYROBO_CONFIG")
+        else:
+            config = ApyroboConfig.from_env()
         print(config)
+
+
+def _load_config_or_exit(path: str, source: str) -> ApyroboConfig:
+    """Load a config file the user named, or print one error line and exit 1.
+
+    ApyroboConfig.from_file falls back to defaults for a missing file; when the
+    user named the file, showing defaults would look like their settings.
+    """
+    if not os.path.isfile(path):
+        what = "is a directory" if os.path.isdir(path) else "not found"
+        print(f"Error: config file {path!r} ({source}) {what}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        return ApyroboConfig.from_file(path)
+    except (yaml.YAMLError, ValueError, ImportError, OSError) as exc:
+        detail = " ".join(str(exc).split())
+        print(f"Error: could not read config file {path!r}: {detail}", file=sys.stderr)
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
