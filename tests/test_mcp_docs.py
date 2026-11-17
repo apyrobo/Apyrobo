@@ -239,3 +239,30 @@ def test_the_claude_code_pip_variant_matches_launcher_apyrobo(monkeypatch):
     )
     printed = shlex.split(out.strip())
     assert shlex.split(match.group(1)) == printed[printed.index("--") + 1:]
+
+
+def test_the_codex_command_matches_mcp_config(monkeypatch):
+    lines = [line for body in _fences("bash") for line in body.splitlines()
+             if line.startswith("codex mcp add apyrobo ")]
+    assert lines, "the Codex `codex mcp add` example is missing"
+    documented = shlex.split(lines[0])
+    out, _ = _printed(
+        ["mcp", "config", "codex", "--launcher", "uvx", *_documented_config_flags()],
+        monkeypatch,
+    )
+    printed = shlex.split(out.strip())
+    split = printed.index("--")
+    assert documented[:split + 2] == printed[:split + 2]  # codex mcp add apyrobo -- uvx
+    assert (_without_uvx_source(documented[split + 2:])
+            == _without_uvx_source(printed[split + 2:]))
+
+
+def test_the_codex_pip_variant_matches_launcher_apyrobo(monkeypatch):
+    match = re.search(r"If you installed with `pip`, end the line with `-- ([^`]+)`", _doc())
+    assert match, "the pip variant of the Codex command is missing"
+    out, _ = _printed(
+        ["mcp", "config", "codex", "--launcher", "apyrobo", *_documented_config_flags()],
+        monkeypatch,
+    )
+    printed = shlex.split(out.strip())
+    assert shlex.split(match.group(1)) == printed[printed.index("--") + 1:]

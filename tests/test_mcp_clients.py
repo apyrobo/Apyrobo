@@ -470,3 +470,60 @@ def test_cli_accepts_vscode(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["mcpServers"]["apyrobo"]["type"] == "stdio"
+
+
+def test_codex_prints_a_codex_mcp_add_line(tmp_path, before_pypi):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, out, err = _run(_args("codex", cfg_max_speed=0.5, cfg_no_go=["2,2,4,4"]),
+                          _which({"uvx": str(uvx)}))
+    assert code == 0
+    # Codex 0.169.0: codex mcp add [OPTIONS] <NAME> (--url <URL> | -- <COMMAND>...)
+    assert shlex.split(out) == ["codex", "mcp", "add", "apyrobo", "--", str(uvx.resolve()),
+                                "--from", GIT_SOURCE, "apyrobo", "mcp", "--max-speed", "0.5",
+                                "--no-go", "2,2,4,4"]
+    assert "[mcp_servers" not in out  # Codex writes its own config.toml entry
+    assert "config.toml" in err and "codex mcp list" in err
+    assert "Merge this into" not in err and "mcpServers" not in err
+
+
+def test_codex_checks_flags_like_every_client():
+    code, out, err = _run(_args("codex", cfg_max_speed=-1.0), _which({}))
+    assert code == 1 and out == ""
+    assert "--max-speed must be positive" in err
+    code, out, err = _run(_args("codex", cfg_no_go=["2,2,4"]), _which({}))
+    assert code == 1 and out == ""
+
+
+def test_codex_quotes_paths_with_spaces():
+    launch = Launch("/opt/my tools/uvx", ["apyrobo", "mcp"])
+    text = mcp_clients.render("codex", launch, platform="linux")
+    assert shlex.split(text) == ["codex", "mcp", "add", "apyrobo", "--", "/opt/my tools/uvx",
+                                 "apyrobo", "mcp"]
+    windows = mcp_clients.render("codex", Launch(r"C:\my tools\uvx.exe", ["apyrobo", "mcp"]),
+                                 platform="win32")
+    assert windows == r'codex mcp add apyrobo -- "C:\my tools\uvx.exe" apyrobo mcp'
+
+
+def test_codex_over_ssh_is_one_shell_line():
+    code, out, _ = _run(_args("codex", cfg_ssh="robot", cfg_robot="mock://tb"),
+                        _which({"ssh": "/usr/bin/ssh"}))
+    assert code == 0
+    argv = shlex.split(out)
+    assert argv[:5] == ["codex", "mcp", "add", "apyrobo", "--"]
+    assert argv[-1] == "apyrobo mcp --robot mock://tb"
+
+
+def test_cli_accepts_codex(tmp_path):
+    exe = tmp_path / "apyrobo"
+    exe.write_text("")
+    exe.chmod(0o755)
+    result = subprocess.run(
+        [sys.executable, "-m", "apyrobo.cli", "mcp", "--max-speed", "0.5", "config", "codex",
+         "--launcher", "apyrobo"],
+        capture_output=True, text=True, cwd=tmp_path, timeout=60,
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert shlex.split(result.stdout) == ["codex", "mcp", "add", "apyrobo", "--",
+                                          str(exe.resolve()), "mcp", "--max-speed", "0.5"]

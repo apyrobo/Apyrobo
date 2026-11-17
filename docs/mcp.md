@@ -83,6 +83,17 @@ claude mcp add apyrobo -- uvx --from git+https://github.com/apyrobo/Apyrobo apyr
 If you installed with `pip`, use `-- apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4`
 instead.
 
+### Codex CLI
+
+```bash
+codex mcp add apyrobo -- uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+```
+
+Codex writes the entry to its own `config.toml`; `codex mcp list` shows it.
+If you installed with `pip`, end the line with `-- apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4`
+instead. `apyrobo mcp config codex` prints this line with the absolute path
+of `uvx`.
+
 ### Claude Desktop
 
 Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
@@ -146,8 +157,8 @@ apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
 
 prints the block above with the absolute path of `uvx` on this machine (GUI
 clients don't read your shell's `PATH`) and says where the config file is on
-your OS. Use `cursor`, `vscode` or `claude-code` instead of `claude-desktop` for those
-clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
+your OS. Use `cursor`, `vscode`, `claude-code` or `codex` instead of `claude-desktop`
+for those clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx`. It takes the same `--robot`, `--policy`, `--policy-file`,
 `--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
 flags as `apyrobo mcp`, on either side of `config`
@@ -744,7 +755,8 @@ server is most likely on a different `ROS_DOMAIN_ID` from the robot, so it
 sees no `/odom` and no Nav2. Set the same value for the server, either in
 the wrapped command above or in the client's `env` block
 (`"env": {"ROS_DOMAIN_ID": "30"}` in the JSON config, or
-`claude mcp add -e ROS_DOMAIN_ID=30 …` for Claude Code). Check from the same
+`claude mcp add -e ROS_DOMAIN_ID=30 …` for Claude Code,
+`codex mcp add --env ROS_DOMAIN_ID=30 …` for Codex). Check from the same
 shell with `ros2 topic echo /odom --once`.
 
 ## How APYROBO fits with other robot MCP servers
