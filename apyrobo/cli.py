@@ -376,7 +376,10 @@ def cmd_pkg_init(args: argparse.Namespace) -> None:
     print()
     print("Next steps:")
     print(f"  1. Add one JSON file per skill to {out_dir}/skills/, named <skill_id>.json")
-    print(f"     (start from a built-in: apyrobo skills --export navigate_to > {out_dir}/skills/navigate_to.json)")
+    print(
+        "     (start from a built-in: apyrobo skills --export navigate_to"
+        f" > {out_dir}/skills/navigate_to.json)"
+    )
     print(f"  2. List their ids in {out_dir}/skill-package.json under \"skills\"")
     print(f"  3. Check it: apyrobo pkg validate {out_dir}")
     print(f"  4. Run: apyrobo pkg pack {out_dir}")
