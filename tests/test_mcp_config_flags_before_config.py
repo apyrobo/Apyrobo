@@ -55,7 +55,7 @@ def test_default_robot_and_rule_planner_add_nothing():
 
 
 def test_planner_before_config_is_passed_on():
-    assert _server_args(_args(provider="openai")) == ["mcp", "--provider", "openai"]
+    assert _server_args(_args(provider="multi_turn")) == ["mcp", "--provider", "multi_turn"]
 
 
 def test_bad_flag_before_config_is_refused_not_dropped(tmp_path):

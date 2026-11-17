@@ -17,6 +17,7 @@ It only prints. It never reads or writes the user's config files.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import os
@@ -37,6 +38,9 @@ from apyrobo.__version__ import __version__
 GIT_SOURCE = "git+https://github.com/apyrobo/Apyrobo"
 #: First release that ships ``apyrobo mcp`` on PyPI.
 FIRST_PYPI_MCP_RELEASE = (4, 2, 0)
+#: ``--provider`` values that plan through litellm, which only ``apyrobo[llm]``
+#: installs; ``apyrobo mcp`` refuses to start with one of them without it.
+LLM_PROVIDERS = ("llm", "tool_calling")
 
 CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode", "codex")
 #: Clients set up with a ``<cli> mcp add <name> -- <command>`` shell line.
@@ -149,18 +153,42 @@ def server_args(
                              "give a file in a folder that exists")
         out += ["--audit-log", str(path)]
     if provider and provider != "rule":
+        known = _known_providers()
+        if provider not in known:
+            raise ValueError(f"unknown --provider {provider!r}; choose one of "
+                             f"{', '.join(known)}")
         out += ["--provider", provider]
     return out
 
 
-def _uvx_source(version: str | None = None) -> list[str]:
+def _known_providers() -> list[str]:
+    """The ``--provider`` names the server can start with, as ``Agent`` reads them."""
+    from apyrobo.skills.agent import _PROVIDERS
+
+    return ["rule", "auto", *(name for name in _PROVIDERS if name != "rule")]
+
+
+def _provider(flags: Sequence[str]) -> str | None:
+    """The ``--provider`` value in ``flags``, if any."""
+    for i, flag in enumerate(flags[:-1]):
+        if flag == "--provider":
+            return flags[i + 1]
+    return None
+
+
+def _uvx_source(version: str | None = None, flags: Sequence[str] = ()) -> list[str]:
     """``uvx`` arguments naming where the package comes from.
 
     A version that contains ``apyrobo mcp`` on PyPI needs none. Older ones
     install from GitHub, and so does anything unparsable: that form always works.
+    An LLM ``--provider`` in ``flags`` adds the ``llm`` extra, since uvx
+    installs only what it is told to and the server will not start without it.
     """
     match = re.match(r"(\d+)\.(\d+)\.(\d+)", __version__ if version is None else version)
-    if match and tuple(map(int, match.groups())) >= FIRST_PYPI_MCP_RELEASE:
+    on_pypi = bool(match) and tuple(map(int, match.groups())) >= FIRST_PYPI_MCP_RELEASE
+    if _provider(flags) in LLM_PROVIDERS:
+        return ["--from", "apyrobo[llm]" if on_pypi else f"apyrobo[llm] @ {GIT_SOURCE}"]
+    if on_pypi:
         return []
     return ["--from", GIT_SOURCE]
 
@@ -176,7 +204,7 @@ def resolve_launch(
     """
     if launcher not in LAUNCHERS:
         raise ValueError(f"unknown launcher {launcher!r}; choose one of {', '.join(LAUNCHERS)}")
-    uvx_args = [*_uvx_source(), "apyrobo", "mcp", *flags]
+    uvx_args = [*_uvx_source(flags=flags), "apyrobo", "mcp", *flags]
     apyrobo_args = ["mcp", *flags]
 
     if launcher in ("auto", "uvx"):
@@ -232,7 +260,7 @@ def remote_command(
     non-interactive ssh shell lacks: ROS 2 most of all.
     """
     if launcher == "uvx":
-        argv = ["uvx", *_uvx_source(), "apyrobo", "mcp", *flags]
+        argv = ["uvx", *_uvx_source(flags=flags), "apyrobo", "mcp", *flags]
     else:
         argv = ["apyrobo", "mcp", *flags]
     command = shlex.join(argv)
@@ -417,6 +445,23 @@ def _merged_flags(args: argparse.Namespace) -> dict:
     }
 
 
+def _check_llm_installed(flags: Sequence[str], launch: Launch) -> None:
+    """Refuse a config whose server would stop at start for want of litellm.
+
+    Only for this install's own ``apyrobo``: uvx adds the extra itself, and
+    another executable may sit in a Python this process cannot look into.
+    """
+    provider = _provider(flags)
+    if provider not in LLM_PROVIDERS or launch.command != _own_script():
+        return
+    if importlib.util.find_spec("litellm") is None:
+        raise ValueError(
+            f"--provider {provider} needs litellm, which this install does not "
+            "have, so the server would not start. Install it with: "
+            "pip install 'apyrobo[llm]', or use --launcher uvx"
+        )
+
+
 def main(args: argparse.Namespace, stdout: TextIO | None = None,
          stderr: TextIO | None = None, which: Which = find_executable) -> int:
     """Entry point for ``apyrobo mcp config``. Returns the exit code."""
@@ -435,6 +480,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
             launch = resolve_ssh_launch(ssh, flags, launcher, setup, which)
         else:
             launch = resolve_launch(flags, launcher, which)
+            _check_llm_installed(flags, launch)
         client = args.client
         text = render(client, launch, name=getattr(args, "name", None) or "apyrobo")
         notes = hints(client, launch)
