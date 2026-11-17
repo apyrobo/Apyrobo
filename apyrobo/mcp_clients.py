@@ -3,7 +3,9 @@
 ``apyrobo mcp config <client>`` prints the snippet a client needs to start
 ``apyrobo mcp``, with the executable resolved to an absolute path on this
 machine (GUI clients such as Claude Desktop, Cursor and VS Code do not read your
-shell's PATH) and the config file location for this operating system.
+shell's PATH) and the config file location for this operating system. For
+Claude Code and the OpenAI Codex CLI it prints the ``mcp add`` command
+instead, and the client writes its own config.
 
 With ``--ssh user@host`` the client on your laptop starts ``apyrobo mcp`` on
 the robot over ssh instead, so MCP's stdio transport needs no new port or
@@ -34,7 +36,9 @@ GIT_SOURCE = "git+https://github.com/apyrobo/Apyrobo"
 #: First release that ships ``apyrobo mcp`` on PyPI.
 FIRST_PYPI_MCP_RELEASE = (4, 2, 0)
 
-CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode")
+CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode", "codex")
+#: Clients set up with a ``<cli> mcp add <name> -- <command>`` shell line.
+ADD_COMMANDS = {"claude-code": "claude", "codex": "codex"}
 LAUNCHERS = ("auto", "uvx", "apyrobo")
 
 #: ssh options for an unattended stdio pipe. BatchMode makes a missing key fail
@@ -248,6 +252,8 @@ def config_location(client: str, platform: str | None = None) -> str:
         return "~/.cursor/mcp.json (or .cursor/mcp.json in a project)"
     if client == "claude-code":
         return "run the command in a terminal; Claude Code stores it for you"
+    if client == "codex":
+        return "run the command in a terminal; Codex writes it to its config.toml for you"
     if client == "vscode":
         # VS Code's MCP configuration reference names this user file, under
         # $COPILOT_HOME when that is set, as the place for new setups.
@@ -258,7 +264,7 @@ def config_location(client: str, platform: str | None = None) -> str:
 
 def render(client: str, launch: Launch, name: str = "apyrobo",
            platform: str | None = None) -> str:
-    """The text to paste: JSON for desktop clients, a command for Claude Code."""
+    """The text to paste: JSON for desktop clients, a command for Claude Code and Codex."""
     platform = platform or sys.platform
     if client in ("claude-desktop", "cursor"):
         block = {"mcpServers": {name: {"command": launch.command, "args": launch.args}}}
@@ -267,8 +273,10 @@ def render(client: str, launch: Launch, name: str = "apyrobo",
         entry = {"type": "stdio", "command": launch.command, "args": launch.args,
                  "tools": ["*"]}
         return json.dumps({"mcpServers": {name: entry}}, indent=2)
-    if client == "claude-code":
-        argv = ["claude", "mcp", "add", name, "--", launch.command, *launch.args]
+    if client in ADD_COMMANDS:
+        # Both take ``<cli> mcp add <name> -- <command> [args...]``; Codex's
+        # usage is ``codex mcp add [OPTIONS] <NAME> (--url <URL> | -- <COMMAND>...)``.
+        argv = [ADD_COMMANDS[client], "mcp", "add", name, "--", launch.command, *launch.args]
         if platform.startswith("win"):
             return subprocess.list2cmdline(argv)
         return shlex.join(argv)
@@ -282,6 +290,9 @@ def hints(client: str, launch: Launch, platform: str | None = None) -> list[str]
         lines.append(f"Note: {launch.note}")
     if client == "claude-code":
         lines.append("Run the command above in a terminal.")
+    elif client == "codex":
+        lines.append("Run the command above in a terminal. Codex writes the entry to "
+                     "its config.toml; 'codex mcp list' shows it.")
     else:
         lines.append(f"Merge this into: {config_location(client, platform)}")
         lines.append("Keep any other servers already under \"mcpServers\".")
@@ -412,7 +423,8 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
 
 
 __all__ = [
-    "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "SSH_OPTIONS", "check_ssh_target",
-    "config_location", "hints", "launches_uvx", "main", "remote_command", "render",
+    "ADD_COMMANDS", "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "SSH_OPTIONS",
+    "check_ssh_target", "config_location", "hints", "launches_uvx", "main",
+    "remote_command", "render",
     "resolve_launch", "resolve_ssh_launch", "ros2_hints", "server_args", "ssh_hints",
 ]

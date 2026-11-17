@@ -10,6 +10,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp config codex` prints the line that adds APYROBO to the
+  OpenAI Codex CLI, `codex mcp add apyrobo -- <command> apyrobo mcp …`, with
+  the absolute path of `uvx` (or the installed `apyrobo`) and the same flag
+  checks as the other clients; Codex writes its own `config.toml` entry.
+  docs/mcp.md has a Codex CLI section, and a test keeps its line in step
+  with what the command prints.
 - `apyrobo --version` (or `-V`) prints the installed version, e.g.
   `apyrobo 4.1.0`, and exits. Before, the flag was an argparse error
   (exit 2). `-v` still means verbose logging.
