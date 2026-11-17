@@ -180,6 +180,78 @@ def test_inspection_main_exits_1_when_a_checkpoint_is_missed(tmp_path, monkeypat
     assert json.loads(report.read_text())[0]["reached"] is False
 
 
+def test_multi_floor_drives_to_the_elevator_then_the_destination(capsys):
+    floors = _load("multi_floor_navigation")
+    rec = _Recorder(floors)
+    assert floors.navigate_multi_floor("mock://lift", 1, 3) is True
+    (ex, ey), (dx, dy) = floors.ELEVATOR, floors.FLOOR_DESTINATIONS[3][1]
+    assert rec.tasks == [f"go to ({ex}, {ey})", f"go to ({dx}, {dy})"]
+    assert rec.robot.get_position() == (dx, dy)
+    assert "(simulated)" in capsys.readouterr().out
+
+
+def test_multi_floor_same_floor_drives_straight_there():
+    floors = _load("multi_floor_navigation")
+    rec = _Recorder(floors)
+    assert floors.navigate_multi_floor("mock://lift", 2, 2) is True
+    x, y = floors.FLOOR_DESTINATIONS[2][1]
+    assert rec.tasks == [f"go to ({x}, {y})"]
+
+
+def test_multi_floor_stops_when_the_elevator_is_not_reached(capsys):
+    floors = _load("multi_floor_navigation")
+    x, y = floors.ELEVATOR
+    rec = _Recorder(floors, fail_on=f"({x}, {y})")
+    assert floors.navigate_multi_floor("mock://lift", 1, 3) is False
+    assert len(rec.tasks) == 1
+    out = capsys.readouterr().out
+    assert "elevator not reached: blocked" in out
+    assert "arrived" not in out
+
+
+def test_multi_floor_does_not_pretend_to_ride_a_real_elevator(capsys):
+    floors = _load("multi_floor_navigation")
+    assert floors.ride_elevator("ros2://husky", 1, 3) is False
+    assert "no elevator integration" in capsys.readouterr().out
+
+
+def test_multi_floor_main_exits_1_for_an_unknown_floor(monkeypatch, capsys):
+    floors = _load("multi_floor_navigation")
+    rec = _Recorder(floors)
+    monkeypatch.setattr("sys.argv", ["multi_floor_navigation.py", "--to-floor", "9"])
+    with pytest.raises(SystemExit) as exc:
+        floors.main()
+    assert exc.value.code == 1
+    assert rec.tasks == []
+    assert "no destination for floor 9" in capsys.readouterr().out
+
+
+def test_fleet_sends_each_robot_to_its_stops():
+    fleet = _load("fleet_coordination")
+    rec = _Recorder(fleet)
+    workers = fleet.coordinate_fleet(3, 6)
+    stops = fleet.TASK_POOL[:6]
+    assert sorted(rec.tasks) == sorted(f"go to ({x}, {y})" for _, (x, y) in stops)
+    for i, w in enumerate(workers):
+        mine = stops[i::3]
+        assert w.completed == [name for name, _ in mine]
+        assert w.errors == []
+        assert w.robot.get_position() == mine[-1][1]
+
+
+def test_fleet_reports_a_missed_stop_and_main_exits_1(monkeypatch, capsys):
+    fleet = _load("fleet_coordination")
+    name, (x, y) = fleet.TASK_POOL[1]
+    _Recorder(fleet, fail_on=f"({x}, {y})")
+    monkeypatch.setattr("sys.argv", ["fleet_coordination.py", "--fleet", "2", "--tasks", "4"])
+    with pytest.raises(SystemExit) as exc:
+        fleet.main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert f"{name} not reached: blocked" in out
+    assert "3/4 reached, 1 not reached" in out
+
+
 def _run_example(name: str, module: ModuleType) -> None:
     if name == "patrol_loop":
         module.patrol("mock://check", rounds=1, pause_s=0)
@@ -187,12 +259,20 @@ def _run_example(name: str, module: ModuleType) -> None:
         module.run_deliveries("mock://check", len(module.DELIVERIES))
     elif name == "charging_cycle":
         module.charging_cycle("mock://check", threshold=20.0, max_steps=10)
+    elif name == "multi_floor_navigation":
+        module.navigate_multi_floor("mock://check", 1, 3)
+    elif name == "fleet_coordination":
+        module.coordinate_fleet(2, len(module.TASK_POOL))
     else:
         module.run_inspection("mock://check", module.DEFAULT_CHECKPOINTS)
 
 
 @pytest.mark.parametrize(
-    "name", ["patrol_loop", "delivery_run", "charging_cycle", "inspection_round"],
+    "name",
+    [
+        "patrol_loop", "delivery_run", "charging_cycle", "inspection_round",
+        "multi_floor_navigation", "fleet_coordination",
+    ],
 )
 def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
     module = _load(name)
@@ -211,6 +291,11 @@ def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
         "navigate to charging dock",
         "undock from charging station",
         "navigate to server room",
+        "navigate to elevator lobby",
+        "press button for floor 3",
+        "navigate to third floor lab",
+        "deliver package to office 101",
+        "inspect corridor B",
     ],
 )
 def test_the_old_example_tasks_were_refused(task):
