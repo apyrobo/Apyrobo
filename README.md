@@ -412,10 +412,10 @@ docker-compose up apyrobo-api
 | Script | Description |
 |--------|-------------|
 | `patrol_loop.py` | Continuous waypoint patrol with configurable dwell time |
-| `pick_and_place.py` | Async arm workflow with MoveIt adapter and gripper control |
+| `pick_and_place.py` | Arm pick-and-place to a named place pose, stopping on the first failed step (simulated MoveIt arm on `mock://` only; wire in your own arm) |
 | `inspection_round.py` | Checkpoint inspection with pass/fail logging and JSON report |
 | `charging_cycle.py` | Battery-aware dock/undock loop |
-| `shelf_restock.py` | Depot-to-shelf restocking with arm |
+| `shelf_restock.py` | Drive depot to shelf and pick/place each item, reporting every item not restocked (simulated arm on `mock://` only; wire in your own arm) |
 | `delivery_run.py` | Multi-stop delivery run with return to base |
 | `multi_floor_navigation.py` | Drive to the elevator, hand off the ride (simulated on `mock://`; wire in your own elevator and map loading), drive to a spot on the new floor |
 | `quality_inspection.py` | Async vision-based QA with defect logging |

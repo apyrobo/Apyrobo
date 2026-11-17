@@ -292,6 +292,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   ride is a hand-off that is simulated on `mock://` and stops with exit 1
   on any other robot until you wire in your elevator and map loading
   (`--destination` is gone); a stop not reached is reported and exits 1.
+- `examples/workflows/shelf_restock.py` sent "navigate to storage depot"
+  and "navigate to shelf A1", which drove nowhere real, and both it and
+  `pick_and_place.py` printed "complete" without checking a single arm
+  step; both always drove a simulated arm, even with `--robot ros2://…`.
+  The depot and shelves are now points in metres and each place target a
+  named pose; a failed drive or arm step is reported and the script exits
+  1; on any robot but `mock://` both stop before moving and exit 1 until
+  you wire in your arm.
 - `apyrobo config --file PATH` (and `apyrobo config` with `APYROBO_CONFIG`
   set) showed the default settings with exit 0 when the file was missing,
   so a mistyped path looked like your config; a YAML or TOML syntax error,
