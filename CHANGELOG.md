@@ -274,6 +274,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp --provider llm config <client>` (and `tool_calling`) printed a
+  uvx command that installs apyrobo without litellm, so the server refused to
+  start inside the client. The uvx source now carries the `llm` extra
+  (`apyrobo[llm] @ git+…`, or `apyrobo[llm]` once on PyPI), including over
+  `--ssh`; with `--launcher apyrobo` on an install without litellm, config
+  stops with the install line. An unknown `--provider` (a typo such as `lmm`)
+  is refused with the choices instead of being printed into the config.
 - `apyrobo mcp config` with `--launcher apyrobo` (or without `uvx` on
   `PATH`) now points the client at the `apyrobo` it was run from. Run from a
   venv that was not activated, it used to print whichever `apyrobo` came first
