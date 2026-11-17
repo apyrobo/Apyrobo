@@ -268,6 +268,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo config --file PATH` (and `apyrobo config` with `APYROBO_CONFIG`
+  set) showed the default settings with exit 0 when the file was missing,
+  so a mistyped path looked like your config; a YAML or TOML syntax error,
+  a directory or a file whose top level is not a mapping crashed with a
+  traceback. Each is now one `Error:` line naming the file, exit 1.
+  `ApyroboConfig.from_file` still returns defaults for a missing file, and
+  now raises `ValueError` for a non-mapping top level.
 - `apyrobo pkg validate` said a package was valid, and `apyrobo pkg pack`
   built an archive without the skill, when `skill-package.json` listed a
   skill with no `skills/<id>.json`; a `skills/*.json` file the manifest did
