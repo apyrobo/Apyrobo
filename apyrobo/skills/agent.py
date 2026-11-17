@@ -1389,6 +1389,10 @@ class Agent:
         self._last_state: ExecutionState | None = None
         self._correction_learner: Any = None
         self._last_task: str = ""
+        # Fallback reasons already logged as warnings: one agent plans a
+        # task more than once (the CLI checks, then executes), and the same
+        # "litellm is required" warning three times is noise.
+        self._degraded_warned: set[str] = set()
 
     @property
     def provider(self) -> AgentProvider:
@@ -1473,7 +1477,13 @@ class Agent:
             # rate limit, wrong API key, etc.) — fall back to rule-based so the robot
             # is never stranded waiting for an unavailable LLM.
             if not isinstance(self._provider, RuleBasedProvider):
-                logger.warning(
+                reason = str(exc)
+                warned = getattr(self, "_degraded_warned", None)
+                if warned is None:
+                    warned = self._degraded_warned = set()
+                log = logger.debug if reason in warned else logger.warning
+                warned.add(reason)
+                log(
                     "Agent: LLM provider failed (%s), falling back to rule-based (degraded mode)",
                     exc,
                 )
