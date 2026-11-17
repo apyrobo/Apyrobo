@@ -173,6 +173,12 @@ class SkillPackage:
         self.skills: list[Skill] = list(skills or [])
         self.dependencies: dict[str, str] = dict(dependencies or {})
         self.tags: list[str] = list(tags or [])
+        # Problems found by load(): skill ids listed in the manifest with no
+        # skills/<id>.json, and skills/*.json files the manifest does not list.
+        # validate() reports both, so pack and install never drop a skill
+        # silently.
+        self.missing_skill_files: list[str] = []
+        self.unlisted_skill_files: list[str] = []
 
     # ------------------------------------------------------------------
     # Skill management
@@ -286,16 +292,26 @@ class SkillPackage:
         # Load skill files
         skills_dir = directory / SKILLS_DIR
         skills: list[Skill] = []
-        if skills_dir.exists():
-            for skill_id in manifest.get("skills", []):
-                skill_path = skills_dir / f"{skill_id}.json"
-                if skill_path.exists():
-                    with open(skill_path) as f:
-                        skills.append(Skill.from_dict(json.load(f)))
-                else:
-                    logger.warning("Skill file not found: %s", skill_path)
+        listed = [str(sid) for sid in manifest.get("skills", [])]
+        missing: list[str] = []
+        for skill_id in listed:
+            skill_path = skills_dir / f"{skill_id}.json"
+            if skill_path.is_file():
+                with open(skill_path) as f:
+                    skills.append(Skill.from_dict(json.load(f)))
+            else:
+                missing.append(f"{SKILLS_DIR}/{skill_id}.json")
+        unlisted: list[str] = []
+        if skills_dir.is_dir():
+            unlisted = sorted(
+                f"{SKILLS_DIR}/{path.name}"
+                for path in skills_dir.glob("*.json")
+                if path.stem not in listed
+            )
 
         pkg = cls.from_manifest(manifest, skills=skills)
+        pkg.missing_skill_files = missing
+        pkg.unlisted_skill_files = unlisted
         pkg._load_skill_handlers()
         return pkg
 
@@ -401,7 +417,16 @@ class SkillPackage:
             errors.append("Package name is required")
         if not self.version:
             errors.append("Package version is required")
-        if not self.skills:
+        for rel in self.missing_skill_files:
+            errors.append(
+                f"{rel} not found (the skill is listed in {MANIFEST_FILE})"
+            )
+        for rel in self.unlisted_skill_files:
+            errors.append(
+                f"{rel} is not listed in {MANIFEST_FILE} \"skills\" "
+                f"(add \"{rel[len(SKILLS_DIR) + 1:-5]}\" there, or remove the file)"
+            )
+        if not self.skills and not self.missing_skill_files:
             errors.append("Package must contain at least one skill")
 
         # Check skill IDs match manifest
