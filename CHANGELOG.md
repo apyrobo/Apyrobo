@@ -268,6 +268,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo plan` and `apyrobo execute` with `--provider llm` (or
+  `--profile`) on an install without `apyrobo[llm]` printed the same "LLM
+  provider failed ... falling back to rule-based" warning two or three
+  times, once per planning pass. An agent now warns once per failure reason;
+  repeats are logged at debug level, and the `agent.degraded` event is still
+  emitted on every fallback.
 - `apyrobo listen` (Whisper by default) and `apyrobo voice --listen --adapter
   whisper|openai` crashed with a `ModuleNotFoundError` traceback on a plain
   `pip install apyrobo`, which has no numpy, sounddevice, Whisper or OpenAI
