@@ -268,6 +268,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `docs/skill_packaging.md`: the `apyrobo skill publish` command it showed
+  stopped with an argparse error (exit 2): it passed `--name`, which the
+  command does not take, and left out the required `--description`. It also
+  called the target a "hosted registry", but `apyrobo skill` talks to a
+  registry you start yourself (`apyrobo registry start`, from
+  `apyrobo[registry]`, at `http://localhost:8080`). The guide now shows how to
+  start one with a token, a publish command that works as written, and that
+  `apyrobo skill search` only lists packages. Tested against a local stub
+  registry in `tests/test_skill_packaging_doc.py`.
 - `demos/mujoco_pickplace/demo.py` on an install without MuJoCo, and
   `demos/nav2_gazebo/demo.py` without ROS 2, stopped with a Python
   traceback. They now print what is missing and how to run them

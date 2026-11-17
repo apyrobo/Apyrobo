@@ -156,15 +156,31 @@ pip install twine
 twine upload dist/*
 ```
 
-Then publish to the APYROBO hosted registry so it shows up in `apyrobo skill search`:
+Then list it in a skill registry so it shows up in `apyrobo skill search`. The `apyrobo skill`
+commands talk to a registry you run yourself, `http://localhost:8080` by default
+(`--registry URL` for another host). Start one with:
 
 ```bash
-apyrobo skill publish go_to_waypoint \
-  --name apyrobo-skills-myrobot \
+pip install 'apyrobo[registry]'
+export APYROBO_REGISTRY_TOKEN=change-me
+apyrobo registry start   # serves http://localhost:8080
+```
+
+With `APYROBO_REGISTRY_TOKEN` set, the registry refuses a publish without that token
+(HTTP 401); without it, anyone who can reach the port can publish. It keeps listings in
+memory, so they are gone when it stops. Then, from a shell with the same
+`APYROBO_REGISTRY_TOKEN`, publish the package by its distribution name:
+
+```bash
+apyrobo skill publish apyrobo-skills-myrobot \
   --version 1.0.0 \
-  --download-url https://pypi.org/packages/... \
+  --description "MyRobot skill pack for APYROBO" \
+  --download-url https://files.pythonhosted.org/packages/.../apyrobo_skills_myrobot-1.0.0-py3-none-any.whl \
   --token $APYROBO_REGISTRY_TOKEN
 ```
+
+The registry stores the listing (name, version, description, download URL); it does not
+host or check the wheel itself.
 
 ---
 
@@ -182,7 +198,8 @@ import apyrobo_skills_myrobot
 apyrobo_skills_myrobot.register()   # wires its @skill functions into the skill registry
 ```
 
-Or by name:
+To find packages listed in a registry (section 6), search it by name; this lists them, it
+does not install or load anything:
 ```bash
 apyrobo skill search myrobot
 ```
