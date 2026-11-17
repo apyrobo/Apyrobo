@@ -268,6 +268,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo diagnose` named each environment check in its JSON report by the
+  first word of its message ("No", "Skill", "Mock"), dropped the fix hints,
+  and wrote the report with no word on screen when `--robot` failed to
+  connect. Checks now carry stable names (`python`, `rclpy`, `llm`,
+  `docker`, ...) and their hint, and a failed connection is printed on
+  stderr as well as recorded in the report.
 - `apyrobo doctor` passed the LLM check as soon as an API key was set, even
   on a plain `pip install apyrobo` without litellm, where every LLM plan
   falls back to the rule planner. It now warns that litellm is missing and
