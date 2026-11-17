@@ -284,6 +284,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   also in `--config` files) are now points in metres; the report says
   whether each checkpoint was reached, and either script exits 1 when one
   is not.
+- `examples/workflows/multi_floor_navigation.py` and `fleet_coordination.py`
+  sent "navigate to elevator lobby", "press button for floor 3" and
+  "deliver package to office 101", which drove nowhere real, and printed
+  arrival or success without checking. The elevator, each floor's
+  destination and each fleet stop are now points in metres; the elevator
+  ride is a hand-off that is simulated on `mock://` and stops with exit 1
+  on any other robot until you wire in your elevator and map loading
+  (`--destination` is gone); a stop not reached is reported and exits 1.
 - `apyrobo config --file PATH` (and `apyrobo config` with `APYROBO_CONFIG`
   set) showed the default settings with exit 0 when the file was missing,
   so a mistyped path looked like your config; a YAML or TOML syntax error,

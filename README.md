@@ -417,9 +417,9 @@ docker-compose up apyrobo-api
 | `charging_cycle.py` | Battery-aware dock/undock loop |
 | `shelf_restock.py` | Depot-to-shelf restocking with arm |
 | `delivery_run.py` | Multi-stop delivery run with return to base |
-| `multi_floor_navigation.py` | Elevator-based floor transitions with map switching |
+| `multi_floor_navigation.py` | Drive to the elevator, hand off the ride (simulated on `mock://`; wire in your own elevator and map loading), drive to a spot on the new floor |
 | `quality_inspection.py` | Async vision-based QA with defect logging |
-| `fleet_coordination.py` | Threaded round-robin task dispatch across a robot fleet |
+| `fleet_coordination.py` | Threaded round-robin dispatch of named stops across a robot fleet, reporting every stop not reached |
 | `voice_commanded_robot.py` | Voice loop with mock or Whisper STT backend |
 
 ---
