@@ -20,9 +20,20 @@ from __future__ import annotations
 import json
 import sys
 
-import anyio
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
+try:
+    import anyio
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+except ImportError:
+    sys.exit(
+        "This example needs the official MCP Python SDK, which a plain\n"
+        "'pip install apyrobo' does not include. Install it with:\n"
+        "\n"
+        "    pip install \"mcp>=2.2\"\n"
+        "\n"
+        "then run it again. examples/05_mcp_safety_demo.py shows the same\n"
+        "server with no extra packages."
+    )
 
 # The same server Claude, Cursor or VS Code would start, with its limits.
 SERVER = StdioServerParameters(
