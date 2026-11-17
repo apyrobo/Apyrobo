@@ -325,6 +325,82 @@ def test_shelf_restock_does_not_drive_without_an_arm(capsys):
     assert "no arm integration" in capsys.readouterr().out
 
 
+def test_quality_inspection_drives_to_the_station_and_sorts_every_part():
+    qa = _load("quality_inspection")
+    rec = _Recorder(qa)
+    results, error = asyncio.run(qa.quality_inspection("mock://qa", 6, seed=1))
+    assert error is None
+    x, y = qa.STATION
+    assert rec.tasks == [f"go to ({x}, {y})"]
+    assert rec.robot.get_position() == qa.STATION
+    assert len(results) == 6
+    assert any(not r.passed for r in results)
+
+
+def test_quality_inspection_stops_when_an_arm_step_fails(monkeypatch, capsys):
+    qa = _load("quality_inspection")
+
+    async def slip(self):
+        return _motion_failed(qa, "part slipped")
+
+    monkeypatch.setattr(qa.MockMoveItAdapter, "close_gripper", slip)
+    monkeypatch.setattr("sys.argv", ["quality_inspection.py", "--items", "3"])
+    with pytest.raises(SystemExit) as exc:
+        qa.main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "stopped: PART-0001: close gripper failed: part slipped" in out
+    assert "Inspected: 0" in out
+    assert "all parts inspected" not in out
+
+
+def test_quality_inspection_stops_when_the_station_is_not_reached(capsys):
+    qa = _load("quality_inspection")
+    x, y = qa.STATION
+    _Recorder(qa, fail_on=f"({x}, {y})")
+    results, error = asyncio.run(qa.quality_inspection("mock://qa", 2))
+    assert results == []
+    assert error == "inspection station not reached: blocked"
+
+
+def test_quality_inspection_does_not_move_without_an_arm(capsys):
+    qa = _load("quality_inspection")
+    rec = _Recorder(qa)
+    results, error = asyncio.run(qa.quality_inspection("ros2://panda", 2))
+    assert (results, error) == ([], "no arm integration")
+    assert rec.tasks == []
+
+
+def test_voice_demo_runs_every_command_and_stops_on_stop(capsys):
+    voice = _load("voice_commanded_robot")
+    rec = _Recorder(voice)
+    assert voice.run_voice_loop("mock://voice", "mock", "base", 10) is True
+    spoken = [u for u in voice.DEMO_UTTERANCES if u != "stop"]
+    assert len(rec.tasks) == len(spoken)
+    assert rec.robot.get_position() == (0.0, -1.5)
+    assert f"{len(spoken)} command(s) done, 0 refused or failed" in capsys.readouterr().out
+
+
+def test_voice_refuses_a_place_name_and_main_exits_1(monkeypatch, capsys):
+    voice = _load("voice_commanded_robot")
+    monkeypatch.setattr(voice, "DEMO_UTTERANCES", ["navigate to the kitchen", "stop"])
+    rec = _Recorder(voice)
+    monkeypatch.setattr("sys.argv", ["voice_commanded_robot.py"])
+    with pytest.raises(SystemExit) as exc:
+        voice.main()
+    assert exc.value.code == 1
+    assert rec.tasks == []
+    out = capsys.readouterr().out
+    assert "gives no coordinates" in out
+    assert "0 command(s) done, 1 refused or failed" in out
+
+
+def _motion_failed(module: ModuleType, message: str):
+    from apyrobo.moveit import MotionResult
+
+    return MotionResult(success=False, message=message)
+
+
 def _run_example(name: str, module: ModuleType) -> None:
     if name == "patrol_loop":
         module.patrol("mock://check", rounds=1, pause_s=0)
@@ -338,6 +414,10 @@ def _run_example(name: str, module: ModuleType) -> None:
         module.coordinate_fleet(2, len(module.TASK_POOL))
     elif name == "shelf_restock":
         asyncio.run(module.restock("mock://check", len(module.RESTOCK)))
+    elif name == "quality_inspection":
+        asyncio.run(module.quality_inspection("mock://check", 3))
+    elif name == "voice_commanded_robot":
+        module.run_voice_loop("mock://check", "mock", "base", 10)
     else:
         module.run_inspection("mock://check", module.DEFAULT_CHECKPOINTS)
 
@@ -347,6 +427,7 @@ def _run_example(name: str, module: ModuleType) -> None:
     [
         "patrol_loop", "delivery_run", "charging_cycle", "inspection_round",
         "multi_floor_navigation", "fleet_coordination", "shelf_restock",
+        "quality_inspection", "voice_commanded_robot",
     ],
 )
 def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
@@ -373,6 +454,10 @@ def test_every_task_the_example_sends_is_one_apyrobo_mcp_accepts(name):
         "inspect corridor B",
         "navigate to storage depot",
         "navigate to shelf A1",
+        "navigate to inspection station",
+        "navigate to the kitchen",
+        "move to conference room B",
+        "return to base",
     ],
 )
 def test_the_old_example_tasks_were_refused(task):

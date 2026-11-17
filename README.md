@@ -418,9 +418,9 @@ docker-compose up apyrobo-api
 | `shelf_restock.py` | Drive depot to shelf and pick/place each item, reporting every item not restocked (simulated arm on `mock://` only; wire in your own arm) |
 | `delivery_run.py` | Multi-stop delivery run with return to base |
 | `multi_floor_navigation.py` | Drive to the elevator, hand off the ride (simulated on `mock://`; wire in your own elevator and map loading), drive to a spot on the new floor |
-| `quality_inspection.py` | Async vision-based QA with defect logging |
+| `quality_inspection.py` | Drive to a station, pick each part, sort it into a pass or reject bin, stopping on the first failed step (the inspection is a seeded stand-in for your camera check; simulated arm on `mock://` only) |
 | `fleet_coordination.py` | Threaded round-robin dispatch of named stops across a robot fleet, reporting every stop not reached |
-| `voice_commanded_robot.py` | Voice loop with mock or Whisper STT backend |
+| `voice_commanded_robot.py` | Voice loop (mock or Whisper STT) through the same safety and plan checks as `apyrobo voice --listen`; a command it cannot read is refused with the reason |
 
 ---
 
