@@ -1885,6 +1885,22 @@ def _utf8_stdio() -> None:
             reconfigure(encoding="utf-8", errors=errors)
 
 
+def _shutdown_ros2() -> None:
+    """Stop the shared ROS 2 node, if a ros2:// robot started one.
+
+    Without this, the executor's spin thread is still running at interpreter
+    exit and the process aborts (exit -6) after the robot was stopped.
+    """
+    bridge = sys.modules.get("apyrobo.core.ros2_bridge")
+    manager = getattr(bridge, "_ROS2NodeManager", None)
+    if manager is None or not manager.started():
+        return
+    try:
+        manager.shutdown()
+    except Exception as exc:  # the robot is already stopped; just report it
+        logging.getLogger(__name__).warning("MCP: ROS 2 shutdown failed: %s", exc)
+
+
 def cmd_mcp(args: argparse.Namespace) -> None:
     """Serve the robot to an MCP client (Claude, Cursor, …) over stdio."""
     if getattr(args, "mcp_command", None) == "config":
@@ -1956,6 +1972,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         with contextlib.suppress(Exception):
             server.toolbox.enforcer.stop()
         server.join_halt()
+        _shutdown_ros2()
     if server.reader_running():
         # The stdin thread holds stdin's lock in a blocking read, and
         # interpreter shutdown aborts on that lock. The robot is stopped.
