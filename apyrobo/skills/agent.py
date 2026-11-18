@@ -123,6 +123,17 @@ class RuleBasedProvider(AgentProvider):
     # "don't", "do not", "never", "not": this planner has no way to honour a
     # negation, so it must not plan the motion that follows one.
     _NEGATION = re.compile(r"\b(?:do\s+not|don['\u2019]?t|dont|never|not)\b")
+    # A condition ("if the door is open", "unless someone is there", "until
+    # you see a wall", "wait for a person"): this planner has no way to check
+    # one, so it would plan the drive and run it whether or not it holds.
+    _CONDITION = re.compile(
+        r"\b(?:if|unless|until|till|when|whenever|provided|providing"
+        r"|as\s+long\s+as|in\s+case|every\s+time|each\s+time"
+        r"|wait(?:ing)?\s+(?:for|until|till)"
+        r"|(?:once|after|before)\s+(?:the|a|an|it|its|it's|you|they|we|i|he"
+        r"|she|someone|somebody|anyone|anybody|nobody|no\s+one|everyone"
+        r"|everybody|people|there))\b"
+    )
     # A number in exponent form ("1e3"), which _extract_coordinates would read
     # only in part.
     _EXPONENT_NUMBER = re.compile(r"\d(?:\.\d*)?\s*e\s*[+-]?\d")
@@ -329,6 +340,15 @@ class RuleBasedProvider(AgentProvider):
                 "'never' or 'not') and the rule planner cannot tell what it rules "
                 "out, so the robot will not guess. Say only what the robot should "
                 "do, like 'go to (3, 3)'."
+            )
+        if cls._CONDITION.search(text):
+            return (
+                "Not planned: this task sets a condition ('if', 'unless', "
+                "'when', 'until', 'once', 'wait for' ...) that the rule planner "
+                "cannot check, so it would drive whether or not the condition "
+                "holds, and the robot will not guess. Check the condition "
+                "yourself (robot_status), then send only the move, like 'go to "
+                "(3, 3)'."
             )
         if cls._EXPONENT_NUMBER.search(text):
             return (

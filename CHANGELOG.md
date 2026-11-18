@@ -274,6 +274,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The rule planner (the default for `apyrobo mcp`, `apyrobo plan` and
+  `apyrobo execute`) refuses a task that sets a condition it cannot check,
+  such as 'go to (3, 3) if the door is open', 'unless someone is in the way',
+  'until you see a wall' or 'wait for a person then go to (3, 3)'. Before, it
+  planned the drive alone and the robot drove whether or not the condition
+  held. The refusal says to check the condition first and send only the move.
 - `apyrobo mcp` `plan_task` said `risk_level: low` next to `can_proceed: false`
   for a plan it refuses (a target in a no-go zone or outside every allowed
   area, a route through a zone, a step the rule planner does not make). A
