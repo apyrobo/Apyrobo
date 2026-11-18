@@ -450,10 +450,26 @@ class RobotToolbox:
         required: list[str],
         handler: Callable[[dict[str, Any]], Any],
         *,
+        title: str,
         read_only: bool,
+        open_world: bool,
+        destructive: bool = True,
+        idempotent: bool = False,
     ) -> None:
+        # Hints for the client's approval prompts (MCP ToolAnnotations).
+        # destructiveHint and idempotentHint only mean something when the
+        # tool is not read-only, so read-only tools leave them out.
+        annotations: dict[str, Any] = {
+            "title": title,
+            "readOnlyHint": read_only,
+            "openWorldHint": open_world,
+        }
+        if not read_only:
+            annotations["destructiveHint"] = destructive
+            annotations["idempotentHint"] = idempotent
         spec = {
             "name": name,
+            "title": title,
             "description": description,
             "inputSchema": {
                 "type": "object",
@@ -461,7 +477,7 @@ class RobotToolbox:
                 "required": required,
                 "additionalProperties": False,
             },
-            "annotations": {"readOnlyHint": read_only},
+            "annotations": annotations,
         }
         self._tools[name] = (spec, handler)
 
@@ -477,7 +493,9 @@ class RobotToolbox:
             {},
             [],
             self._robot_status,
+            title="Robot status",
             read_only=True,
+            open_world=True,
         )
         self._add(
             "list_capabilities",
@@ -485,7 +503,9 @@ class RobotToolbox:
             {},
             [],
             self._list_capabilities,
+            title="List robot capabilities",
             read_only=True,
+            open_world=True,
         )
         self._add(
             "move_to",
@@ -499,7 +519,9 @@ class RobotToolbox:
             },
             ["x", "y"],
             self._move_to,
+            title="Move robot to a point",
             read_only=False,
+            open_world=True,
         )
         self._add(
             "rotate",
@@ -510,7 +532,9 @@ class RobotToolbox:
             },
             ["angle_rad"],
             self._rotate,
+            title="Rotate robot in place",
             read_only=False,
+            open_world=True,
         )
         self._add(
             "stop",
@@ -518,7 +542,11 @@ class RobotToolbox:
             {},
             [],
             self._stop,
+            title="Stop the robot",
             read_only=False,
+            open_world=True,
+            destructive=False,
+            idempotent=True,
         )
         self._add(
             "plan_task",
@@ -528,7 +556,9 @@ class RobotToolbox:
             {"task": {"type": "string", "description": "e.g. 'deliver the package to (5, 1)'"}},
             ["task"],
             self._plan_task,
+            title="Plan a task (no motion)",
             read_only=True,
+            open_world=False,
         )
         self._add(
             "execute_task",
@@ -537,7 +567,9 @@ class RobotToolbox:
             {"task": {"type": "string", "description": "e.g. 'deliver the package to (5, 1)'"}},
             ["task"],
             self._execute_task,
+            title="Plan and run a task",
             read_only=False,
+            open_world=True,
         )
         self._add(
             "safety_report",
@@ -546,7 +578,9 @@ class RobotToolbox:
             {},
             [],
             self._safety_report,
+            title="Safety report",
             read_only=True,
+            open_world=False,
         )
 
     def list_tools(self) -> list[dict[str, Any]]:
