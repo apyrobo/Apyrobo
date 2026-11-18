@@ -274,6 +274,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client>` with an empty `--policy-file`, `--audit-log`,
+  `--robot` or `--provider` (often an unset shell variable, as in
+  `--policy-file "$POLICY"`) printed a config without that flag, so the
+  server ran with the default limits, no audit log, `mock://` or the rule
+  planner, and said nothing. Each now stops with an error that names the flag
+  (exit 1).
 - `apyrobo mcp config <client> --name ""` silently printed the default name
   `apyrobo`, and a name of spaces (or with a space at either end) went into
   the config as typed. Both now stop with an error that says what to give
