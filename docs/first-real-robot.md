@@ -143,8 +143,8 @@ source /opt/ros/jazzy/setup.bash
 export ROS_DOMAIN_ID=30
 ```
 
-The server stops the robot when its client goes away, tested on `mock://` and a
-slow test adapter, not yet on a real Nav2 goal. A dead network link is not seen
+The server stops the robot when its client goes away, tested on `mock://`, a
+slow test adapter and a Nav2 goal in Gazebo, not yet on hardware. A dead network link is not seen
 until TCP gives up, so set `ClientAliveInterval` and `ClientAliveCountMax` in the
 robot's `sshd_config` to bound the wait.
 
