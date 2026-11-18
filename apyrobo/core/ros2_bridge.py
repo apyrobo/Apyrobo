@@ -317,17 +317,33 @@ class _ROS2NodeManager:
         return cls._node
 
     @classmethod
-    def shutdown(cls) -> None:
-        """Clean shutdown — call on program exit."""
+    def shutdown(cls, timeout_s: float = 5.0) -> None:
+        """Clean shutdown — call on program exit, from the main thread.
+
+        Stops the executor and waits up to ``timeout_s`` for the spin thread
+        to return before the node and context go away. Leaving the spin
+        thread running into interpreter exit aborts the process
+        ("terminate called without an active exception").
+        """
         with cls._lock:
             if cls._executor is not None:
-                cls._executor.shutdown()
+                cls._executor.shutdown(timeout_sec=timeout_s)
+            spin = cls._spin_thread
+            if spin is not None and spin is not threading.current_thread():
+                spin.join(timeout_s)
             if cls._node is not None:
                 cls._node.destroy_node()
             if rclpy.ok():
                 rclpy.shutdown()
             cls._instance = None
             cls._node = None
+            cls._executor = None
+            cls._spin_thread = None
+
+    @classmethod
+    def started(cls) -> bool:
+        """True once a ros2:// adapter has created the shared node."""
+        return cls._instance is not None
 
 
 # ---------------------------------------------------------------------------
