@@ -88,8 +88,11 @@ Run the server on the robot, in a shell where ROS 2 is sourced:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-apyrobo mcp --robot ros2:// --policy-file first-robot.yaml --confirm-moves
+apyrobo mcp --robot ros2://myrobot --policy-file first-robot.yaml --confirm-moves
 ```
+
+The name after `ros2://` is a label for status and logs; any name works, but
+it can't be left out (`ros2://` alone is refused).
 
 Before the first move, lower the velocity limits in your Nav2 controller
 parameters (for DWB, `max_vel_x` and `max_speed_xy`). `ros2://` sends
@@ -119,7 +122,7 @@ robot, so the policy is enforced there:
 ```bash
 apyrobo mcp config claude-desktop --ssh ubuntu@robot.local \
     --ssh-setup /opt/ros/jazzy/setup.bash \
-    --robot ros2:// --policy-file /home/ubuntu/first-robot.yaml --confirm-moves
+    --robot ros2://myrobot --policy-file /home/ubuntu/first-robot.yaml --confirm-moves
 ```
 
 The file path is on the robot, and login must be key-based. See

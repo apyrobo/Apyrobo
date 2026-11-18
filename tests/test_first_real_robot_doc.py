@@ -104,7 +104,7 @@ def test_a_domain_set_in_the_setup_file_reaches_the_server(tmp_path):
     setup = tmp_path / "apyrobo-ros.bash"
     setup.write_text("export ROS_DOMAIN_ID=30\n", encoding="utf-8")
     done = subprocess.run(
-        remote_command(["--robot", "ros2://"], "apyrobo", str(setup)),
+        remote_command(["--robot", "ros2://myrobot"], "apyrobo", str(setup)),
         shell=True,
         env={"PATH": f"{tmp_path}:/usr/bin:/bin"},
         capture_output=True,
