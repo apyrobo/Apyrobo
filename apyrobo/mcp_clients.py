@@ -485,6 +485,19 @@ def _check_llm_installed(flags: Sequence[str], launch: Launch) -> None:
         )
 
 
+def _server_name(name: str | None) -> str:
+    """The ``--name`` to print; a blank one or one with outer spaces is refused."""
+    if name is None:
+        return "apyrobo"
+    if not name.strip():
+        raise ValueError("--name is empty: give the name the client should show, "
+                         "e.g. --name apyrobo, or leave --name out")
+    if name != name.strip():
+        raise ValueError(f"--name {name!r} starts or ends with a space, which the "
+                         f"client would keep; use --name {name.strip()!r}")
+    return name
+
+
 def main(args: argparse.Namespace, stdout: TextIO | None = None,
          stderr: TextIO | None = None, which: Which = find_executable) -> int:
     """Entry point for ``apyrobo mcp config``. Returns the exit code."""
@@ -503,6 +516,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
                              "on the robot, e.g. /opt/ros/jazzy/setup.bash, or leave it out")
         if setup and not ssh:
             raise ValueError("--ssh-setup needs --ssh")
+        name = _server_name(getattr(args, "name", None))
         flags = server_args(**flags_in, remote=bool(ssh))
         launcher = getattr(args, "launcher", "auto") or "auto"
         if ssh:
@@ -511,7 +525,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
             launch = resolve_launch(flags, launcher, which)
             _check_llm_installed(flags, launch)
         client = args.client
-        text = render(client, launch, name=getattr(args, "name", None) or "apyrobo")
+        text = render(client, launch, name=name)
         notes = hints(client, launch)
         if ssh:
             notes += ssh_hints(ssh, robot)
