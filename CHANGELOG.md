@@ -274,6 +274,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client> --policy-file FILE` printed a config (exit 0)
+  for a file whose `base` is not a policy (`base: bogus`), so the client got
+  a server that refuses to start; `base: ""` quietly meant `default`, and
+  `apyrobo mcp keepout` refused the file without naming it. Reading the file
+  now refuses an unknown or empty `base` with the file named and the choices,
+  in `apyrobo mcp`, `config`, `selftest` and `keepout`, also when `--policy`
+  is given.
 - `apyrobo mcp selftest` with an empty `--audit-log`, `--policy-file`,
   `--provider` or `--robot` (often an unset shell variable) passed its checks
   without the log check, the file's limits or the planner asked for, and
