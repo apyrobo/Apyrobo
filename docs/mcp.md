@@ -422,8 +422,11 @@ a speed or "please" after the drive still plans.
 a target in a no-go zone, a target outside every allowed area, and a straight
 route that crosses a zone or leaves the allowed areas (from where the robot is,
 then from each earlier target). Any of these gives `can_proceed: false` and a
-reason in the same words `move_to` would refuse with. It used to say
-`can_proceed: true` and `risk_level: low` for such a target. On an adapter that
+reason in the same words `move_to` would refuse with, `risk_level: high`,
+and a `refusal` object with the `code` (`collision_zone`,
+`collision_zone_path`, `outside_allowed_area`, ...) that `execute_task`'s
+structured refusal would carry. It used to say `can_proceed: true` and
+`risk_level: low` for such a target. On an adapter that
 plans its own route, such as `ros2://` through Nav2, only the target is checked
 here; the route is checked when the move runs. Battery and people nearby are
 checked only when the move runs.

@@ -274,6 +274,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp` `plan_task` said `risk_level: low` next to `can_proceed: false`
+  for a plan it refuses (a target in a no-go zone or outside every allowed
+  area, a route through a zone, a step the rule planner does not make). A
+  refused plan now says `risk_level: high`, and a safety-policy refusal also
+  carries `refusal` with the same `code`, `policy` and `violation` that
+  `execute_task`'s structured refusal has, so a model can branch on the code
+  before anything runs.
 - `apyrobo mcp config <client> --policy-file FILE` printed a config (exit 0)
   for a file whose `base` is not a policy (`base: bogus`), so the client got
   a server that refuses to start; `base: ""` quietly meant `default`, and
