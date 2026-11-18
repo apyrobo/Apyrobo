@@ -3504,9 +3504,11 @@ def main() -> None:
         help="Write a Nav2 keepout mask from your no-go zones and print the config (experimental)",
     )
     p_mcp_keepout.add_argument("--policy-file", dest="ko_policy_file", default=None,
-                               metavar="PATH")
+                               metavar="PATH",
+                               help="JSON or YAML safety policy; its no_go_zones are drawn")
     p_mcp_keepout.add_argument("--no-go", dest="ko_no_go", action="append", default=None,
-                               metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+                               metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                               help="Add a rectangular no-go zone in metres (repeatable)")
     p_mcp_keepout.add_argument("--resolution", dest="ko_resolution", type=float, default=0.05,
                                metavar="M", help="Metres per pixel (default: 0.05)")
     p_mcp_keepout.add_argument("--out", dest="ko_out", default=".", metavar="DIR",
