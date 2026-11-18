@@ -2271,8 +2271,19 @@ def load_policy_file(path: str | Path) -> dict[str, Any]:
             raise ValueError(f"{where}: name must be a non-empty string")
         out["name"] = data["name"].strip()
     if "base" in data:
+        from apyrobo.safety.enforcer import POLICY_REGISTRY
+
         if not isinstance(data["base"], str):
             raise ValueError(f"{where}: base must be a policy name such as 'default' or 'strict'")
+        if data["base"] not in POLICY_REGISTRY:
+            # Checked here, not only at server start, so apyrobo mcp config and
+            # keepout refuse the file too instead of printing a config the
+            # server will not start with (and an empty base no longer means
+            # 'default' without a word).
+            raise ValueError(
+                f"{where}: unknown policy {data['base']!r} in base; "
+                f"choose from {sorted(POLICY_REGISTRY)}"
+            )
         out["base"] = data["base"]
     for key in ("max_speed", "max_angular_speed"):
         if key in data:
