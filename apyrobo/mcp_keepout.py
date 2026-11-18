@@ -179,9 +179,20 @@ def main(args: argparse.Namespace) -> int:
     out_dir = Path(args.ko_out)
     try:
         mask = build_mask(_zones(args), args.ko_resolution)
-        _, yaml_path = write_mask(mask, out_dir)
     except (ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    try:
+        _, yaml_path = write_mask(mask, out_dir)
+    except OSError as exc:
+        # The bare "[Errno 17] File exists: 'x'" does not say which flag is
+        # wrong or what it wants.
+        reason = exc.strerror or str(exc)
+        print(
+            f"Error: cannot write the mask to the --out folder {out_dir} ({reason}); "
+            "give a folder you can write to (it is created if missing)",
+            file=sys.stderr,
+        )
         return 1
     print(
         f"Wrote {yaml_path} and its .pgm: {mask.width} x {mask.height} pixels at "

@@ -274,6 +274,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp keepout --out PATH` with a file as the path (or a folder under
+  a file) stopped with a bare `Error: [Errno 17] File exists: '...'`. It now
+  names the `--out` folder, the reason and what to give instead.
+  `apyrobo mcp keepout --help` now describes `--policy-file` and `--no-go`,
+  which had no help text.
 - `apyrobo mcp config <client> --robot URI` printed a config for a robot
   the server refuses at start: a URI without `scheme://name` (`turtlebot4`,
   `ros2://`) or a scheme no installed adapter handles (`bogus://bot`), so the
