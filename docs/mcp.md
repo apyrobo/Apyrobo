@@ -303,6 +303,10 @@ With `--audit-log PATH`, it also checks that the server could open that file
 for append, and fails if not, since `apyrobo mcp` exits at start when it cannot.
 It writes nothing to the log, and a file it had to create to check is removed.
 
+It also exits 1, with the server's own error, when `--provider` names a
+planner the server would refuse to start with: an unknown name, or `llm` or
+`tool_calling` without litellm installed.
+
 A pass only says the limits you wrote down hold. So the report also warns about
 what your policy leaves unset: no no-go zones, no allowed area, the built-in
 speed limits, and `--confirm-moves` off (pass that flag to `selftest` too if you run the server

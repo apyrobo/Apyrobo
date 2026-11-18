@@ -54,9 +54,13 @@ def test_a_given_agent_is_not_second_guessed(monkeypatch):
     assert server.toolbox.agent is not None
 
 
-def test_unknown_provider_is_still_its_own_error():
-    with pytest.raises(ValueError, match="Unknown provider"):
+def test_unknown_provider_is_refused_with_the_choices():
+    with pytest.raises(ValueError) as info:
         build_server(provider="nope")
+    message = str(info.value)
+    assert "unknown --provider 'nope'" in message
+    for name in ("rule", "auto", "llm", "tool_calling", "multi_turn"):
+        assert name in message
 
 
 def _selftest_args(**kw):
@@ -93,4 +97,41 @@ def test_cli_exits_with_the_install_line():
     )
     assert proc.returncode == 1
     assert proc.stderr.startswith("Error: --provider llm needs litellm")
+    assert "Traceback" not in proc.stderr
+
+
+@pytest.mark.parametrize("provider", ["bogus", "lmm", "RULE"])
+def test_selftest_fails_on_a_provider_the_server_would_refuse(provider):
+    out, err = io.StringIO(), io.StringIO()
+    code = mcp_selftest.main(_selftest_args(provider=provider), stdout=out, stderr=err)
+    assert code == 1
+    assert err.getvalue().startswith(f"Error: unknown --provider {provider!r}; choose one of")
+    assert "checks passed" not in out.getvalue()
+
+
+@pytest.mark.parametrize("provider", ["rule", "auto", "multi_turn"])
+def test_selftest_accepts_every_provider_that_starts_without_litellm(provider):
+    out, err = io.StringIO(), io.StringIO()
+    code = mcp_selftest.main(_selftest_args(provider=provider), stdout=out, stderr=err)
+    assert code == 0, err.getvalue()
+
+
+def test_cli_selftest_with_a_provider_typo_exits_1():
+    proc = subprocess.run(
+        [sys.executable, "-m", "apyrobo", "mcp", "--provider", "bogus", "selftest"],
+        input="", capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 1
+    assert proc.stderr.startswith("Error: unknown --provider 'bogus'; choose one of")
+    assert "Traceback" not in proc.stderr
+    assert "checks passed" not in proc.stdout
+
+
+def test_cli_server_with_a_provider_typo_exits_1():
+    proc = subprocess.run(
+        [sys.executable, "-m", "apyrobo", "mcp", "--provider", "bogus"],
+        input="", capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 1
+    assert "unknown --provider 'bogus'; choose one of" in proc.stderr
     assert "Traceback" not in proc.stderr
