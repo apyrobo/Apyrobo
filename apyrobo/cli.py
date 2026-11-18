@@ -3147,7 +3147,7 @@ def main() -> None:
     p_pkg_init.add_argument("--description", default="")
     p_pkg_init.add_argument("--author", default="")
     p_pkg_init.add_argument("--directory", default=None,
-                            help="Output directory (default: ./<name>)")
+                                help="Output directory (default: ./<name>)")
 
     # pkg pack
     p_pkg_pack = pkg_sub.add_parser("pack", help="Pack a package into .skillpkg")
@@ -3167,7 +3167,7 @@ def main() -> None:
     # pkg list
     p_pkg_list = pkg_sub.add_parser("list", help="List installed packages")
     p_pkg_list.add_argument("-v", "--verbose-list", action="store_true",
-                            help="Show skills and tags")
+                                help="Show skills and tags")
 
     # pkg info
     p_pkg_info = pkg_sub.add_parser("info", help="Show package details")
@@ -3370,9 +3370,9 @@ def main() -> None:
     p_listen.add_argument("--provider", default="rule")
     p_listen.add_argument("--adapter", default="whisper",
                           choices=["whisper", "piper", "openai", "mock"],
-                          help="Voice STT adapter backend (default: whisper)")
+                              help="Voice STT adapter backend (default: whisper)")
     p_listen.add_argument("--model", default=None,
-                          help="Whisper model size (base/small/medium/large) or model path")
+                              help="Whisper model size (base/small/medium/large) or model path")
 
     # serve — orchestration server
     p_serve = sub.add_parser("serve", help="Start an orchestration server (stdio or websocket)")
@@ -3451,21 +3451,31 @@ def main() -> None:
                               help="Start the server with uvx (from git) or the installed "
                                    "apyrobo (default: uvx if found, else apyrobo)")
     p_mcp_config.add_argument("--name", default="apyrobo", help="Server name in the client")
-    p_mcp_config.add_argument("--robot", dest="cfg_robot", default=None, metavar="URI")
+    p_mcp_config.add_argument("--robot", dest="cfg_robot", default=None, metavar="URI",
+                              help="Robot URI the server will drive (default: mock://turtlebot4)")
     p_mcp_config.add_argument("--policy", dest="cfg_policy", default=None,
-                              choices=["default", "strict"])
+                              choices=["default", "strict"],
+                              help="Base safety policy (default: the policy file's base, "
+                                   "else default)")
     p_mcp_config.add_argument("--policy-file", dest="cfg_policy_file", default=None,
-                              metavar="PATH")
+                              metavar="PATH",
+                              help="JSON or YAML safety policy; command-line flags override it")
     p_mcp_config.add_argument("--max-speed", dest="cfg_max_speed", type=float, default=None,
-                              metavar="M_S")
+                              metavar="M_S",
+                              help="Override the policy speed limit (m/s)")
     p_mcp_config.add_argument("--no-go", dest="cfg_no_go", action="append", default=None,
-                              metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+                              metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                              help="Add a rectangular no-go zone in metres (repeatable)")
     p_mcp_config.add_argument("--allow-area", dest="cfg_allow_area", action="append",
-                              default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
-    p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true")
-    p_mcp_config.add_argument("--audit-log", dest="cfg_audit_log", default=None, metavar="PATH")
+                              default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                              help="Add a rectangle move targets may be in (repeatable)")
+    p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true",
+                              help="Ask the user to confirm every motion command")
+    p_mcp_config.add_argument("--audit-log", dest="cfg_audit_log", default=None, metavar="PATH",
+                              help="Append one JSON line per motion decision to PATH")
     p_mcp_config.add_argument("--provider", dest="cfg_provider", default=None,
-                              metavar="PROVIDER")
+                              metavar="PROVIDER",
+                              help="Planner for plan_task/execute_task (default: rule)")
     p_mcp_config.add_argument("--ssh", dest="cfg_ssh", default=None, metavar="USER@HOST",
                               help="Start the server on this machine over ssh "
                                    "(key-based login required)")
@@ -3479,15 +3489,21 @@ def main() -> None:
     p_mcp_selftest.add_argument("--robot", dest="st_robot", default=None, metavar="URI",
                                 help="Must be a mock:// URI; anything else is refused")
     p_mcp_selftest.add_argument("--policy", dest="st_policy", default=None,
-                                choices=["default", "strict"])
+                                choices=["default", "strict"],
+                                help="Base safety policy (default: the policy file's base, "
+                                     "else default)")
     p_mcp_selftest.add_argument("--policy-file", dest="st_policy_file", default=None,
-                                metavar="PATH")
+                                metavar="PATH",
+                                help="JSON or YAML safety policy; command-line flags override it")
     p_mcp_selftest.add_argument("--max-speed", dest="st_max_speed", type=float, default=None,
-                                metavar="M_S")
+                                metavar="M_S",
+                                help="Override the policy speed limit (m/s)")
     p_mcp_selftest.add_argument("--no-go", dest="st_no_go", action="append", default=None,
-                                metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+                                metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                                help="Add a rectangular no-go zone in metres (repeatable)")
     p_mcp_selftest.add_argument("--allow-area", dest="st_allow_area", action="append",
-                                default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
+                                default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX",
+                                help="Add a rectangle move targets may be in (repeatable)")
     p_mcp_selftest.add_argument("--confirm-moves", dest="st_confirm_moves", action="store_true",
                                 help="Say you will run the server with --confirm-moves; "
                                      "not exercised here, it needs a client that can ask you")
@@ -3594,7 +3610,7 @@ def main() -> None:
     # tutorial — guided walkthrough
     p_tutorial = sub.add_parser("tutorial", help="Interactive guided tutorial (mock mode, no hardware needed)")
     p_tutorial.add_argument("--non-interactive", action="store_true",
-                            help="Run all steps without pausing for input")
+                                help="Run all steps without pausing for input")
 
     # voice — VC-01
     p_voice = sub.add_parser("voice", help="Interactive voice control")
