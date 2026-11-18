@@ -274,6 +274,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp --audit-log PATH` with a folder that does not exist (or a
+  folder as the path) stopped with a bare `Error: [Errno 2] No such file or
+  directory: '...'`, often the only line an MCP client shows for a server
+  that would not start. It now names the `--audit-log` file, the reason and
+  what to give instead.
 - `apyrobo mcp config <client> --provider llm` and `apyrobo mcp selftest
   --provider llm` stopped with "unrecognized arguments: --provider" (exit 2),
   although every other server flag works after `config` and `selftest`. Both
