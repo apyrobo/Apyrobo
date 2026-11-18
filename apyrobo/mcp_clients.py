@@ -118,6 +118,14 @@ def server_args(
     """
     from apyrobo.mcp_server import load_policy_file, parse_zone
 
+    # An empty value (often an unset shell variable, --policy-file "$POLICY")
+    # used to be dropped, so the config ran without the file, log or robot
+    # that was asked for, and said nothing.
+    _refuse_blank("--robot", robot, "a robot URI such as ros2://turtlebot4")
+    _refuse_blank("--policy-file", policy_file, "the path of a JSON or YAML policy file")
+    _refuse_blank("--audit-log", audit_log, "the path of the file to append to")
+    _refuse_blank("--provider", provider, "a planner name such as rule")
+
     out: list[str] = []
     if robot:
         _check_robot(robot, remote)
@@ -162,6 +170,12 @@ def server_args(
                              f"{', '.join(known)}")
         out += ["--provider", provider]
     return out
+
+
+def _refuse_blank(flag: str, value: str | None, wanted: str) -> None:
+    """Refuse a flag given with an empty or all-space value."""
+    if value is not None and not value.strip():
+        raise ValueError(f"{flag} is empty: give {wanted}, or leave {flag} out")
 
 
 def _check_robot(robot: str, remote: bool) -> None:
@@ -450,7 +464,7 @@ def _merged_flags(args: argparse.Namespace) -> dict:
     robot = getattr(args, "cfg_robot", None)
     if robot is None:
         parent = getattr(args, "robot", None)
-        robot = parent if parent and parent != _DEFAULT_ROBOT else None
+        robot = parent if parent is not None and parent != _DEFAULT_ROBOT else None
     return {
         "robot": robot,
         "policy": pick("policy"),
