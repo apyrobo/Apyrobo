@@ -489,7 +489,9 @@ def main(
     try:
         # The checks plan with the rule planner, but the server the config
         # starts would not come up without the planner it names.
-        _check_provider_installed(getattr(args, "provider", None) or "rule")
+        _check_provider_installed(
+            getattr(args, "st_provider", None) or getattr(args, "provider", None) or "rule"
+        )
         server = build_server(
             robot_uri=robot,
             policy=getattr(args, "st_policy", None) or getattr(args, "policy", None),

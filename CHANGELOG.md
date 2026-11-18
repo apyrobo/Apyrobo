@@ -274,6 +274,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client> --provider llm` and `apyrobo mcp selftest
+  --provider llm` stopped with "unrecognized arguments: --provider" (exit 2),
+  although every other server flag works after `config` and `selftest`. Both
+  now take `--provider`; given on both sides, the one after the subcommand
+  wins, as for the other flags.
 - `apyrobo mcp selftest` passed with an unknown `--provider` (a typo such as
   `bogus`), although `apyrobo mcp` with the same flags refuses to start. Both
   now stop with `unknown --provider 'bogus'; choose one of rule, auto, llm,

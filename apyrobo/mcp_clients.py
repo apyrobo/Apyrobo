@@ -441,7 +441,7 @@ def _merged_flags(args: argparse.Namespace) -> dict:
             getattr(args, "confirm_moves", False) or getattr(args, "cfg_confirm_moves", False)
         ),
         "audit_log": pick("audit_log"),
-        "provider": getattr(args, "provider", None),
+        "provider": pick("provider"),
     }
 
 
