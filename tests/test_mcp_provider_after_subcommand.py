@@ -68,3 +68,14 @@ def test_selftest_provider_after_wins_over_before():
     proc = _run("mcp", "--provider", "bogus", "selftest", "--provider", "rule")
     assert proc.returncode == 0, proc.stderr
     assert "3/3 checks passed" in proc.stdout
+
+
+@pytest.mark.parametrize("sub", ["config", "selftest"])
+def test_help_names_the_provider_value_plainly(sub):
+    # The flag is stored under cfg_/st_ so the one after the subcommand wins;
+    # --help must still read "--provider PROVIDER", like `apyrobo mcp --help`.
+    proc = _run("mcp", sub, "--help")
+    assert proc.returncode == 0, proc.stderr
+    assert "--provider PROVIDER" in proc.stdout
+    assert "CFG_PROVIDER" not in proc.stdout
+    assert "ST_PROVIDER" not in proc.stdout
