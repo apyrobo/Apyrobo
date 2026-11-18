@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- docs/comparison.md opens with "Which robot MCP server fits you": robot type,
+  ROS version, limits kept outside the model, where it is tested and licence
+  for APYROBO, ros-mcp-server, mcp_server_ros_2, BotInfo, Principia Robotica
+  and armguard-mcp, each cell from that project's README or code at a named
+  commit. Linked from the MCP guide's "How APYROBO fits" section.
 - `apyrobo mcp config codex` prints the line that adds APYROBO to the
   OpenAI Codex CLI, `codex mcp add apyrobo -- <command> apyrobo mcp …`, with
   the absolute path of `uvx` (or the installed `apyrobo`) and the same flag

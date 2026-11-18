@@ -773,6 +773,8 @@ Several MCP servers let a model drive a robot. They solve different problems,
 and you can pick by what you are driving. This table states only what each
 project's README and code show on their main branch, checked 3 November 2026;
 open an issue if it has gone stale.
+For which limits each project keeps outside the model, by robot type and ROS
+version, see [Which robot MCP server fits you](comparison.md#which-robot-mcp-server-fits-you).
 
 | | What it drives | Speed limits | No-go zones | Asks a human to confirm | Try without a robot | Install |
 |---|---|---|---|---|---|---|
