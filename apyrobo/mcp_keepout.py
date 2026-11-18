@@ -160,7 +160,16 @@ def _zones(args: argparse.Namespace) -> list[dict[str, Any]]:
     from apyrobo.mcp_server import load_policy_file, parse_zone
     from apyrobo.safety.enforcer import POLICY_REGISTRY
 
-    policy_file = getattr(args, "ko_policy_file", None) or getattr(args, "policy_file", None)
+    policy_file = getattr(args, "ko_policy_file", None)
+    if policy_file is None:
+        policy_file = getattr(args, "policy_file", None)
+    if policy_file is not None and not str(policy_file).strip():
+        # An unset shell variable (--policy-file "$POLICY") used to draw a
+        # mask without the file's zones, and say nothing.
+        raise ValueError(
+            "--policy-file is empty: give the path of a JSON or YAML policy file, "
+            "or leave --policy-file out"
+        )
     file_cfg = load_policy_file(policy_file) if policy_file else {}
     base_name = file_cfg.get("base") or "default"
     base = POLICY_REGISTRY.get(base_name)
@@ -176,6 +185,14 @@ def _zones(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def main(args: argparse.Namespace) -> int:
     """Write the mask, print where it went and the config to paste."""
+    if not str(args.ko_out).strip():
+        # Path("") is the current folder, so an unset variable wrote the mask here.
+        print(
+            "Error: --out is empty: give the folder to write the mask to, "
+            "or leave --out out to write it here",
+            file=sys.stderr,
+        )
+        return 1
     out_dir = Path(args.ko_out)
     try:
         mask = build_mask(_zones(args), args.ko_resolution)
