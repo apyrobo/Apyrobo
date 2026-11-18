@@ -987,9 +987,17 @@ class RobotToolbox:
     def _plan_task(self, args: dict[str, Any]) -> dict[str, Any]:
         _, plan = self._plan(_str(args, "task"))
         if plan.get("can_proceed") and not plan.get("reason"):
-            refusal = self._plan_refusal(plan["steps"])
-            if refusal is not None:
-                plan.update(can_proceed=False, reason=refusal)
+            refused = self._plan_refusal_detail(plan["steps"])
+            if refused is not None:
+                plan.update(can_proceed=False, reason=refused[0])
+                if refused[1] is not None:
+                    # The code execute_task's refusal carries, so a model can
+                    # branch on it before running anything.
+                    plan["refusal"] = refused[1]
+        if plan.get("reason"):
+            # A plan that would be refused is not low risk, whatever the
+            # planner's confidence was.
+            plan["risk_level"] = "high"
         notes = self._speed_notes(plan["steps"])
         if notes:
             plan["speed_notes"] = notes
@@ -1009,19 +1017,13 @@ class RobotToolbox:
                 notes.append(f"Step {number} drives at {self._drive_speed_text(speed)}.")
         return notes
 
-    def _plan_refusal(
+    def _plan_refusal_detail(
         self,
         steps: list[dict[str, Any]],
         tail: str = "Nothing was moved; execute_task would be refused at this step.",
-    ) -> str | None:
-        """The refusal the first drive in *steps* would get, checked without moving."""
-        refused = self._plan_refusal_detail(steps, tail)
-        return None if refused is None else refused[0]
-
-    def _plan_refusal_detail(
-        self, steps: list[dict[str, Any]], tail: str
     ) -> tuple[str, dict[str, Any] | None] | None:
-        """:meth:`_plan_refusal`'s text and its structuredContent, or None.
+        """The refusal the first drive in *steps* would get, checked without
+        moving: its text and its structuredContent, or None.
 
         The structured side is the same as a refused ``execute_task`` run
         carries (code, policy, violation, step, steps_completed=0,
