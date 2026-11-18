@@ -274,6 +274,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client> --policy-file DIR` with a folder (or a file
+  it cannot read) said `policy file not found`. It now says what
+  `apyrobo mcp` itself would say at start, e.g.
+  `cannot read policy file DIR: Is a directory`.
 - `apyrobo mcp config <client> --ssh ""` printed a config for this machine,
   as if `--ssh` had been left out, and an empty `--ssh-setup` was dropped
   without a word. Both now stop with one line saying what to give.

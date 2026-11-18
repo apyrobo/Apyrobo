@@ -128,8 +128,10 @@ def server_args(
         out += ["--policy-file", _remote_path(policy_file, "--policy-file")]
     elif policy_file:
         path = Path(policy_file).expanduser().resolve()
-        if not path.is_file():
+        if not path.exists():
             raise ValueError(f"policy file not found: {policy_file}")
+        # A folder or an unreadable file gets the server's own "cannot read"
+        # line, which names the cause, rather than "not found".
         load_policy_file(path)  # the server reads it the same way at start
         out += ["--policy-file", str(path)]
     if max_speed is not None:
