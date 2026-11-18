@@ -274,6 +274,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp selftest` with an empty `--audit-log`, `--policy-file`,
+  `--provider` or `--robot` (often an unset shell variable) passed its checks
+  without the log check, the file's limits or the planner asked for, and
+  `apyrobo mcp keepout` with an empty `--out` wrote the mask into the current
+  folder and with an empty `--policy-file` drew it without the file's zones.
+  Each now stops with an error that names the flag (exit 1).
 - `apyrobo mcp config <client>` with an empty `--policy-file`, `--audit-log`,
   `--robot` or `--provider` (often an unset shell variable, as in
   `--policy-file "$POLICY"`) printed a config without that flag, so the

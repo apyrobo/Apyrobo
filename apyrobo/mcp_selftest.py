@@ -457,6 +457,16 @@ def _write_report(
     print(f"{len(checks) - failed}/{len(checks)} checks passed", file=out)
 
 
+def _flag(args: argparse.Namespace, child: str, parent: str) -> Any:
+    """The value given after "selftest", else the one given before it.
+
+    An empty string counts as given, so it can be refused rather than fall
+    through to the other side's default.
+    """
+    value = getattr(args, child, None)
+    return value if value is not None else getattr(args, parent, None)
+
+
 def main(
     args: argparse.Namespace,
     stdout: TextIO | None = None,
@@ -469,7 +479,23 @@ def main(
     err = stderr or sys.stderr
 
     # Flags work on either side of "selftest": ``apyrobo mcp --max-speed 1 selftest``.
-    robot = getattr(args, "st_robot", None) or args.robot
+    robot = _flag(args, "st_robot", "robot")
+    policy_file = _flag(args, "st_policy_file", "policy_file")
+    audit_log = _flag(args, "st_audit_log", "audit_log")
+    provider = _flag(args, "st_provider", "provider")
+    # An empty value (often an unset shell variable, --audit-log "$LOG") used
+    # to be dropped, so the checks passed without the log, file or planner
+    # that was asked for, and said nothing.
+    for flag, value, wanted in (
+        ("--robot", robot, "a mock:// URI"),
+        ("--policy-file", policy_file, "the path of a JSON or YAML policy file"),
+        ("--audit-log", audit_log, "the path of the file to append to"),
+        ("--provider", provider, "a planner name such as rule"),
+    ):
+        if value is not None and not str(value).strip():
+            print(f"Error: {flag} is empty: give {wanted}, or leave {flag} out", file=err)
+            return 1
+    robot = robot or "mock://turtlebot4"
     if not robot.startswith("mock://"):
         print(
             f"Error: selftest only runs on mock://, got {robot!r}. "
@@ -489,18 +515,14 @@ def main(
     try:
         # The checks plan with the rule planner, but the server the config
         # starts would not come up without the planner it names.
-        _check_provider_installed(
-            getattr(args, "st_provider", None) or getattr(args, "provider", None) or "rule"
-        )
+        _check_provider_installed(provider or "rule")
         server = build_server(
             robot_uri=robot,
             policy=getattr(args, "st_policy", None) or getattr(args, "policy", None),
             max_speed=max_speed,
             no_go_zones=[parse_zone(z) for z in no_go],
             allowed_areas=[parse_zone(a, "allowed area") for a in allow],
-            policy_file=(
-                getattr(args, "st_policy_file", None) or getattr(args, "policy_file", None)
-            ),
+            policy_file=policy_file,
         )
     except (ValueError, ImportError, RuntimeError, OSError) as exc:
         print(f"Error: {exc}", file=err)
@@ -519,7 +541,6 @@ def main(
             enforcer.stop()
 
     # The server is built without the log, so no test move lands in a real one.
-    audit_log = getattr(args, "st_audit_log", None) or getattr(args, "audit_log", None)
     if audit_log:
         checks.append(_check_audit_log(str(audit_log)))
 
