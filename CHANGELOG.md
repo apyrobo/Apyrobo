@@ -274,6 +274,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client> --robot URI` printed a config for a robot
+  the server refuses at start: a URI without `scheme://name` (`turtlebot4`,
+  `ros2://`) or a scheme no installed adapter handles (`bogus://bot`), so the
+  client showed a dead server. It now stops with the server's own error and
+  the available schemes. With `--ssh` only the URI's shape is checked, since
+  the robot may have adapters this machine does not. docs/first-real-robot.md
+  and the ssh example in docs/mcp.md said `--robot ros2://`, which the server
+  refuses; they now give the robot a name (`ros2://myrobot`).
 - `apyrobo mcp --audit-log PATH` with a folder that does not exist (or a
   folder as the path) stopped with a bare `Error: [Errno 2] No such file or
   directory: '...'`, often the only line an MCP client shows for a server

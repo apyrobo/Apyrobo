@@ -181,7 +181,7 @@ crosses that gap through plain ssh, with no port to open:
 ```bash
 apyrobo mcp config claude-desktop --ssh ubuntu@robot.local \
     --ssh-setup /opt/ros/jazzy/setup.bash \
-    --robot ros2:// --max-speed 0.5 --no-go 2,2,4,4
+    --robot ros2://myrobot --max-speed 0.5 --no-go 2,2,4,4
 ```
 
 prints a config whose `command` is `ssh` (`-T`, `BatchMode=yes`) running

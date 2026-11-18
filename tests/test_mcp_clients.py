@@ -258,7 +258,7 @@ def test_ssh_config_starts_the_server_remotely(tmp_path):
     ssh = tmp_path / "ssh"
     ssh.write_text("")
     code, out, err = _run(
-        _args("claude-desktop", cfg_ssh="ubuntu@robot.local", cfg_robot="ros2://",
+        _args("claude-desktop", cfg_ssh="ubuntu@robot.local", cfg_robot="ros2://myrobot",
               cfg_max_speed=0.5, cfg_no_go=["2,2,4,4"]),
         _which({"ssh": str(ssh), "uvx": "/local/uvx"}),
     )
@@ -269,17 +269,18 @@ def test_ssh_config_starts_the_server_remotely(tmp_path):
     assert "-T" in argv and "BatchMode=yes" in argv
     assert argv[-2] == "ubuntu@robot.local"
     assert shlex.split(argv[-1]) == [
-        "apyrobo", "mcp", "--robot", "ros2://", "--max-speed", "0.5", "--no-go", "2,2,4,4",
+        "apyrobo", "mcp", "--robot", "ros2://myrobot", "--max-speed", "0.5", "--no-go", "2,2,4,4",
     ]
     assert "/local/uvx" not in out  # this machine's paths mean nothing on the robot
     assert "key-based login" in err
 
 
 def test_ssh_setup_is_sourced_before_the_server():
-    command = mcp_clients.remote_command(["--robot", "ros2://"], setup="/opt/ros/jazzy/setup.bash")
+    command = mcp_clients.remote_command(["--robot", "ros2://myrobot"],
+                                         setup="/opt/ros/jazzy/setup.bash")
     argv = shlex.split(command)
     assert argv[:2] == ["bash", "-c"]
-    assert argv[2] == ". /opt/ros/jazzy/setup.bash && exec apyrobo mcp --robot ros2://"
+    assert argv[2] == ". /opt/ros/jazzy/setup.bash && exec apyrobo mcp --robot ros2://myrobot"
 
 
 def test_ssh_uvx_launcher_runs_uvx_on_the_robot(before_pypi):

@@ -120,6 +120,7 @@ def server_args(
 
     out: list[str] = []
     if robot:
+        _check_robot(robot, remote)
         out += ["--robot", robot]
     if policy:
         out += ["--policy", policy]
@@ -159,6 +160,26 @@ def server_args(
                              f"{', '.join(known)}")
         out += ["--provider", provider]
     return out
+
+
+def _check_robot(robot: str, remote: bool) -> None:
+    """Refuse a --robot the server would refuse at start, as it words it.
+
+    With ``remote`` the server runs on another machine, whose installed
+    adapters this one cannot see, so only the URI's shape is checked.
+    """
+    scheme, _, name = robot.partition("://")
+    if not name:
+        raise ValueError(f"Invalid robot URI: {robot!r}  (expected scheme://name, "
+                         "e.g. mock://turtlebot4 or ros2://turtlebot4)")
+    if remote:
+        return
+    from apyrobo.core.adapters import _ADAPTER_REGISTRY, _load_entry_point_adapter
+
+    if scheme not in _ADAPTER_REGISTRY and _load_entry_point_adapter(scheme) is None:
+        available = ", ".join(sorted(_ADAPTER_REGISTRY)) or "(none)"
+        raise ValueError(f"No adapter registered for scheme {scheme!r}, so the "
+                         f"server would not start. Available: {available}")
 
 
 def _known_providers() -> list[str]:
