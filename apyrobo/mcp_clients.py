@@ -493,6 +493,12 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
     flags_in = _merged_flags(args)
     robot = flags_in["robot"]
     try:
+        if ssh is not None and not ssh.strip():
+            raise ValueError("--ssh is empty: give user@host or a host name, "
+                             "or leave --ssh out for a config on this machine")
+        if setup is not None and not setup.strip():
+            raise ValueError("--ssh-setup is empty: give the absolute path of a script "
+                             "on the robot, e.g. /opt/ros/jazzy/setup.bash, or leave it out")
         if setup and not ssh:
             raise ValueError("--ssh-setup needs --ssh")
         flags = server_args(**flags_in, remote=bool(ssh))

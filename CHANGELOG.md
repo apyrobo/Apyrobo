@@ -274,6 +274,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client> --ssh ""` printed a config for this machine,
+  as if `--ssh` had been left out, and an empty `--ssh-setup` was dropped
+  without a word. Both now stop with one line saying what to give.
+  `apyrobo mcp config --help` and `apyrobo mcp selftest --help` now describe
+  `--robot`, `--policy`, `--policy-file`, `--max-speed`, `--no-go`,
+  `--allow-area` and the other server flags, which had no help text.
 - `apyrobo mcp keepout --out PATH` with a file as the path (or a folder under
   a file) stopped with a bare `Error: [Errno 17] File exists: '...'`. It now
   names the `--out` folder, the reason and what to give instead.
