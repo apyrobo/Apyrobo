@@ -10,6 +10,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp`'s instructions (sent on `initialize` and `server/discover`,
+  which most clients pass to the model before any tool call) now name the
+  limits it enforces: the speed and turn caps, the first three no-go zones
+  and allowed areas with their names and corners (and how many more), and
+  whether `--confirm-moves` is on, so an agent can plan inside them from its
+  first call. On ros2:// through Nav2 they say the speed cap does not reach
+  the drive. Nothing changes in what is refused.
 - docs/comparison.md opens with "Which robot MCP server fits you": robot type,
   ROS version, limits kept outside the model, where it is tested and licence
   for APYROBO, ros-mcp-server, mcp_server_ros_2, BotInfo, Principia Robotica

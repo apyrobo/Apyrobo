@@ -174,6 +174,32 @@ INSTRUCTIONS = (
     "target rather than retrying the same one. stop is always allowed."
 )
 
+# How many no-go zones (and, apart, allowed areas) the instructions spell out
+# before saying how many more there are: the instructions reach the model on
+# every session, so a long zone list stays in robot_status.
+INSTRUCTION_ZONES_SHOWN = 3
+
+
+def _limit_num(value: float) -> str:
+    return f"{value:g}"
+
+
+def _zone_text(zone: dict[str, Any]) -> str:
+    corners = (
+        f"({_limit_num(zone['x_min'])}, {_limit_num(zone['y_min'])})"
+        f"-({_limit_num(zone['x_max'])}, {_limit_num(zone['y_max'])})"
+    )
+    name = zone.get("name")
+    return f"{name} {corners}" if isinstance(name, str) and name else corners
+
+
+def _zones_text(zones: list[dict[str, Any]]) -> str:
+    shown = [_zone_text(z) for z in zones[:INSTRUCTION_ZONES_SHOWN]]
+    more = len(zones) - len(shown)
+    if more:
+        shown.append(f"and {more} more")
+    return ", ".join(shown)
+
 
 class ToolError(Exception):
     """A tool ran but could not do what was asked (reported as isError).
@@ -642,6 +668,35 @@ class RobotToolbox:
         return f"{step['name']} ({shown})" if shown else str(step["name"])
 
     # -- helpers -------------------------------------------------------
+
+    def limits_text(self, confirm_moves: bool = False) -> str:
+        """The active limits in a sentence or two, for the server's instructions."""
+        p = self.enforcer.policy
+        if self.speed_limit_applies():
+            speed = f"driving at most {_limit_num(p.max_speed)} m/s"
+        else:
+            speed = (
+                "driving at the speed Nav2's controller is configured for (the "
+                f"{_limit_num(p.max_speed)} m/s policy limit does not reach this robot's drive)"
+            )
+        parts = [f"{speed}, turning at most {_limit_num(p.max_angular_speed)} rad/s"]
+        zones = list(p.collision_zones)
+        if zones:
+            parts.append(
+                "no-go zones (x_min, y_min)-(x_max, y_max) in metres: "
+                + _zones_text(zones)
+            )
+        else:
+            parts.append("no no-go zones")
+        if p.allowed_areas:
+            areas = _zones_text(list(p.allowed_areas))
+            parts.append(f"targets only inside the allowed areas {areas}")
+        if getattr(self.enforcer, "_battery_monitor", None) is not None:
+            parts.append(f"no new move below {_limit_num(p.min_battery_pct)}% battery")
+        text = f"Active limits ({p.name} policy): " + "; ".join(parts) + "."
+        if confirm_moves:
+            text += " Every move and task asks the user to confirm before it runs."
+        return text + " robot_status has the full policy."
 
     def _policy_summary(self) -> dict[str, Any]:
         p = self.enforcer.policy
@@ -1273,7 +1328,7 @@ class MCPServer:
                 result: dict[str, Any] = {
                     "supportedVersions": list(MODERN_PROTOCOL_VERSIONS),
                     "capabilities": {"tools": {"listChanged": False}},
-                    "instructions": INSTRUCTIONS,
+                    "instructions": self.instructions(),
                     "ttlMs": LIST_TTL_MS,
                     "cacheScope": "public",
                 }
@@ -1628,6 +1683,10 @@ class MCPServer:
                 self._write(self._out, _error(None, PARSE_ERROR, f"Parse error: {exc}"))
         return _EOF
 
+    def instructions(self) -> str:
+        """The guidance sentences, then the limits this server enforces."""
+        return f"{INSTRUCTIONS} {self.toolbox.limits_text(self.confirm_moves)}"
+
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         caps = params.get("capabilities")
         self._client_caps = caps if isinstance(caps, dict) else {}
@@ -1640,7 +1699,7 @@ class MCPServer:
             "protocolVersion": self.protocol_version,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": _server_info(),
-            "instructions": INSTRUCTIONS,
+            "instructions": self.instructions(),
         }
 
     def _tools_call(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any] | None:
