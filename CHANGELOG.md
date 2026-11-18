@@ -274,6 +274,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo mcp config <client> --name ""` silently printed the default name
+  `apyrobo`, and a name of spaces (or with a space at either end) went into
+  the config as typed. Both now stop with an error that says what to give
+  (exit 1).
 - `apyrobo mcp config <client> --policy-file DIR` with a folder (or a file
   it cannot read) said `policy file not found`. It now says what
   `apyrobo mcp` itself would say at start, e.g.
