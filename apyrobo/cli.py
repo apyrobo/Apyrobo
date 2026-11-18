@@ -3464,7 +3464,8 @@ def main() -> None:
                               default=None, metavar="X_MIN,Y_MIN,X_MAX,Y_MAX")
     p_mcp_config.add_argument("--confirm-moves", dest="cfg_confirm_moves", action="store_true")
     p_mcp_config.add_argument("--audit-log", dest="cfg_audit_log", default=None, metavar="PATH")
-    p_mcp_config.add_argument("--provider", dest="cfg_provider", default=None)
+    p_mcp_config.add_argument("--provider", dest="cfg_provider", default=None,
+                              metavar="PROVIDER")
     p_mcp_config.add_argument("--ssh", dest="cfg_ssh", default=None, metavar="USER@HOST",
                               help="Start the server on this machine over ssh "
                                    "(key-based login required)")
@@ -3495,6 +3496,7 @@ def main() -> None:
                                 help="Check the server could open this audit log; "
                                      "nothing is written to it")
     p_mcp_selftest.add_argument("--provider", dest="st_provider", default=None,
+                                metavar="PROVIDER",
                                 help="Check the server could start with this planner; "
                                      "the checks themselves plan with rule")
     p_mcp_keepout = mcp_sub.add_parser(
