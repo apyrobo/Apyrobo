@@ -257,8 +257,19 @@ class AuditLog:
 
     def __init__(self, path: str | Path) -> None:
         self.path = path
-        with open(path, "ab"):  # Fail at start, not at the first move.
-            pass
+        try:
+            with open(path, "ab"):  # Fail at start, not at the first move.
+                pass
+        except OSError as exc:
+            # The bare "[Errno 2] No such file or directory: 'x'" does not say
+            # which flag is wrong; this is often the only line a client shows.
+            reason = exc.strerror or str(exc)
+            err = OSError(
+                f"cannot open the --audit-log file {path} for append ({reason}); "
+                "give a file in a folder that exists and you can write to"
+            )
+            err.errno = exc.errno
+            raise err from exc
 
     def record(self, entry: dict[str, Any]) -> None:
         data = (json.dumps(_finite(entry), separators=(",", ":")) + "\n").encode()

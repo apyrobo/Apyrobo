@@ -377,3 +377,25 @@ def test_a_path_that_cannot_be_written_stops_the_start(tmp_path):
     assert done.returncode == 1
     assert "Traceback" not in done.stderr
     assert "Error:" in done.stderr
+
+
+@pytest.mark.parametrize("where", ["missing_folder", "a_folder"])
+def test_the_start_error_names_the_flag_and_the_file(tmp_path, where):
+    path = tmp_path / "no-such-dir" / "audit.jsonl" if where == "missing_folder" else tmp_path
+    done = subprocess.run(
+        [sys.executable, "-m", "apyrobo.cli", "mcp", "--audit-log", str(path)],
+        input="", capture_output=True, text=True, timeout=60,
+    )
+    assert done.returncode == 1
+    error = done.stderr.strip().splitlines()[-1]
+    assert error.startswith("Error: cannot open the --audit-log file ")
+    assert str(path) in error
+    assert "[Errno" not in error
+    assert "folder that exists" in error
+
+
+def test_the_start_error_keeps_the_errno(tmp_path):
+    with pytest.raises(OSError) as info:
+        AuditLog(tmp_path / "no-such-dir" / "audit.jsonl")
+    assert info.value.errno == errno.ENOENT
+    assert "No such file or directory" in str(info.value)
