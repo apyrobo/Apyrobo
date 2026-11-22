@@ -288,6 +288,12 @@ a task still queued never starts, and the status stays `cancelled` however a
 running task ends. It does not stop a robot that is already driving; call
 `stop()` on the robot for that.
 
+With the rule planner (`Agent(provider="rule")`), a task is held to the
+checks `apyrobo mcp` makes before anything moves: one that names no place
+it can read, like the example below, or several places, or a step it would
+drop, becomes `failed` with the reason in `error`. Give coordinates, like
+`"go to (3, 3)"`, or use an Agent with an LLM provider.
+
 ### Authentication
 
 When an `AuthManager` is provided, all endpoints require an `X-API-Key` header.
@@ -352,6 +358,8 @@ from apyrobo.operations import ScheduledTaskRunner
 
 ```python
 runner = ScheduledTaskRunner(state_store=store)
+# "patrol warehouse" needs an LLM-planned agent; with the rule planner it is
+# refused before anything moves (see POST /tasks). Give it coordinates instead.
 runner.add_task("patrol", "*/30 * * * *", "patrol warehouse", robot, agent)
 runner.add_interval_job("heartbeat", 60, lambda: print("alive"))
 runner.start()
