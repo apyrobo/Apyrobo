@@ -609,6 +609,79 @@ def test_mcp_cancel_and_stop_end_a_running_nav2_goal(robot):
     )
 
 
+# After the stop the robot must be still on /odom: noise on a parked
+# TurtleBot3 burger stays well under this.
+STILL_ODOM_M_S = 0.02
+STILL_WINDOW_S = 1.5
+
+
+@pytest.mark.integration
+def test_mcp_client_going_away_stops_a_running_nav2_goal(robot):
+    """The client closing stdin mid-goal cancels the Nav2 goal and stops the robot.
+
+    docs/mcp.md promises the server stops the robot when its client goes
+    away, even during a move. Here no cancel and no stop call is sent: the
+    client just closes its end while move_to is driving through Nav2.
+    """
+    adapter = robot._adapter
+    cmd = [
+        sys.executable, "-m", "apyrobo", "--verbose", "mcp",
+        "--robot", "ros2://burger",
+        "--max-speed", str(STOP_MAX_SPEED),
+    ]
+    _wait_until_nav2_ready(adapter, timeout_s=60.0)
+    with tempfile.TemporaryFile(mode="w+") as log:
+        client = _StdioMCPClient(cmd, stderr=log)
+        watchdog = threading.Timer(120.0, client.proc.kill)
+        watchdog.start()
+        try:
+            client.request("initialize", {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "apyrobo-nav2-e2e", "version": "1.0"},
+            })
+            # The earlier stop test left the robot partway to GOAL; drive it
+            # back to START first so the leg below is the full 0.8 m.
+            is_error, back = client.call_tool("move_to", {"x": START[0], "y": START[1]})
+            assert not is_error, f"move back to START failed: {back}"
+            _wait_until_nav2_ready(adapter, timeout_s=30.0)
+
+            start = adapter.position
+            move = {"name": "move_to", "arguments": {"x": GOAL[0], "y": GOAL[1]}}
+            client.send("tools/call", move)
+            _wait_until_driving(adapter, start)
+            assert client.proc.stdin is not None
+            client.proc.stdin.close()
+            client.proc.wait(timeout=30)
+            exit_code = client.proc.returncode
+        finally:
+            watchdog.cancel()
+            client.close()
+        stopped = _assert_stopped_short(adapter, "the client going away")
+        with _odom_speeds(adapter) as speeds:
+            time.sleep(STILL_WINDOW_S)
+        log.seek(0)
+        server_log = log.read()
+    assert exit_code is not None and exit_code >= 0, (
+        f"apyrobo mcp was killed by the watchdog, not stopped by the client leaving "
+        f"(exit {exit_code}). Server log tail:\n" + server_log[-2000:]
+    )
+    assert "client lost (stdin closed)" in server_log, server_log[-2000:]
+    assert server_log.count("Nav2: sending goal") >= 2, (
+        "the moves did not go through Nav2 (fell back to cmd_vel?). "
+        "Server log tail:\n" + server_log[-2000:]
+    )
+    assert "Nav2: cancelling current goal" in server_log, server_log[-2000:]
+    assert "Nav2: goal CANCELLED" in server_log, (
+        "Nav2 did not confirm the goal as cancelled:\n" + server_log[-2000:]
+    )
+    assert speeds, "no /odom samples after the stop"
+    still_peak = max(v for _, v in speeds)
+    assert still_peak < STILL_ODOM_M_S, (
+        f"/odom still shows {still_peak:.3f} m/s after the client went away (at {stopped})"
+    )
+
+
 @pytest.mark.integration
 def test_position_comes_from_the_map_frame_under_nav2(robot):
     """With localisation up, the adapter reads the map-to-base transform, not /odom."""

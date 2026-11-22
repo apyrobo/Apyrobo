@@ -212,8 +212,8 @@ appears, then it waits for a client.
 even during a move, and on `SIGTERM` or `SIGHUP`. A motion request already read
 but not started is refused. So input piped in and then closed
 (`printf ... | apyrobo mcp`) has its moves refused; a client must keep stdin open
-until it has its replies. This is tested on `mock://` and a slow test adapter,
-not yet on a real Nav2 goal.
+until it has its replies. This is tested on `mock://`, a slow test adapter and a
+Nav2 goal on a simulated TurtleBot3 in Gazebo (in CI); not yet on hardware.
 
 A dead network link is different. Until TCP gives up, the server sees no end of
 input, so set `ClientAliveInterval` and `ClientAliveCountMax` in the robot's
