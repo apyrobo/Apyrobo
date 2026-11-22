@@ -5,7 +5,8 @@
 machine (GUI clients such as Claude Desktop, Cursor and VS Code do not read your
 shell's PATH) and the config file location for this operating system. For
 Claude Code and the OpenAI Codex CLI it prints the ``mcp add`` command
-instead, and the client writes its own config.
+instead, and the client writes its own config. For the Gemini CLI it prints the
+``settings.json`` entry, with the ``gemini mcp add`` line as the alternative.
 
 With ``--ssh user@host`` the client on your laptop starts ``apyrobo mcp`` on
 the robot over ssh instead, so MCP's stdio transport needs no new port or
@@ -42,7 +43,7 @@ FIRST_PYPI_MCP_RELEASE = (4, 2, 0)
 #: installs; ``apyrobo mcp`` refuses to start with one of them without it.
 LLM_PROVIDERS = ("llm", "tool_calling")
 
-CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode", "codex")
+CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode", "codex", "gemini")
 #: Clients set up with a ``<cli> mcp add <name> -- <command>`` shell line.
 ADD_COMMANDS = {"claude-code": "claude", "codex": "codex"}
 LAUNCHERS = ("auto", "uvx", "apyrobo")
@@ -347,6 +348,8 @@ def config_location(client: str, platform: str | None = None) -> str:
         return "run the command in a terminal; Claude Code stores it for you"
     if client == "codex":
         return "run the command in a terminal; Codex writes it to its config.toml for you"
+    if client == "gemini":
+        return "~/.gemini/settings.json (or .gemini/settings.json in a project)"
     if client == "vscode":
         # VS Code's MCP configuration reference names this user file, under
         # $COPILOT_HOME when that is set, as the place for new setups.
@@ -357,9 +360,11 @@ def config_location(client: str, platform: str | None = None) -> str:
 
 def render(client: str, launch: Launch, name: str = "apyrobo",
            platform: str | None = None) -> str:
-    """The text to paste: JSON for desktop clients, a command for Claude Code and Codex."""
+    """The text to paste: JSON for desktop clients and Gemini, a command for Claude Code, Codex."""
     platform = platform or sys.platform
-    if client in ("claude-desktop", "cursor"):
+    if client in ("claude-desktop", "cursor", "gemini"):
+        # Gemini CLI's settings.json takes the same command/args entry. Never
+        # "trust": true, which skips Gemini's confirmation before every tool call.
         block = {"mcpServers": {name: {"command": launch.command, "args": launch.args}}}
         return json.dumps(block, indent=2)
     if client == "vscode":
@@ -376,7 +381,24 @@ def render(client: str, launch: Launch, name: str = "apyrobo",
     raise ValueError(f"unknown client {client!r}; choose one of {', '.join(CLIENTS)}")
 
 
-def hints(client: str, launch: Launch, platform: str | None = None) -> list[str]:
+def gemini_add_command(launch: Launch, name: str = "apyrobo",
+                       platform: str | None = None) -> str:
+    """The ``gemini mcp add`` line for the same server, user scope.
+
+    Gemini CLI's usage is ``gemini mcp add [options] <name> <commandOrUrl>
+    [args...]`` and its own example puts ``--`` before the server's flags, so
+    they are not read as Gemini's. ``-s user`` because its default scope is
+    the current project. Never ``--trust``.
+    """
+    platform = platform or sys.platform
+    argv = ["gemini", "mcp", "add", "-s", "user", name, launch.command, "--", *launch.args]
+    if platform.startswith("win"):
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
+
+
+def hints(client: str, launch: Launch, platform: str | None = None,
+          name: str = "apyrobo") -> list[str]:
     """Short lines for stderr: where it goes and what to do next."""
     lines = []
     if launch.note:
@@ -389,6 +411,10 @@ def hints(client: str, launch: Launch, platform: str | None = None) -> list[str]
     else:
         lines.append(f"Merge this into: {config_location(client, platform)}")
         lines.append("Keep any other servers already under \"mcpServers\".")
+    if client == "gemini":
+        lines.append("Or run instead: " + gemini_add_command(launch, name, platform))
+        lines.append("Leave \"trust\" unset (and no --trust): it skips Gemini's "
+                     "confirmation before every tool call, move_to included.")
     if client == "vscode":
         lines.append("An older VS Code setup with .vscode/mcp.json: paste the same "
                      "entry under its top-level \"servers\" key instead, without "
@@ -520,8 +546,12 @@ def _check_llm_installed(flags: Sequence[str], launch: Launch) -> None:
         )
 
 
-def _server_name(name: str | None) -> str:
-    """The ``--name`` to print; a blank one or one with outer spaces is refused."""
+def _server_name(name: str | None, client: str | None = None) -> str:
+    """The ``--name`` to print; a blank one or one with outer spaces is refused.
+
+    Gemini CLI names tools ``mcp_<server>_<tool>`` and splits on the first
+    underscore, so its docs say a server name must not contain one.
+    """
     if name is None:
         return "apyrobo"
     if not name.strip():
@@ -530,6 +560,9 @@ def _server_name(name: str | None) -> str:
     if name != name.strip():
         raise ValueError(f"--name {name!r} starts or ends with a space, which the "
                          f"client would keep; use --name {name.strip()!r}")
+    if client == "gemini" and "_" in name:
+        raise ValueError(f"--name {name!r} has an underscore, which Gemini CLI does not "
+                         f"allow in server names; use --name {name.replace('_', '-')!r}")
     return name
 
 
@@ -551,7 +584,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
                              "on the robot, e.g. /opt/ros/jazzy/setup.bash, or leave it out")
         if setup and not ssh:
             raise ValueError("--ssh-setup needs --ssh")
-        name = _server_name(getattr(args, "name", None))
+        name = _server_name(getattr(args, "name", None), args.client)
         flags = server_args(**flags_in, remote=bool(ssh))
         launcher = getattr(args, "launcher", "auto") or "auto"
         if ssh:
@@ -561,7 +594,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
             _check_llm_installed(flags, launch)
         client = args.client
         text = render(client, launch, name=name)
-        notes = hints(client, launch)
+        notes = hints(client, launch, name=name)
         if ssh:
             notes += ssh_hints(ssh, robot)
         notes += ros2_hints(robot, launch, ssh, setup)
@@ -576,7 +609,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
 
 __all__ = [
     "ADD_COMMANDS", "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "SSH_OPTIONS",
-    "check_ssh_target", "config_location", "hints", "launches_uvx", "main",
+    "check_ssh_target", "config_location", "gemini_add_command", "hints", "launches_uvx", "main",
     "remote_command", "render",
     "resolve_launch", "resolve_ssh_launch", "ros2_hints", "server_args", "ssh_hints",
 ]

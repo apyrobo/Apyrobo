@@ -94,6 +94,23 @@ If you installed with `pip`, end the line with `-- apyrobo mcp --max-speed 0.5 -
 instead. `apyrobo mcp config codex` prints this line with the absolute path
 of `uvx`.
 
+### Gemini CLI
+
+```bash
+gemini mcp add -s user apyrobo uvx -- --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --no-go 2,2,4,4
+```
+
+Gemini writes the entry to `~/.gemini/settings.json` (`-s user`; without it
+the entry goes to `.gemini/settings.json` in the current project). The `--`
+keeps the server's flags from being read as Gemini's. If you installed with
+`pip`, use `gemini mcp add -s user apyrobo apyrobo -- mcp --max-speed 0.5 --no-go 2,2,4,4`
+instead. Or add the same `mcpServers` block as Claude Desktop's below to
+`settings.json` yourself; `apyrobo mcp config gemini` prints it with the
+absolute path of `uvx`, and the `gemini mcp add` line on stderr. Don't set
+`"trust": true` or `--trust`: it skips Gemini's confirmation before every
+tool call, `move_to` included. Gemini splits tool names on `_`, so a server
+name must not contain one; `apyrobo mcp config gemini --name` refuses it.
+
 ### Claude Desktop
 
 Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
@@ -157,8 +174,8 @@ apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
 
 prints the block above with the absolute path of `uvx` on this machine (GUI
 clients don't read your shell's `PATH`) and says where the config file is on
-your OS. Use `cursor`, `vscode`, `claude-code` or `codex` instead of `claude-desktop`
-for those clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
+your OS. Use `cursor`, `vscode`, `claude-code`, `codex` or `gemini` instead of
+`claude-desktop` for those clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx` (the same install you ran it from, so a venv works without
 activating it; without uvx on `PATH` that is the default). It takes the same `--robot`, `--policy`, `--policy-file`,
 `--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
@@ -765,7 +782,8 @@ sees no `/odom` and no Nav2. Set the same value for the server, either in
 the wrapped command above or in the client's `env` block
 (`"env": {"ROS_DOMAIN_ID": "30"}` in the JSON config, or
 `claude mcp add -e ROS_DOMAIN_ID=30 …` for Claude Code,
-`codex mcp add --env ROS_DOMAIN_ID=30 …` for Codex). Check from the same
+`codex mcp add --env ROS_DOMAIN_ID=30 …` for Codex,
+`gemini mcp add -e ROS_DOMAIN_ID=30 …` for Gemini CLI). Check from the same
 shell with `ros2 topic echo /odom --once`.
 
 ## How APYROBO fits with other robot MCP servers

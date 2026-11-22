@@ -10,6 +10,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp config gemini` prints the Gemini CLI `settings.json`
+  `mcpServers` entry (absolute path of `uvx` or the installed `apyrobo`, the
+  same flag checks as the other clients) and, on stderr, the equivalent
+  `gemini mcp add -s user apyrobo <command> -- …` line. It never sets
+  `trust`, and refuses a `--name` with an underscore, which Gemini CLI does
+  not allow. docs/mcp.md has a Gemini CLI section, kept in step by a test.
 - Each `apyrobo mcp` tool now has a human title and MCP tool annotations,
   which clients use for their approval prompts: `robot_status`,
   `list_capabilities`, `plan_task` and `safety_report` are read-only;

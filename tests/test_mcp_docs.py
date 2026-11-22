@@ -266,3 +266,36 @@ def test_the_codex_pip_variant_matches_launcher_apyrobo(monkeypatch):
     )
     printed = shlex.split(out.strip())
     assert shlex.split(match.group(1)) == printed[printed.index("--") + 1:]
+
+
+def _gemini_doc_lines() -> list[list[str]]:
+    return [shlex.split(line) for body in _fences("bash") for line in body.splitlines()
+            if line.startswith("gemini mcp add ")]
+
+
+def test_the_gemini_command_matches_mcp_config(monkeypatch):
+    lines = _gemini_doc_lines()
+    assert lines, "the Gemini CLI `gemini mcp add` example is missing"
+    documented = lines[0]
+    _, err = _printed(
+        ["mcp", "config", "gemini", "--launcher", "uvx", *_documented_config_flags()],
+        monkeypatch,
+    )
+    line = next(x for x in err.splitlines() if x.startswith("Or run instead: "))
+    printed = shlex.split(line[len("Or run instead: "):])
+    split = printed.index("--")
+    assert documented[:split + 1] == printed[:split + 1]  # gemini mcp add -s user apyrobo uvx --
+    assert (_without_uvx_source(documented[split + 1:])
+            == _without_uvx_source(printed[split + 1:]))
+    assert "--trust" not in documented
+
+
+def test_the_gemini_pip_variant_matches_launcher_apyrobo(monkeypatch):
+    match = re.search(r"If you installed with\s+`pip`, use `(gemini mcp add [^`]+)`", _doc())
+    assert match, "the pip variant of the Gemini CLI command is missing"
+    _, err = _printed(
+        ["mcp", "config", "gemini", "--launcher", "apyrobo", *_documented_config_flags()],
+        monkeypatch,
+    )
+    line = next(x for x in err.splitlines() if x.startswith("Or run instead: "))
+    assert shlex.split(match.group(1)) == shlex.split(line[len("Or run instead: "):])
