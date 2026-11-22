@@ -6,6 +6,10 @@
 #   docker compose -f docker/docker-compose.yml up -d
 #
 #
+# The gateway keeps its state in memory, reads only APYROBO_API_KEY and serves
+# no /metrics yet: the redis, monitoring and observability profiles start those
+# services, but nothing in the gateway uses them (docs/deployment.md).
+#
 # With Redis:
 #   docker compose -f docker/docker-compose.yml --profile redis up -d
 #
