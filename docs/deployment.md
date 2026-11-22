@@ -44,45 +44,17 @@ curl http://localhost:8080/health
 # {"status":"ok","tasks":0,"robots":0}
 ```
 
-### 3. Optional: enable Redis state persistence
+### 3. What the gateway does not do yet
 
-```bash
-docker compose -f docker/docker-compose.yml --profile redis up -d
-```
+The gateway keeps tasks and robots in memory, per process: a restart forgets
+them, and two replicas do not see each other's tasks. It reads one setting,
+`APYROBO_API_KEY`, and serves no `/metrics`. The compose file's `redis`,
+`monitoring` and `observability` profiles start Redis, Prometheus and Grafana
+next to it, but the gateway does not use Redis and Prometheus finds nothing to
+scrape, so the Grafana panels stay empty. Shared state and metrics are roadmap
+items.
 
-### 4. Optional: enable Prometheus metrics
-
-```bash
-docker compose -f docker/docker-compose.yml --profile monitoring up -d
-# Prometheus UI: http://localhost:9090
-# Metrics endpoint: http://localhost:8080/metrics
-```
-
-### 4a. Optional: enable full observability stack (Prometheus + Grafana)
-
-```bash
-docker compose -f docker/docker-compose.yml --profile observability up -d
-# Prometheus UI:  http://localhost:9090
-# Grafana:        http://localhost:3000  (admin / apyrobo)
-```
-
-The `observability` profile starts both Prometheus and a pre-configured Grafana instance. The dashboard is provisioned automatically — no manual import needed. It includes panels for:
-
-- **Task throughput** — completed and failed tasks per minute
-- **Skill latency** — average execution time per skill
-- **Task failure rate** — percentage of tasks that failed over the last 5 minutes
-- **Skill retry count** — total retries across all skills
-- **Error rate by skill** — which skills are failing and how often
-
-The `monitoring` profile (Prometheus only) still works as before for setups that don't need Grafana.
-
-To stop and clean up volumes:
-
-```bash
-docker compose -f docker/docker-compose.yml --profile observability down -v
-```
-
-### 5. View logs
+### 4. View logs
 
 ```bash
 docker compose -f docker/docker-compose.yml logs -f apyrobo-api
@@ -151,10 +123,11 @@ curl http://<EXTERNAL-IP>/health
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APYROBO_API_KEY` | *(required)* | Bearer token for authenticating API requests |
-| `APYROBO_LOG_LEVEL` | `INFO` | Verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `APYROBO_REDIS_URL` | *(empty)* | Redis connection URL for shared state. Empty = in-process SQLite |
-| `APYROBO_AUDIT_DB` | `/app/data/audit/audit.db` | Path to the SQLite audit database |
+| `APYROBO_API_KEY` | *(empty: no auth)* | Key every request except `GET /health` must send in the `X-API-Key` header |
+
+The compose file, `docker/.env.example` and the Kubernetes ConfigMap and
+Secret also set `APYROBO_LOG_LEVEL`, `APYROBO_REDIS_URL` and
+`APYROBO_AUDIT_DB`; the gateway does not read them yet.
 
 ---
 
@@ -163,7 +136,6 @@ curl http://<EXTERNAL-IP>/health
 | Endpoint | Auth required | Description |
 |----------|--------------|-------------|
 | `GET /health` | No | Liveness + readiness probe. Returns `{"status":"ok","tasks":<n>,"robots":<n>}` |
-| `GET /metrics` | No | Prometheus metrics (if observability module is active) |
 
 Kubernetes probes are pre-configured in `k8s/deployment-api.yaml`:
 - **Liveness** — `GET /health` every 20 s, 3 failures trigger pod restart
@@ -173,15 +145,11 @@ Kubernetes probes are pre-configured in `k8s/deployment-api.yaml`:
 
 ## Scaling Guidelines
 
-### Horizontal scaling
+### Replicas
 
-Scale the API gateway; skills execute inside it. The deployment defaults to
-**2 replicas** for high availability — increase for higher throughput (use
-Redis so replicas share task/robot state, see below):
-
-```bash
-kubectl -n apyrobo scale deployment/apyrobo-api --replicas=4
-```
+The deployment runs **1 replica**. Task and robot state lives in each
+process's memory, so with more replicas a `GET /tasks/<id>` that lands on
+another pod answers 404. Keep one replica until the gateway has shared state.
 
 > A dedicated stateless worker tier (`apyrobo worker`) was described in
 > earlier versions of this guide but was never implemented; the service and
@@ -197,17 +165,6 @@ Default resource requests (per pod):
 | API | 100m | 500m | 256 Mi | 512 Mi |
 
 Adjust in `k8s/deployment-api.yaml` to match your workload.
-
-### Redis
-
-For production deployments with multiple API replicas, enable Redis to share task and robot state:
-
-```bash
-# Docker Compose
-docker compose -f docker/docker-compose.yml --profile redis up -d
-
-# Kubernetes — point APYROBO_REDIS_URL at a Redis instance or managed service
-```
 
 ---
 

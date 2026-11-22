@@ -307,6 +307,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/deployment.md promised what the REST gateway does not do: Redis
+  shared state (`APYROBO_REDIS_URL`), a SQLite audit database
+  (`APYROBO_AUDIT_DB`), `APYROBO_LOG_LEVEL`, a Prometheus `GET /metrics`
+  (404) with a Grafana dashboard, and two Kubernetes replicas sharing state.
+  The gateway keeps tasks in process memory and reads only
+  `APYROBO_API_KEY`, so on the shipped 2-replica deployment a
+  `GET /tasks/<id>` that reached the other pod answered 404. The manifest now
+  runs 1 replica and the guide says what the gateway does and does not do,
+  checked by a test.
 - The REST API (`OperationsApiServer`, `POST /tasks`) and agent tasks on a
   `ScheduledTaskRunner` no longer drive to a made-up target: with the rule
   planner, docs/api_reference.md's own example, "deliver package to room 3",
