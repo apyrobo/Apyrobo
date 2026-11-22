@@ -417,23 +417,44 @@ def launches_uvx(launch: Launch) -> bool:
     """Whether this launch starts the server through ``uvx``.
 
     Local configs name ``uvx`` as the command; an ssh config carries the remote
-    command as its last argument, with ``uvx`` at the front of it.
+    command as its last argument, with ``uvx`` at the front of it, or after
+    ``exec`` when ``--ssh-setup`` wraps it in ``bash -c``.
     """
     if Path(launch.command).stem == "uvx":
         return True
-    return bool(launch.args) and shlex.split(launch.args[-1])[:1] == ["uvx"]
+    if not launch.args:
+        return False
+    words = shlex.split(launch.args[-1])
+    if words[:2] == ["bash", "-c"] and len(words) == 3 and " && exec " in words[2]:
+        # --ssh-setup wraps the command: bash -c '. SETUP && exec <command>'
+        words = shlex.split(words[2].split(" && exec ", 1)[1])
+    return words[:1] == ["uvx"]
 
 
-def ros2_hints(robot: str | None, launch: Launch) -> list[str]:
-    """What a ``ros2://`` config needs beyond the flags, for stderr."""
+def ros2_hints(robot: str | None, launch: Launch, ssh: str | None = None,
+               ssh_setup: str | None = None) -> list[str]:
+    """What a ``ros2://`` config needs beyond the flags, for stderr.
+
+    Over ssh the server runs on the robot, so ROS 2 is sourced there with
+    ``--ssh-setup``; wrapping the laptop-side command in ``bash -c 'source …'``
+    would source a ROS 2 the laptop may not have.
+    """
     if not robot or not robot.startswith("ros2://"):
         return []
-    lines = [
-        "ros2:// needs a sourced ROS 2 environment, and a client starts the "
-        "server with its own, not your shell's: wrap the command as "
-        "\"command\": \"bash\" with \"args\": [\"-c\", \"source "
-        "/opt/ros/<distro>/setup.bash && exec <the command above>\"].",
-    ]
+    lines = []
+    if not ssh:
+        lines.append(
+            "ros2:// needs a sourced ROS 2 environment, and a client starts the "
+            "server with its own, not your shell's: wrap the command as "
+            "\"command\": \"bash\" with \"args\": [\"-c\", \"source "
+            "/opt/ros/<distro>/setup.bash && exec <the command above>\"]."
+        )
+    elif not ssh_setup:
+        lines.append(
+            "ros2:// needs a sourced ROS 2 environment on the robot, and a "
+            "non-interactive ssh shell has not sourced it: add "
+            "--ssh-setup /opt/ros/<distro>/setup.bash."
+        )
     if launches_uvx(launch):
         lines.append(
             "uvx runs in an isolated environment, which rclpy reaches through "
@@ -543,7 +564,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
         notes = hints(client, launch)
         if ssh:
             notes += ssh_hints(ssh, robot)
-        notes += ros2_hints(robot, launch)
+        notes += ros2_hints(robot, launch, ssh, setup)
     except ValueError as exc:
         print(f"Error: {exc}", file=stderr)
         return 1
