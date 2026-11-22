@@ -10,6 +10,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- Each `apyrobo mcp` tool now has a human title and MCP tool annotations,
+  which clients use for their approval prompts: `robot_status`,
+  `list_capabilities`, `plan_task` and `safety_report` are read-only;
+  `move_to`, `rotate` and `execute_task` are not read-only, act on the
+  physical world and keep the cautious `destructiveHint`; `stop` is
+  idempotent and not destructive. These are hints for the client; the
+  safety policy still decides what is refused.
 - `apyrobo mcp`'s instructions (sent on `initialize` and `server/discover`,
   which most clients pass to the model before any tool call) now name the
   limits it enforces: the speed and turn caps, the first three no-go zones
