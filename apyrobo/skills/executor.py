@@ -279,10 +279,18 @@ class SkillExecutor:
         self._confidence_estimator = confidence_estimator  # SF-08
         self._world_state_provider = world_state_provider
         self._state_store = state_store  # OB-02: StorageBackend for crash recovery
+        # Why each skill last failed, so a failed graph can say why, not only which.
+        self._failure_reasons: dict[str, str] = {}
 
     @property
     def state(self) -> ExecutionState:
         return self._state
+
+    def _skill_failed_error(self, skill: Skill) -> str:
+        """TaskResult.error for a graph stopped by *skill*: which skill, then why."""
+        reason = self._failure_reasons.get(skill.skill_id, "")
+        error = f"Skill {skill.skill_id!r} failed"
+        return f"{error}: {reason}" if reason else error
 
     def on_event(self, listener: EventListener) -> None:
         """Register a callback for execution events."""
@@ -458,6 +466,7 @@ class SkillExecutor:
         # Precondition check
         ok, reason = self.check_preconditions(skill, self._robot)
         if not ok:
+            self._failure_reasons[skill.skill_id] = f"precondition failed: {reason}"
             self._emit(skill.skill_id, SkillStatus.FAILED, f"Precondition failed: {reason}")
             # OB-01: Emit telemetry for precondition failure
             emit_event("skill_executed",
@@ -520,6 +529,10 @@ class SkillExecutor:
                 )
 
         if final_status == SkillStatus.FAILED:
+            if error_msg:
+                self._failure_reasons[skill.skill_id] = error_msg
+            else:
+                self._failure_reasons.pop(skill.skill_id, None)
             self._emit(skill.skill_id, SkillStatus.FAILED, f"Failed after {max_attempts} attempts")
 
         # OB-01: Emit per-skill telemetry
@@ -676,7 +689,7 @@ class SkillExecutor:
                     status=TaskStatus.FAILED,
                     steps_completed=completed,
                     steps_total=len(order),
-                    error=f"Skill {skill.skill_id!r} failed",
+                    error=self._skill_failed_error(skill),
                     recovery_actions_taken=recovery_actions,
                 )
 
@@ -731,7 +744,7 @@ class SkillExecutor:
                         status=TaskStatus.FAILED,
                         steps_completed=completed,
                         steps_total=total,
-                        error=f"Skill {layer[0].skill_id!r} failed",
+                        error=self._skill_failed_error(layer[0]),
                         recovery_actions_taken=recovery_actions,
                     )
             else:
@@ -748,7 +761,7 @@ class SkillExecutor:
                             status=TaskStatus.FAILED,
                             steps_completed=completed,
                             steps_total=total,
-                            error=f"Skill {skill.skill_id!r} failed",
+                            error=self._skill_failed_error(skill),
                             recovery_actions_taken=recovery_actions,
                         )
 
