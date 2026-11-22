@@ -1229,8 +1229,13 @@ class MCPServer:
         *,
         confirm_moves: bool = False,
         audit_log: AuditLog | None = None,
+        max_move_seconds: float | None = None,
     ) -> None:
         self.toolbox = toolbox
+        # --max-move-seconds: a motion call still running after this long is
+        # stopped like a stop request, so a move cannot outlast a lost model
+        # link by more than this. None means no limit.
+        self.max_move_seconds = max_move_seconds
         self.audit_log = audit_log
         self.protocol_version = SUPPORTED_PROTOCOL_VERSIONS[0]
         self.confirm_moves = confirm_moves
@@ -1791,8 +1796,10 @@ class MCPServer:
                 )
         done = threading.Event()
         structured: dict[str, Any] | None = None
+        timer: threading.Timer | None = None
         if moves:
             self._start_progress(params, name, arguments, done)
+            timer = self._start_move_timer()
         try:
             payload = self.toolbox.call(name, arguments)
             text = json.dumps(_jsonable(payload), indent=2)
@@ -1804,6 +1811,8 @@ class MCPServer:
             logger.warning("MCP: tool %s failed: %s", name, exc)
             text, is_error = f"{type(exc).__name__}: {exc}", True
         finally:
+            if timer is not None:
+                timer.cancel()
             if moves:
                 self._motion_running = False
                 # Under the write lock: a progress notification already being
@@ -1824,6 +1833,20 @@ class MCPServer:
         if structured is not None and self.protocol_version >= STRUCTURED_CONTENT_SINCE:
             result["structuredContent"] = structured
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+    def _start_move_timer(self) -> threading.Timer | None:
+        """Stop the motion call starting now if it outlasts --max-move-seconds."""
+        if self.max_move_seconds is None:
+            return None
+        timer = threading.Timer(self.max_move_seconds, self._time_out, args=(self._motion_seq,))
+        timer.name = "apyrobo-mcp-max-move"
+        timer.daemon = True
+        timer.start()
+        return timer
+
+    def _time_out(self, seq: int) -> None:
+        if self._motion_running and self._motion_seq == seq and self._interrupted is None:
+            self._interrupt("timed_out")
 
     def _start_progress(
         self,
@@ -1895,8 +1918,14 @@ class MCPServer:
 
     def _interrupted_text(self, name: str, interrupted: str, error: str | None) -> str:
         """Say how a motion call ended after a stop or a cancel reached it."""
-        what = "a stop request" if interrupted == "stopped" else "the client's cancel"
-        text = f"STOPPED: {what} arrived during {name}, so it did not finish."
+        if interrupted == "timed_out":
+            text = (
+                f"STOPPED: {name} was still running after --max-move-seconds "
+                f"({self.max_move_seconds:g} s), so the robot was stopped."
+            )
+        else:
+            what = "a stop request" if interrupted == "stopped" else "the client's cancel"
+            text = f"STOPPED: {what} arrived during {name}, so it did not finish."
         try:
             here = self.toolbox._position()
             text += f" Last known position: ({here['x']:.3f}, {here['y']:.3f})."
@@ -2060,11 +2089,13 @@ class MCPServer:
         if not self._motion_running:
             return
         self._interrupted = how
-        self.toolbox.stop_reason = (
-            "A stop request arrived, so the remaining steps did not run."
-            if how == "stopped" else
-            "The client cancelled the call, so the remaining steps did not run."
-        )
+        self.toolbox.stop_reason = {
+            "stopped": "A stop request arrived, so the remaining steps did not run.",
+            "timed_out": (
+                "The call ran longer than --max-move-seconds, so the remaining "
+                "steps did not run."
+            ),
+        }.get(how, "The client cancelled the call, so the remaining steps did not run.")
         logger.warning("MCP: %s during a motion call, stopping the robot", how)
         threading.Thread(
             target=self._stop_motion, args=(seq,), name="apyrobo-mcp-stop", daemon=True
@@ -2439,6 +2470,7 @@ def build_server(
     confirm_moves: bool = False,
     allowed_areas: list[dict[str, float]] | None = None,
     audit_log: str | Path | None = None,
+    max_move_seconds: float | None = None,
 ) -> MCPServer:
     """Discover the robot, wrap it in a safety enforcer and return the server.
 
@@ -2454,6 +2486,8 @@ def build_server(
 
     if max_speed is not None:
         max_speed = _positive(max_speed, "--max-speed")
+    if max_move_seconds is not None:
+        max_move_seconds = _positive(max_move_seconds, "--max-move-seconds")
     if agent is None:
         _check_provider_installed(provider)
     log = AuditLog(audit_log) if audit_log is not None else None
@@ -2495,4 +2529,5 @@ def build_server(
         RobotToolbox(robot, enforcer, agent, robot_uri),
         confirm_moves=confirm_moves,
         audit_log=log,
+        max_move_seconds=max_move_seconds,
     )
