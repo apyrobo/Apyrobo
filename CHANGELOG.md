@@ -293,6 +293,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/mcp.md Options no longer gives `default` as the plain default of
+  `--policy`: with no flag, a `--policy-file`'s `base` is used, as
+  `apyrobo mcp --help` says. A test now checks the table against the flags
+  the server takes.
 - docs/mcp.md no longer says a `move_to` with `speed` 0 drives at the
   default speed on the `/cmd_vel` fallback: `apyrobo mcp` refuses a speed of 0
   or less before anything moves, on every robot, and the doc now says so.

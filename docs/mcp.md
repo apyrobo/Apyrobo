@@ -436,7 +436,7 @@ checked only when the move runs.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--robot URI` | `mock://turtlebot4` | Any APYROBO robot URI (`ros2://…`, `gazebo://…`, `mujoco://…`, `vda5050://…`) |
-| `--policy` | `default` | Base policy: `default` (1.5 m/s) or `strict` (0.5 m/s) |
+| `--policy` | the policy file's `base`, else `default` | Base policy: `default` (1.5 m/s) or `strict` (0.5 m/s); the flag wins over the file's `base` |
 | `--policy-file PATH` | none | JSON or YAML policy (`name`, `base`, `max_speed`, `max_angular_speed`, `no_go_zones`, `allowed_areas`); flags on the command line override it |
 | `--max-speed M_S` | from policy | Override the speed limit |
 | `--no-go X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangular no-go zone in metres; repeat for more |
