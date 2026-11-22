@@ -306,6 +306,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/quickstart_5min.md: the first install command was `pip install -e .`,
+  which fails outside a clone of the repo; it is now `pip install apyrobo`.
+  The LLM snippet now imports `Agent` and says to install `apyrobo[llm]`. A
+  new test runs every Python block of the page on `mock://` and checks the
+  results it shows.
 - docs/mcp.md Options no longer gives `default` as the plain default of
   `--policy`: with no flag, a `--policy-file`'s `base` is used, as
   `apyrobo mcp --help` says. A test now checks the table against the flags

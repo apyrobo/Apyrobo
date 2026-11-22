@@ -7,10 +7,10 @@ Get a mock robot running and execute your first AI-planned task — no ROS 2, no
 ## Install (30 seconds)
 
 ```bash
-pip install -e .
+pip install apyrobo
 ```
 
-Or from the repo:
+Or from the repo, for the newest code (including `apyrobo mcp`):
 
 ```bash
 git clone https://github.com/apyrobo/apyrobo.git
@@ -86,9 +86,11 @@ print(f"Status: {result.status}")
 print(f"Steps: {result.steps_completed}/{result.steps_total}")
 ```
 
-To use an LLM provider:
+To use an LLM provider, install the extra (`pip install 'apyrobo[llm]'`):
 
 ```python
+from apyrobo import Agent
+
 # With OpenAI (requires OPENAI_API_KEY env var)
 agent = Agent(provider="llm", model="gpt-4")
 
