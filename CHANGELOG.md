@@ -293,6 +293,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/mcp.md no longer says a `move_to` with `speed` 0 drives at the
+  default speed on the `/cmd_vel` fallback: `apyrobo mcp` refuses a speed of 0
+  or less before anything moves, on every robot, and the doc now says so.
 - `apyrobo mcp --robot ros2://…` no longer aborts on exit (exit code -6,
   "terminate called without an active exception") after its client goes
   away. The robot was already stopped and the Nav2 goal cancelled; the
