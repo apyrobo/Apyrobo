@@ -1933,6 +1933,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
             policy_file=getattr(args, "policy_file", None),
             confirm_moves=getattr(args, "confirm_moves", False),
             audit_log=getattr(args, "audit_log", None),
+            max_move_seconds=getattr(args, "max_move_seconds", None),
         )
     except (ValueError, ImportError, RuntimeError, OSError) as exc:
         # Adapters report a missing ROS 2 install or an unreachable robot as
@@ -1946,6 +1947,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
         f"allowed_areas={len(policy.allowed_areas)} "
         f"confirm_moves={'on' if getattr(server, 'confirm_moves', False) else 'off'} "
         f"audit_log={getattr(args, 'audit_log', None) or 'off'} "
+        f"max_move_seconds={getattr(server, 'max_move_seconds', None) or 'off'} "
         "(waiting for an MCP client on stdio)",
         file=sys.stderr, flush=True,
     )
@@ -3454,6 +3456,10 @@ def main() -> None:
     p_mcp.add_argument("--audit-log", dest="audit_log", default=None, metavar="PATH",
                        help="Append one JSON line per motion decision to PATH; if a line "
                             "cannot be written, motion is refused")
+    p_mcp.add_argument("--max-move-seconds", dest="max_move_seconds", type=float, default=None,
+                       metavar="N",
+                       help="Stop a move_to, rotate or execute_task still running after N "
+                            "seconds and report it like a stop (default: no limit)")
     p_mcp.add_argument("--provider", default="rule",
                        help="Planner for plan_task/execute_task (default: rule, no API key)")
     mcp_sub = p_mcp.add_subparsers(dest="mcp_command")

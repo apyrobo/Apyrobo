@@ -236,6 +236,18 @@ A dead network link is different. Until TCP gives up, the server sees no end of
 input, so set `ClientAliveInterval` and `ClientAliveCountMax` in the robot's
 `sshd_config` to bound the wait. Keep your robot's own e-stop within reach.
 
+A client that stays up while its own link to the model drops is not detected:
+the server only sees its stdio client, and that client is still there. To bound
+how long a move can run with nobody watching, pass `--max-move-seconds N`. A
+`move_to`, `rotate` or `execute_task` still running after `N` seconds is stopped
+the way a `stop` request stops it: the stop is repeated until the call returns,
+`execute_task` drops its remaining steps, and the call comes back as an error
+starting `STOPPED:` with the last known position (`timed_out` in the
+`--audit-log`). The limit is per call, not per session, and is off by default.
+Pick `N` longer than your longest expected move. This is tested on `mock://`
+and a slow test adapter, not on `ros2://` or hardware. `apyrobo mcp config`
+does not add the flag yet; add it to the generated arguments by hand.
+
 ### Stopping a move
 
 The server reads its input while a move runs, so two things reach the robot
@@ -460,6 +472,7 @@ checked only when the move runs.
 | `--allow-area X_MIN,Y_MIN,X_MAX,Y_MAX` | none | Add a rectangle move targets may be in; with any set, a target outside all of them is refused; repeat for more |
 | `--confirm-moves` | off | Ask the user to confirm every `move_to`, `rotate` and `execute_task` before the robot moves (see below) |
 | `--audit-log PATH` | off | Append one JSON line per motion decision to `PATH`; if a line cannot be written, motion is refused (see below) |
+| `--max-move-seconds N` | off | Stop a `move_to`, `rotate` or `execute_task` still running after `N` seconds and report it like a stop (see [When the client goes away](#when-the-client-goes-away)) |
 | `--provider` | `rule` | Planner for `plan_task` / `execute_task`; `llm` needs `pip install 'apyrobo[llm]'`, and without it the server does not start. `apyrobo mcp --provider llm config <client>` adds that extra to the uvx command for you |
 
 For a starting point, copy a commented policy from
@@ -555,6 +568,7 @@ refusal, a failure or a `not_limited` drive adds `detail`, cut to 500 characters
 | `declined` | The user said no under `--confirm-moves` |
 | `stopped` | A `stop` reached it while it ran |
 | `cancelled` | The client cancelled it, while it ran or before it started |
+| `timed_out` | It was still running after `--max-move-seconds` and the server stopped it |
 | `client_lost` | The client went away and the server stopped the robot; `detail` says how, and whether the stop failed |
 
 `started` is written before the robot is asked to move, and a move whose line

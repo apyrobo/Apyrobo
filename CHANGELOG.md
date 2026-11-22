@@ -10,6 +10,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp --max-move-seconds N` stops a `move_to`, `rotate` or
+  `execute_task` still running after `N` seconds, the way a `stop` request
+  does, and reports it as `STOPPED:` with the last known position
+  (`timed_out` in the `--audit-log`). Off by default. It bounds how long a
+  move can run when the client stays up but its link to the model drops,
+  which the server cannot see. docs/mcp.md says so under "When the client
+  goes away".
 - `apyrobo mcp config gemini` prints the Gemini CLI `settings.json`
   `mcpServers` entry (absolute path of `uvx` or the installed `apyrobo`, the
   same flag checks as the other clients) and, on stderr, the equivalent
