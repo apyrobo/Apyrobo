@@ -648,8 +648,9 @@ is `not_limited`. Either way, set Nav2's own controller limits (for DWB,
 `max_vel_x` and `max_speed_xy`) no higher than you would ever allow.
 
 Without Nav2, on the `/cmd_vel` fallback, the limit holds. A `move_to` with no
-`speed`, or with `speed` 0, drives at the adapter's default of 0.5 m/s, or at
-the limit when that is lower; the audit log records the speed sent.
+`speed` drives at the adapter's default of 0.5 m/s, or at the limit when that
+is lower; the audit log records the speed sent. A `speed` of 0 or less is
+refused before anything moves, on every robot.
 
 `rotate` is not implemented on `ros2://`: the tool returns an error saying so,
 and nothing is sent to the robot. Nav2 turns the robot as part of a `move_to`.
