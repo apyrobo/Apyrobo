@@ -531,3 +531,84 @@ def test_cli_accepts_codex(tmp_path):
     expected = Path(mcp_clients._own_script() or exe).resolve()
     assert shlex.split(result.stdout) == ["codex", "mcp", "add", "apyrobo", "--",
                                           str(expected), "mcp", "--max-speed", "0.5"]
+
+
+# Gemini CLI 0.70.0 (bundle/docs/tools/mcp-server.md): settings.json takes
+# "mcpServers": {name: {"command", "args", ...}}; the CLI form is
+# gemini mcp add [options] <name> <commandOrUrl> [args...], -s user|project.
+
+
+def test_gemini_prints_a_settings_json_entry(tmp_path, before_pypi):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, out, err = _run(_args("gemini", cfg_max_speed=0.5, cfg_no_go=["2,2,4,4"]),
+                          _which({"uvx": str(uvx)}))
+    assert code == 0
+    entry = json.loads(out)["mcpServers"]["apyrobo"]
+    assert entry == {"command": str(uvx.resolve()),
+                     "args": ["--from", GIT_SOURCE, "apyrobo", "mcp", "--max-speed", "0.5",
+                              "--no-go", "2,2,4,4"]}
+    assert "trust" not in entry  # trust: true skips every tool confirmation
+    assert "~/.gemini/settings.json" in err
+
+
+def test_gemini_hint_gives_the_gemini_mcp_add_line(tmp_path, before_pypi):
+    uvx = tmp_path / "uvx"
+    uvx.write_text("")
+    code, _, err = _run(_args("gemini", cfg_max_speed=0.5), _which({"uvx": str(uvx)}))
+    assert code == 0
+    line = next(x for x in err.splitlines() if x.startswith("Or run instead: "))
+    argv = shlex.split(line[len("Or run instead: "):])
+    assert argv == ["gemini", "mcp", "add", "-s", "user", "apyrobo", str(uvx.resolve()), "--",
+                    "--from", GIT_SOURCE, "apyrobo", "mcp", "--max-speed", "0.5"]
+    assert "--trust" not in argv
+
+
+def test_gemini_add_line_quotes_paths_with_spaces():
+    launch = Launch("/opt/my tools/apyrobo", ["mcp", "--max-speed", "0.5"])
+    text = mcp_clients.gemini_add_command(launch, platform="linux")
+    assert shlex.split(text) == ["gemini", "mcp", "add", "-s", "user", "apyrobo",
+                                 "/opt/my tools/apyrobo", "--", "mcp", "--max-speed", "0.5"]
+    windows = mcp_clients.gemini_add_command(
+        Launch(r"C:\my tools\apyrobo.exe", ["mcp"]), platform="win32")
+    assert windows == r'gemini mcp add -s user apyrobo "C:\my tools\apyrobo.exe" -- mcp'
+
+
+def test_gemini_refuses_an_underscore_in_the_name():
+    code, out, err = _run(_args("gemini", name="my_robot"), _which({}))
+    assert code == 1 and out == ""
+    assert "underscore" in err and "'my-robot'" in err
+    # Other clients keep accepting it.
+    code, out, _ = _run(_args("cursor", name="my_robot", launcher="uvx"), _which({}))
+    assert code == 0 and "my_robot" in json.loads(out)["mcpServers"]
+
+
+def test_gemini_checks_flags_like_every_client():
+    code, out, err = _run(_args("gemini", cfg_max_speed=-1.0), _which({}))
+    assert code == 1 and out == ""
+    assert "--max-speed must be positive" in err
+
+
+def test_gemini_over_ssh_runs_the_server_on_the_robot():
+    code, out, err = _run(_args("gemini", cfg_ssh="robot", cfg_robot="mock://tb"),
+                          _which({"ssh": "/usr/bin/ssh"}))
+    assert code == 0
+    entry = json.loads(out)["mcpServers"]["apyrobo"]
+    assert entry["command"] == str(Path("/usr/bin/ssh").resolve())
+    assert entry["args"][-1] == "apyrobo mcp --robot mock://tb"
+
+
+def test_cli_accepts_gemini(tmp_path):
+    exe = tmp_path / "apyrobo"
+    exe.write_text("")
+    exe.chmod(0o755)
+    result = subprocess.run(
+        [sys.executable, "-m", "apyrobo.cli", "mcp", "--max-speed", "0.5", "config", "gemini",
+         "--launcher", "apyrobo"],
+        capture_output=True, text=True, cwd=tmp_path, timeout=60,
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"},
+    )
+    assert result.returncode == 0, result.stderr
+    expected = Path(mcp_clients._own_script() or exe).resolve()
+    assert json.loads(result.stdout)["mcpServers"]["apyrobo"] == {
+        "command": str(expected), "args": ["mcp", "--max-speed", "0.5"]}
