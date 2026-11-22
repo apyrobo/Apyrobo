@@ -307,6 +307,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The REST API (`OperationsApiServer`, `POST /tasks`) and agent tasks on a
+  `ScheduledTaskRunner` no longer drive to a made-up target: with the rule
+  planner, docs/api_reference.md's own example, "deliver package to room 3",
+  sent a mock robot to (5, 5) and the task was reported `completed`. Such a
+  task is now `failed` with the reason `apyrobo mcp` gives (no target, many
+  targets, a dropped step) and nothing moves, as in `apyrobo mcp`, `plan`,
+  `execute`, `serve` and `listen`. Tasks with coordinates run as before; an
+  LLM-planned agent gets the task unchanged.
 - docs/quickstart_5min.md: the first install command was `pip install -e .`,
   which fails outside a clone of the repo; it is now `pip install apyrobo`.
   The LLM snippet now imports `Agent` and says to install `apyrobo[llm]`. A

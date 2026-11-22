@@ -37,6 +37,36 @@ except Exception:
     _HAS_ROS2 = False
 
 
+def _run_agent_task(agent: Any, task: str, robot: Any, **kwargs: Any) -> Any:
+    """Run *task* through *agent*, held to the checks ``apyrobo mcp`` makes.
+
+    The rule planner drives to one place per step and falls back to a
+    made-up target or a status report on a task it cannot read, so
+    "deliver package to room 3" would drive to (5, 5) and end in
+    "completed". With the rule planner such a task is not run: this raises
+    ``RuntimeError`` with the reason ``apyrobo mcp`` gives, before anything
+    moves. Other tasks run with their coordinates spelled the way the
+    planner reads them; an LLM-planned agent runs the task unchanged.
+    """
+    from apyrobo.skills.agent import RuleBasedProvider
+
+    if not isinstance(getattr(agent, "provider", None), RuleBasedProvider):
+        return agent.execute(task, robot, **kwargs)
+
+    from apyrobo.mcp_server import RobotToolbox
+
+    toolbox = RobotToolbox(robot, robot, agent, str(getattr(robot, "robot_id", "this robot")))
+    _, plan = toolbox._plan(task)
+    reason = plan.get("reason")
+    if reason is not None:
+        reason = reason.replace(
+            "use move_to and rotate directly, or start the server with --provider llm",
+            "give the task coordinates, or use an Agent with an LLM provider",
+        )
+        raise RuntimeError(f"{reason} Nothing was run.")
+    return agent.execute(toolbox._rule_planner_text(task), robot, **kwargs)
+
+
 # =====================================================================
 # Battery / Resource Management
 # =====================================================================
@@ -714,7 +744,7 @@ class ScheduledTaskRunner:
         else:
             # agent mode
             try:
-                result = job["agent"].execute(job["task"], job["robot"])
+                result = _run_agent_task(job["agent"], job["task"], job["robot"])
                 if self._state_store and hasattr(self._state_store, "set"):
                     self._state_store.set(f"scheduled:{name}:last_result", {
                         "status": getattr(result, "status", "completed"),
@@ -836,7 +866,7 @@ class OperationsApiServer:
                     f"robot {robot_id!r} is not on the swarm bus; nothing was run"
                 )
 
-            result = self._agent.execute(task_desc, robot, state_store=self._store)
+            result = _run_agent_task(self._agent, task_desc, robot, state_store=self._store)
             if task.get("status") == "cancelled":
                 return
             task["status"] = getattr(result, "status", "completed")
