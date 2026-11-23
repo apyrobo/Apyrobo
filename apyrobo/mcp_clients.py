@@ -109,6 +109,7 @@ def server_args(
     allow_area: Sequence[str] | None = None,
     audit_log: str | None = None,
     provider: str | None = None,
+    max_move_seconds: float | None = None,
 ) -> list[str]:
     """The ``apyrobo mcp`` flags to pass through, in a stable order.
 
@@ -164,6 +165,11 @@ def server_args(
             raise ValueError(f"cannot write an audit log at {audit_log}: "
                              "give a file in a folder that exists")
         out += ["--audit-log", str(path)]
+    if max_move_seconds is not None:
+        # Same check as the server's at start: NaN, inf, 0 and negatives are refused.
+        if not math.isfinite(max_move_seconds) or max_move_seconds <= 0:
+            raise ValueError(f"--max-move-seconds must be positive, got {max_move_seconds}")
+        out += ["--max-move-seconds", _number(max_move_seconds)]
     if provider and provider != "rule":
         known = _known_providers()
         if provider not in known:
@@ -171,6 +177,12 @@ def server_args(
                              f"{', '.join(known)}")
         out += ["--provider", provider]
     return out
+
+
+def _number(value: float) -> str:
+    """``value`` as short text that reads back as the same number."""
+    short = f"{value:g}"
+    return short if float(short) == value else repr(value)
 
 
 def _refuse_blank(flag: str, value: str | None, wanted: str) -> None:
@@ -526,6 +538,7 @@ def _merged_flags(args: argparse.Namespace) -> dict:
         ),
         "audit_log": pick("audit_log"),
         "provider": pick("provider"),
+        "max_move_seconds": pick("max_move_seconds"),
     }
 
 

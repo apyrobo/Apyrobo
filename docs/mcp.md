@@ -178,8 +178,8 @@ your OS. Use `cursor`, `vscode`, `claude-code`, `codex` or `gemini` instead of
 `claude-desktop` for those clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx` (the same install you ran it from, so a venv works without
 activating it; without uvx on `PATH` that is the default). It takes the same `--robot`, `--policy`, `--policy-file`,
-`--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves` and `--audit-log`
-flags as `apyrobo mcp`, on either side of `config`
+`--max-speed`, `--no-go`, `--allow-area`, `--confirm-moves`, `--audit-log` and
+`--max-move-seconds` flags as `apyrobo mcp`, on either side of `config`
 (`apyrobo mcp --max-speed 0.5 config cursor` works too; a flag after `config`
 wins, zones from both sides are kept), checks them, and makes relative
 `--policy-file` and `--audit-log` paths absolute. It only prints: merge the output
@@ -246,7 +246,7 @@ starting `STOPPED:` with the last known position (`timed_out` in the
 `--audit-log`). The limit is per call, not per session, and is off by default.
 Pick `N` longer than your longest expected move. This is tested on `mock://`
 and a slow test adapter, not on `ros2://` or hardware. `apyrobo mcp config`
-does not add the flag yet; add it to the generated arguments by hand.
+carries the flag into the config it prints, on either side of `config`.
 
 ### Stopping a move
 

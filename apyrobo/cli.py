@@ -3496,6 +3496,9 @@ def main() -> None:
                               help="Ask the user to confirm every motion command")
     p_mcp_config.add_argument("--audit-log", dest="cfg_audit_log", default=None, metavar="PATH",
                               help="Append one JSON line per motion decision to PATH")
+    p_mcp_config.add_argument("--max-move-seconds", dest="cfg_max_move_seconds", type=float,
+                              default=None, metavar="N",
+                              help="Stop a move still running after N seconds (default: no limit)")
     p_mcp_config.add_argument("--provider", dest="cfg_provider", default=None,
                               metavar="PROVIDER",
                               help="Planner for plan_task/execute_task (default: rule)")
