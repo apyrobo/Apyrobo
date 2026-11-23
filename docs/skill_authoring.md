@@ -145,18 +145,35 @@ graph.add_skill(
 
 # Navigate home after scanning
 from apyrobo.skills.skill import Skill
+from apyrobo.skills.handlers import skill_handler
+
 go_home = Skill(
     skill_id="go_home",
     name="Go Home",
     required_capability=CapabilityType.NAVIGATE,
     parameters={"x": 0.0, "y": 0.0, "speed": 0.5},
 )
+
+# A new skill_id needs a handler: without one the graph fails with
+# "Skill 'go_home' failed: No handler registered for 'go_home'".
+@skill_handler("go_home")
+def go_home_handler(robot, params):
+    robot.move(x=params["x"], y=params["y"], speed=params.get("speed"))
+    return True
+
 graph.add_skill(go_home, depends_on=["scan_area"])
 
 # Execute
 executor = CustomExecutor(robot)
 result = executor.execute_graph(graph)
+print(result.status.value)  # completed
 ```
+
+Every skill in a graph needs a handler: a built-in one (the table at the end),
+one from `@skill_handler("<skill_id>")`, or a branch in your own
+`_dispatch_skill` as in step 3. When a skill fails, `result.error` names the
+skill and the reason, for example
+`Skill 'go_home' failed: No handler registered for 'go_home'`.
 
 ### Parallel Execution
 

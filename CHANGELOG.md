@@ -307,6 +307,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A failed skill graph's `TaskResult.error` now says why, not only which
+  skill: `Skill 'go_home' failed: No handler registered for 'go_home'`
+  (or the precondition, timeout or exception text) instead of
+  `Skill 'go_home' failed`. docs/skill_authoring.md step 4 ended failed
+  as written, because its `go_home` skill had no handler; the guide now
+  registers one with `@skill_handler` and says every new `skill_id` needs
+  one.
 - docs/deployment.md promised what the REST gateway does not do: Redis
   shared state (`APYROBO_REDIS_URL`), a SQLite audit database
   (`APYROBO_AUDIT_DB`), `APYROBO_LOG_LEVEL`, a Prometheus `GET /metrics`
