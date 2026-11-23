@@ -70,7 +70,7 @@ class TestTaskSplitting:
     ) -> None:
         """With multiple robots, skills are distributed."""
         coord = SwarmCoordinator(two_robot_bus)
-        assignments = coord.split_task("go to 1, 2 then pick up object", agent)
+        assignments = coord.split_task("pick up the object at (1, 2)", agent)
         # Should have at least one assignment
         assert len(assignments) >= 1
         # All robot IDs should be registered
@@ -82,7 +82,7 @@ class TestTaskSplitting:
     ) -> None:
         """Round-robin distributes evenly."""
         coord = SwarmCoordinator(two_robot_bus, strategy="round_robin")
-        assignments = coord.split_task("go to 1, 2 then pick up object", agent)
+        assignments = coord.split_task("pick up the object at (1, 2)", agent)
         assert len(assignments) >= 1
 
     def test_no_robots_raises(self, bus: SwarmBus, agent: Agent) -> None:

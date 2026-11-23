@@ -107,13 +107,14 @@ class TestAgentPatterns:
         graph = agent.plan("stop", robot)
         assert len(graph) > 0
 
-    def test_agent_unknown_task_falls_through_to_fallback(self, robot):
+    def test_agent_unknown_task_is_refused_not_reported_done(self, robot):
         agent = Agent(
             provider="rule",
             patterns=[(r"only_matches_special", "special_skill")],
         )
-        # This task doesn't match the custom pattern OR any built-in
+        # This task doesn't match the custom pattern OR any built-in: the
+        # planner's status-report fallback would end in "completed" with
+        # nothing done, so the agent refuses it and says why.
         graph = agent.plan("zzz_no_match_at_all_xyzzy", robot)
-        # Falls back to report_status
-        skill_ids = [s.skill_id.rsplit("_", 1)[0] for s in graph.get_execution_order()]
-        assert "report_status" in skill_ids
+        assert len(graph) == 0
+        assert "did not recognise this task" in agent.last_refusal

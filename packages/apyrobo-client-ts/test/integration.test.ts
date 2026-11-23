@@ -25,7 +25,7 @@ test(
     const client = await ApyroboClient.spawn(command, args);
     try {
       const response = await client.submitTask(
-        "navigate to the dock and pick up the box",
+        "pick up the box at (1, 2) and deliver it to (3, 4)",
         { robotUri: "mock://ts-integration", timeoutMs: 60_000 }
       );
       assert.ok(isPlanned(response), JSON.stringify(response));

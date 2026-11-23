@@ -305,10 +305,10 @@ class TestAgentTelemetryIntegration:
 
         agent = Agent(provider="rule", telemetry_provider=telemetry)
 
-        mock_robot = MagicMock()
-        mock_robot.capabilities.return_value.capabilities = []
-        mock_robot.capabilities.return_value.name = "MockBot"
+        from apyrobo.core.robot import Robot
 
-        agent.plan("navigate to dock", mock_robot)
+        robot = Robot.discover("mock://telemetry_bot")
+
+        agent.plan("go to (2, 1)", robot)
         # get_context_string should NOT have been called for rule provider
         telemetry.get_context_string.assert_not_called()

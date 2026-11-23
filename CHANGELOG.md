@@ -1037,6 +1037,16 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- `Agent.plan` and `Agent.execute` with the rule planner (including
+  `provider="auto"` without litellm) now refuse a task they cannot read, the
+  way `apyrobo mcp` and `apyrobo plan` already did: no made-up target such as
+  (0, 0) or (5, 5), and no "completed" when a step was dropped. `execute`
+  returns a failed `TaskResult` with the reason, which is also in
+  `Agent.last_refusal`; `plan` returns an empty graph. A task matched by a
+  pattern you registered yourself is not checked. Tasks that give
+  coordinates, like 'go to (3, 3)' or 'deliver from (1, 1) to (5, 1)', plan
+  as before.
+
 - docs/comparison.md names armguard-mcp, a safety-first MCP server for ROS 2
   arms, as the arm-side neighbour of `apyrobo mcp`. docs/mcp.md says a Nav2
   costmap speed filter publishes on the same `speed_limit` topic and replaces the

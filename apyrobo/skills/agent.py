@@ -1422,6 +1422,8 @@ class Agent:
         # The provider that made the latest plan: self._provider, or the rule
         # planner when an LLM failed and plan() fell back to it.
         self.planned_by: AgentProvider = self._provider
+        # Why the latest rule-planner plan was refused, or None (see plan()).
+        self.last_refusal: str | None = None
 
         self._last_events: list[ExecutionEvent] = []
         self._last_state: ExecutionState | None = None
@@ -1450,9 +1452,52 @@ class Agent:
             catalog.update(self._library.all_skills())
         return catalog
 
-    def plan(self, task: str, robot: Robot, urgency: str | None = None) -> SkillGraph:
+    def plan(
+        self, task: str, robot: Robot, urgency: str | None = None, *, check: bool = True
+    ) -> SkillGraph:
         """
         Plan a task: turn natural language into a SkillGraph.
+
+        A plan from the rule planner is held to the checks ``apyrobo mcp`` and
+        ``apyrobo plan`` make: a task it cannot plan as asked (no readable
+        target, or steps it would drop) gives an empty graph, and
+        :attr:`last_refusal` says why. It never drives to a placeholder. A task
+        matched by a pattern you registered yourself
+        (``RuleBasedProvider(patterns=...)``) is planned as you mapped it.
+        ``check=False`` returns the plan as the provider made it, unchecked
+        (``apyrobo mcp`` runs these checks itself).
+
+        Returns a SkillGraph ready for execution.
+        """
+        self.last_refusal = None
+        graph = self._plan_unchecked(task, robot, urgency=urgency)
+        rule = self.planned_by
+        if not check or not isinstance(rule, RuleBasedProvider):
+            return graph
+        lowered = task.lower()
+        if len(graph) and any(re.search(p, lowered) for p, _ in rule._extra_patterns):
+            return graph
+        from apyrobo.mcp_server import RobotToolbox
+
+        # The same checks the MCP server runs, on the plan already made.
+        uri = getattr(robot, "robot_id", None) or "this robot"
+        _, plan = RobotToolbox(robot, robot, self, uri)._check_plan(task, task, graph)
+        reason = plan.get("reason")
+        if reason is None:
+            return graph
+        # The MCP wording names MCP tools; say it for the Python API.
+        self.last_refusal = reason.replace(
+            "use move_to and rotate directly, or start the server with --provider llm",
+            'use Agent(provider="llm")',
+        )
+        logger.warning("Agent: task not planned: %s", self.last_refusal)
+        return SkillGraph()
+
+    def _plan_unchecked(
+        self, task: str, robot: Robot, urgency: str | None = None
+    ) -> SkillGraph:
+        """
+        Plan a task as the provider returns it, without the rule-planner checks.
 
         IN-01: Passes urgency= to the router if using routed provider.
         IN-09: Uses constrained prompt if enabled.
@@ -1639,7 +1684,7 @@ class Agent:
                 return TaskResult(
                     task_name=task,
                     status="failed",
-                    error="Agent could not create a plan for this task",
+                    error=self.last_refusal or "Agent could not create a plan for this task",
                 )
 
             # RP-01: Only LLMProvider-backed agents can replan.

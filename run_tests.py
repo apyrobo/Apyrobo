@@ -323,7 +323,7 @@ section("Phase 2: Agent Planning")
 def test_agent_plan_delivery():
     robot = Robot.discover("mock://tb4")
     agent = Agent(provider="rule")
-    graph = agent.plan("deliver package to room 3", robot)
+    graph = agent.plan("deliver package from (1, 2) to (3, 4)", robot)
     assert len(graph) >= 3  # navigate, pick, navigate, place
     order = graph.get_execution_order()
     skill_names = [s.name for s in order]
@@ -640,7 +640,7 @@ def test_coordinator_single_robot():
     bus.register(r1)
     agent = Agent(provider="rule")
     coord = SwarmCoordinator(bus)
-    result = coord.execute_task("deliver package to room 3", agent)
+    result = coord.execute_task("deliver package from (1, 2) to (3, 4)", agent)
     assert result.status == TaskStatus.COMPLETED
     assert result.steps_completed > 0
 
@@ -912,7 +912,7 @@ def test_confidence_report_to_dict():
 def test_confidence_delivery():
     robot = Robot.discover("mock://tb4")
     agent = Agent(provider="rule")
-    graph = agent.plan("deliver package to room 3", robot)
+    graph = agent.plan("deliver package from (1, 2) to (3, 4)", robot)
     estimator = ConfidenceEstimator()
     report = estimator.assess(graph, robot)
     assert report.confidence > 0.0
@@ -3312,14 +3312,14 @@ def test_in01_urgency_forwarding():
     """Agent.execute() accepts urgency= and forwards it to the router."""
     agent = Agent(provider="rule")
     robot = Robot.discover("mock://tb4")
-    result = agent.execute("deliver package to room 3", robot, urgency="high")
+    result = agent.execute("deliver package from (1, 2) to (3, 4)", robot, urgency="high")
     assert result.status.value == "completed"
 
 def test_in01_urgency_via_plan():
     """Agent.plan() accepts urgency= kwarg."""
     agent = Agent(provider="rule")
     robot = Robot.discover("mock://tb4")
-    graph = agent.plan("deliver package", robot, urgency="normal")
+    graph = agent.plan("deliver package from (1, 2) to (3, 4)", robot, urgency="normal")
     assert len(graph) > 0
 
 def test_in01_urgency_routed():
@@ -3414,7 +3414,7 @@ def test_in03_stream_plan_fallback():
     """stream_plan() yields steps even from non-streaming providers."""
     agent = Agent(provider="rule")
     robot = Robot.discover("mock://tb4")
-    steps = list(agent.stream_plan("deliver package to room 3", robot))
+    steps = list(agent.stream_plan("deliver package from (1, 2) to (3, 4)", robot))
     assert len(steps) > 0
     assert steps[0]["skill_id"] == "navigate_to"
 
@@ -3540,13 +3540,12 @@ def test_in06_multi_turn_with_answer():
     assert len(result) > 0
 
 def test_in06_agent_plan_interactive():
-    """Agent.plan_interactive() handles clarification via callback."""
+    """Agent.plan_interactive() plans a task the rule fallback can read."""
     agent = Agent(provider="multi_turn")
     robot = Robot.discover("mock://tb4")
-    # Short ambiguous task with answer callback
     graph = agent.plan_interactive(
-        "go", robot,
-        answer_callback=lambda q, opts: "room 3",
+        "go to (3, 3)", robot,
+        answer_callback=lambda q, opts: "(3, 3)",
     )
     assert len(graph) > 0
 
@@ -3698,7 +3697,7 @@ def test_in09_agent_constrained_prompt_flag():
     """Agent accepts constrained_prompt= flag."""
     agent = Agent(provider="rule", constrained_prompt=True)
     robot = Robot.discover("mock://tb4")
-    result = agent.execute("deliver package", robot)
+    result = agent.execute("deliver package from (1, 2) to (3, 4)", robot)
     assert result.status.value == "completed"
 
 test("IN-09: Constrained prompt with signatures", test_in09_constrained_prompt_includes_signatures)

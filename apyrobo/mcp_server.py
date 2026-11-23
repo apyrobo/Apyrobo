@@ -930,13 +930,25 @@ class RobotToolbox:
         return text
 
     def _plan(self, task: str) -> tuple[Any, dict[str, Any]]:
-        from apyrobo.safety.confidence import ConfidenceEstimator
         from apyrobo.skills.agent import RuleBasedProvider
 
         text = task
         if isinstance(getattr(self.agent, "provider", None), RuleBasedProvider):
             text = self._rule_planner_text(task)
-        graph = self.agent.plan(text, self.robot)
+        # Unchecked: _check_plan below is the check Agent.plan would run.
+        from apyrobo.skills.agent import Agent
+
+        if isinstance(self.agent, Agent):
+            graph = self.agent.plan(text, self.robot, check=False)
+        else:
+            graph = self.agent.plan(text, self.robot)
+        return self._check_plan(task, text, graph)
+
+    def _check_plan(self, task: str, text: str, graph: Any) -> tuple[Any, dict[str, Any]]:
+        """Describe a plan, refused with a reason when the rule planner misread it."""
+        from apyrobo.safety.confidence import ConfidenceEstimator
+        from apyrobo.skills.agent import RuleBasedProvider
+
         steps = [
             {
                 "skill_id": s.skill_id,

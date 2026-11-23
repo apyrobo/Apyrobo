@@ -161,7 +161,7 @@ class TestThroughputBenchmark:
         start = time.time()
         completed = 0
         for _ in range(100):
-            result = agent.execute("go to 1 1", mock_robot)
+            result = agent.execute("go to (1, 1)", mock_robot)
             if result.status == TaskStatus.COMPLETED:
                 completed += 1
         elapsed = time.time() - start
@@ -205,13 +205,13 @@ class TestThroughputBenchmark:
         # Sequential baseline: 10 tasks on one robot
         start_seq = time.time()
         for _ in range(10):
-            agent.execute("go to 1 1", robots[0])
+            agent.execute("go to (1, 1)", robots[0])
         elapsed_seq = time.time() - start_seq
 
         # Parallel via swarm: 10 tasks distributed across 3 robots
         start_par = time.time()
         for _ in range(10):
-            coordinator.execute_task("go to 1 1", agent)
+            coordinator.execute_task("go to (1, 1)", agent)
         elapsed_par = time.time() - start_par
 
         print(
@@ -288,7 +288,7 @@ class TestThroughputBenchmark:
         agent = Agent(provider="rule")
 
         def run_task() -> bool:
-            result = agent.execute("go to 1 1", mock_robot)
+            result = agent.execute("go to (1, 1)", mock_robot)
             return result.status == TaskStatus.COMPLETED
 
         ratio, early, late = self._gate_ratio(run_task)
