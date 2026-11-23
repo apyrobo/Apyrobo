@@ -369,16 +369,15 @@ runner.start()
 
 ## Generating Full API Docs
 
-To generate browsable HTML docs from docstrings:
+To generate browsable HTML docs from docstrings with
+[pdoc](https://pdoc.dev):
 
 ```bash
-# Using pdoc
 pip install pdoc
-pdoc apyrobo --html --output-dir docs/api/
-
-# Using mkdocs + mkdocstrings
-pip install mkdocs mkdocs-material mkdocstrings[python]
-mkdocs build
+pdoc apyrobo -o docs/api/
 ```
 
-See [mkdocs.yml](../mkdocs.yml) for configuration (if present).
+Open `docs/api/index.html`. The page covers everything `apyrobo` exports
+(`Robot`, `Agent`, `SkillGraph`, `SafetyEnforcer`, ...). Name a submodule to
+add its own page, for example `pdoc apyrobo apyrobo.safety -o docs/api/`.
+Without `-o`, pdoc serves the docs on a local web server instead.

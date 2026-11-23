@@ -307,6 +307,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/api_reference.md "Generating Full API Docs" ran pdoc3 flags
+  (`pdoc apyrobo --html --output-dir docs/api/`), which pdoc refuses with
+  "unrecognized arguments: --html", and `mkdocs build` with no mkdocs.yml in
+  the repo. It now says `pdoc apyrobo -o docs/api/`, which writes the page for
+  everything `apyrobo` exports; `docs/api/` is gitignored and a test runs the
+  command when pdoc is installed.
 - CONTRIBUTING.md's Docker setup ran `docker compose -f
   docker/docker-compose.yml exec apyrobo bash`, which fails with
   `service "apyrobo" is not running`: that file has no `apyrobo` service. It
