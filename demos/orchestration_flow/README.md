@@ -35,8 +35,10 @@ policy, or the world and re-run it.
 
 ## Try changing
 
-- **The task** (`TASK` in `flow.py`): "patrol the perimeter" plans a different
-  skill set; watch the graph and execute checklist change.
+- **The task** (`TASK` in `flow.py`): "go to (10.2, 4.0)" plans a single drive;
+  watch the graph and execute checklist change. The rule planner refuses a task
+  it cannot read (no coordinates, like "patrol the perimeter"): the plan is
+  empty, `agent.last_refusal` says why, and nothing moves.
 - **The policy** (`SafetyPolicy(...)`): lower `max_speed` and the clamp figure
   moves with it; move the `collision_zones` rectangle and the robot re-routes.
 - **The provider**: swap `Agent(provider="rule")` for `Agent(provider="anthropic")`

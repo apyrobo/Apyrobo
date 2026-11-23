@@ -124,7 +124,9 @@ def main() -> None:
             blocked += 1
         else:
             # All clear — execute the task
-            plan = agent.plan("navigate_to", robot)
+            # One stand-in drive per allowed task (the rule planner needs
+            # coordinates; a bare "navigate_to" is refused, not guessed).
+            plan = agent.plan("go to (2, 1)", robot)
             result = executor.execute_graph(plan)
             if result.status.value == "completed":
                 status = _c("ALLOWED ", GREEN)

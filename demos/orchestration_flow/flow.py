@@ -47,7 +47,7 @@ HERE = Path(__file__).resolve().parent
 # ---------------------------------------------------------------------------
 # Scenario
 # ---------------------------------------------------------------------------
-TASK = "deliver the package to the dock"
+TASK = "deliver the package from (2.6, 6.6) to (10.2, 4.0)"  # shelf to dock
 ROBOT_URI = "mock://courier-01"
 REQUESTED_SPEED = 2.5  # m/s the planner would like — safety will clamp it
 
