@@ -23,6 +23,12 @@ python benchmarks/benchmark_suite.py --json            # machine-readable
 | Safety policy enforcement | 15 | 96 | 6.4× less code |
 | **Total** | **83** | **428** | **5.2× less code** |
 
+Every task gives the planner coordinates it can read (for example
+`go to (3, 4)` and `deliver from (1, 1) to (5, 1)`), and every run is checked:
+the robot must end where the task said and the safety check must flag exactly
+the three violating actions. `success_rate` in the JSON is the share of runs
+that completed, and the script exits 1 if any run did not.
+
 ## Metrics
 
 - **Setup ms** — cold-start time to init `Robot` + `Agent`
@@ -33,7 +39,7 @@ python benchmarks/benchmark_suite.py --json            # machine-readable
 
 ## CI
 
-Copy `.github/workflows/benchmark.yml` to your repo's `.github/workflows/` to run
+Copy `benchmarks/.github/workflows/benchmark.yml` to your repo's `.github/workflows/` to run
 benchmarks automatically on every push that touches `apyrobo/` or `benchmarks/`.
 Results are posted to the GitHub Actions job summary and saved as artifacts.
 
