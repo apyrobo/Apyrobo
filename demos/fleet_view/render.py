@@ -214,7 +214,10 @@ def main() -> None:
         resp = server._handle(OrchestrationMessage(
             task=task, robot_uri=f"mock://{robot_id}"))
         meta = resp.metadata
-        if meta.get("status") == "planned":
+        refused = (meta.get("execution") or {}).get("status") == "failed"
+        if meta.get("status") == "planned" and refused:
+            log.add("REFUSED", meta["execution"]["error"], ERRC)
+        elif meta.get("status") == "planned":
             skills = " → ".join(s["name"] for s in meta.get("skills", []))
             log.add("PLANNED", skills or "(no steps)", OKC)
         else:
@@ -222,14 +225,14 @@ def main() -> None:
 
     # (frame_at, task, robot) — a tour that shows multi-step plans + zones.
     script = [
-        (6, "deliver a package to the dock", "hauler_bot"),
-        (20, "survey the warehouse shelves", "drone_00"),
-        (32, "carry parts to the lab", "picker_bot"),
+        (6, "deliver from the warehouse (15, 12) to the dock (90, 30)", "hauler_bot"),
+        (20, "go to the warehouse at (15, 12)", "drone_00"),
+        (32, "pick up the box at (50, 8)", "picker_bot"),
         (44, "go to (20, 40)", "drone_01"),
-        (56, "inspect the charging station", "scout_bot"),
-        (70, "patrol the perimeter", "drone_02"),
-        (84, "deliver a package to the dock", "picker_bot"),
-        (96, "scan the kitchen area", "hauler_bot"),
+        (56, "go to the charging station at (50, 52)", "scout_bot"),
+        (70, "patrol the perimeter", "drone_02"),  # refused: no target
+        (84, "deliver from the lab (50, 8) to the dock (90, 30)", "picker_bot"),
+        (96, "go to the kitchen at (15, 48)", "hauler_bot"),
     ]
     total_frames = 150
     auto_rng = __import__("random").Random(5)

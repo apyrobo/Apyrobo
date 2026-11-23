@@ -70,25 +70,88 @@ class TestTargeting:
         x, y = srv._target_for("go to (9999, -9999)")
         assert 0 <= x <= fv.WORLD[0] and 0 <= y <= fv.WORLD[1]
 
-    def test_unmatched_task_gets_in_bounds_waypoint(self, fv):
+    def test_delivery_targets_its_last_coordinates(self, fv):
         fleet = fv.build_fleet()
         srv = fv.FleetViewServer(_CollectingAdapter(), Agent(provider="rule"), fleet)
-        x, y = srv._target_for("do something whimsical")
-        assert 0 <= x <= fv.WORLD[0] and 0 <= y <= fv.WORLD[1]
+        task = "deliver from the warehouse (15, 12) to the dock (90, 30)"
+        assert srv._target_for(task) == (90.0, 30.0)
+
+    def test_unmatched_task_has_no_target(self, fv):
+        fleet = fv.build_fleet()
+        srv = fv.FleetViewServer(_CollectingAdapter(), Agent(provider="rule"), fleet)
+        assert srv._target_for("do something whimsical") is None
+
+
+def _send(srv, task, robot_id):
+    return srv._handle(OrchestrationMessage(task=task, robot_uri=f"mock://{robot_id}"))
 
 
 class TestExecution:
     def test_handle_moves_the_addressed_robot(self, server):
         srv, fleet = server
         target_id = fleet[-1].robot_id  # a ground robot
-        response = srv._handle(OrchestrationMessage(
-            task="deliver a package to the dock",
-            robot_uri=f"mock://{target_id}",
-        ))
+        response = _send(srv, "go to the dock at (90, 30)", target_id)
         assert response.metadata["status"] == "planned"
+        assert "execution" not in response.metadata
         sim = srv.fleet[target_id]
-        assert sim.target == pytest.approx(srv._target_for("deliver a package to the dock"))
+        assert sim.target == pytest.approx((90.0, 30.0))
         assert response.metadata["target"] == list(sim.target)
+
+    def test_delivery_drives_to_the_drop_off(self, server):
+        srv, fleet = server
+        rid = fleet[0].robot_id
+        response = _send(srv, "deliver from the warehouse (15, 12) to the dock (90, 30)", rid)
+        assert response.metadata["count"] == 4
+        assert srv.fleet[rid].target == pytest.approx((90.0, 30.0))
+
+    @pytest.mark.parametrize("task", [
+        "patrol the perimeter",          # unrecognised: planner falls back to Report Status
+        "deliver a package to the dock",  # a zone name, no coordinates
+        "survey the warehouse shelves",
+        "go to (10, 10) then go to (20, 20)",  # would drop a target
+    ])
+    def test_refused_task_moves_no_robot(self, server, task):
+        srv, fleet = server
+        before = {sim.robot_id: (sim.x, sim.y, sim.target) for sim in fleet}
+        response = _send(srv, task, fleet[-1].robot_id)
+        meta = response.metadata
+        assert meta["status"] == "planned"
+        assert meta["count"] == 0
+        assert meta["execution"]["status"] == "failed"
+        assert meta["execution"]["steps_completed"] == 0
+        assert meta["execution"]["error"].startswith(("Not planned", "No target"))
+        assert "target" not in meta
+        assert {sim.robot_id: (sim.x, sim.y, sim.target) for sim in fleet} == before
+
+    def test_refusal_reason_is_this_tasks(self, server):
+        srv, fleet = server
+        rid = fleet[-1].robot_id
+        first = _send(srv, "deliver a package to the dock", rid).metadata["execution"]["error"]
+        assert first.startswith("No target")
+        # A later readable task clears it and moves; a later refusal has its own reason.
+        assert "execution" not in _send(srv, "go to (20, 20)", rid).metadata
+        second = _send(srv, "patrol the perimeter", fleet[0].robot_id).metadata
+        assert second["execution"]["error"].startswith("Not planned")
+
+    def test_status_report_moves_no_robot(self, server):
+        srv, fleet = server
+        rid = fleet[1].robot_id
+        response = _send(srv, "report status", rid)
+        assert response.metadata["count"] == 1
+        assert "execution" not in response.metadata
+        assert srv.fleet[rid].target is None
+        assert "target" not in response.metadata
+
+    def test_every_auto_task_is_planned_and_drives(self, fv):
+        """The auto-dispatcher only sends tasks the rule planner reads."""
+        fleet = fv.build_fleet()
+        srv = fv.FleetViewServer(_CollectingAdapter(), Agent(provider="rule"), fleet)
+        for task in fv.PATROL_TASKS:
+            sim = fleet[-1]
+            sim.target = None
+            meta = _send(srv, task, sim.robot_id).metadata
+            assert "execution" not in meta, (task, meta.get("execution"))
+            assert sim.target is not None, task
 
     def test_tick_advances_toward_target_and_arrives(self, fv):
         sim = fv.SimRobot(
