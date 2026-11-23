@@ -1424,6 +1424,8 @@ class Agent:
         self.planned_by: AgentProvider = self._provider
         # Why the latest rule-planner plan was refused, or None (see plan()).
         self.last_refusal: str | None = None
+        # Set by plan_interactive() so the provider's question reaches its callback.
+        self._pass_clarification = False
 
         self._last_events: list[ExecutionEvent] = []
         self._last_state: ExecutionState | None = None
@@ -1550,12 +1552,20 @@ class Agent:
             plan_kwargs["urgency"] = urgency
 
         self.planned_by = self._provider
+        if isinstance(self._provider, MultiTurnProvider) and isinstance(
+            self._provider._inner, RuleBasedProvider
+        ):
+            # A clear task goes to the inner rule planner, so it gets its checks.
+            self.planned_by = self._provider._inner
         try:
             steps = self._provider.plan(task, available_skills, capability_names, **plan_kwargs)
         except TypeError:
             # Provider doesn't accept urgency kwarg
             steps = self._provider.plan(task, available_skills, capability_names)
         except Exception as exc:
+            if isinstance(exc, ClarificationNeeded) and getattr(self, "_pass_clarification", False):
+                # plan_interactive() asks its answer_callback; not a provider failure.
+                raise
             # Degraded-mode fallback: LLM provider failed at runtime (network error,
             # rate limit, wrong API key, etc.) — fall back to rule-based so the robot
             # is never stranded waiting for an unavailable LLM.
@@ -1899,33 +1909,21 @@ class Agent:
         Returns:
             SkillGraph after clarification (if needed)
         """
+        if answer_callback is None:
+            # Nobody to ask: plan as plan() does (a question from the provider
+            # falls back to the rule planner, with its checks).
+            return self.plan(task, robot, urgency=urgency)
+        self._pass_clarification = True
         try:
             return self.plan(task, robot, urgency=urgency)
         except ClarificationNeeded as e:
-            if answer_callback is None:
-                # No callback — just proceed with original task using fallback
-                logger.warning("Clarification needed but no callback: %s", e.question)
-                # Fall through to rule-based
-                provider = RuleBasedProvider()
-                caps = robot.capabilities()
-                catalog = self._get_skill_catalog()
-                available_skills = [
-                    {
-                        "skill_id": s.skill_id, "name": s.name,
-                        "description": s.description,
-                        "required_capability": s.required_capability.value,
-                        "parameters": s.parameters,
-                    }
-                    for s in catalog.values()
-                ]
-                capability_names = [c.capability_type.value for c in caps.capabilities]
-                steps = provider.plan(task, available_skills, capability_names)
-                return self._steps_to_graph(steps, catalog)
-
-            # Get answer from user
-            answer = answer_callback(e.question, e.options)
-            augmented_task = f"{task} ({answer})"
-            return self.plan(augmented_task, robot, urgency=urgency)
+            question, options = e.question, e.options
+        finally:
+            self._pass_clarification = False
+        # Get answer from user; a second question falls back as plan() does.
+        answer = answer_callback(question, options)
+        augmented_task = f"{task} ({answer})"
+        return self.plan(augmented_task, robot, urgency=urgency)
 
     def _steps_to_graph(self, steps: list[dict[str, Any]],
                         catalog: dict[str, Skill]) -> SkillGraph:
