@@ -11,7 +11,11 @@ Run locally:
     python benchmarks/benchmark_suite.py --iterations 50 # more samples
 
 Run in CI:
-    see .github/workflows/benchmark.yml
+    see benchmarks/.github/workflows/benchmark.yml
+
+Every task gives the rule planner coordinates it can read (the same tasks
+``apyrobo mcp`` accepts), and every run is checked: success_rate is the share
+of runs that completed, and the script exits 1 if any run did not.
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ sys.path.insert(0, __file__.rsplit("/benchmarks/", 1)[0])
 
 from apyrobo import Agent, MockAdapter, Robot, SkillExecutor
 from apyrobo.coordination.bus import MultiAgentCoordinator, TaskBus
+from apyrobo.core.schemas import TaskStatus
 from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
 
 # ---------------------------------------------------------------------------
@@ -57,7 +62,16 @@ class BenchmarkResult:
     recovery_ms: list[float] = field(default_factory=list)
     apyrobo_loc: int = 0
     ros2_loc:    int = 0
-    success_rate: float = 1.0
+    runs: int = 0
+    completed: int = 0
+
+    @property
+    def success_rate(self) -> float:
+        return round(self.completed / self.runs, 3) if self.runs else 0.0
+
+    def record(self, ok: bool) -> None:
+        self.runs += 1
+        self.completed += int(ok)
 
     def median(self, samples: list[float]) -> float:
         return statistics.median(samples) if samples else 0.0
@@ -91,6 +105,33 @@ def _time_it(fn: Callable) -> float:
     return (time.perf_counter() - t0) * 1000
 
 
+def _timed(fn: Callable, *args: object) -> tuple[float, object]:
+    t0 = time.perf_counter()
+    value = fn(*args)
+    return (time.perf_counter() - t0) * 1000, value
+
+
+def _done(task_result) -> bool:
+    return getattr(task_result, "status", None) == TaskStatus.COMPLETED
+
+
+# Tasks the rule planner reads in full. A task with no coordinates
+# ("navigate_to") makes it drive to a made-up (0, 0) and report completed,
+# which would time a robot going nowhere.
+NAVIGATE_TASK = "go to (3, 4)"
+PICK_AND_PLACE_TASK = "deliver from (1, 1) to (5, 1)"
+WAYPOINTS = [(1, 0), (2, 1), (3, 0), (2, -1), (1, 1)]
+PATROL_TASKS = [f"go to ({x}, {y})" for x, y in WAYPOINTS]
+FLEET_TASKS = ["go to (1, 2)", "deliver from (1, 1) to (5, 1)", "go to (3, 4)"]
+SAFETY_ACTIONS = [
+    ("navigate at 0.3 m/s to kitchen", False),
+    ("navigate at 2.0 m/s to warehouse", True),   # speed violation
+    ("navigate at 0.4 m/s; 10% battery", True),   # battery violation
+    ("navigate at 0.2 m/s to lobby", False),
+    ("navigate at 1.5 m/s to dock", True),        # speed violation
+]
+
+
 # ---------------------------------------------------------------------------
 # Task 1: Navigate to point
 # ---------------------------------------------------------------------------
@@ -105,9 +146,11 @@ def bench_navigate(n: int) -> BenchmarkResult:
         agent = Agent(provider="rule")
         robot = Robot("mock://bench", MockAdapter("bench"))
         executor = SkillExecutor(robot)
-        result.plan_ms.append(_time_it(lambda: agent.plan("navigate_to", robot)))
-        plan = agent.plan("navigate_to", robot)
-        result.exec_ms.append(_time_it(lambda: executor.execute_graph(plan)))
+        ms, plan = _timed(agent.plan, NAVIGATE_TASK, robot)
+        result.plan_ms.append(ms)
+        ms, outcome = _timed(executor.execute_graph, plan)
+        result.exec_ms.append(ms)
+        result.record(_done(outcome) and robot.get_position() == (3.0, 4.0))
     return result
 
 
@@ -121,21 +164,17 @@ def bench_pick_and_place(n: int) -> BenchmarkResult:
         agent = Agent(provider="rule")
         robot = Robot("mock://arm", MockAdapter("arm"))
         executor = SkillExecutor(robot)
-        result.plan_ms.append(_time_it(lambda: agent.plan("pick_object", robot)))
-        pick_plan = agent.plan("pick_object", robot)
-        place_plan = agent.plan("place_object", robot)
-        result.exec_ms.append(_time_it(lambda: (
-            executor.execute_graph(pick_plan),
-            executor.execute_graph(place_plan),
-        )))
+        ms, plan = _timed(agent.plan, PICK_AND_PLACE_TASK, robot)
+        result.plan_ms.append(ms)
+        ms, outcome = _timed(executor.execute_graph, plan)
+        result.exec_ms.append(ms)
+        result.record(_done(outcome) and robot.get_position() == (5.0, 1.0))
     return result
 
 
 # ---------------------------------------------------------------------------
 # Task 3: Patrol route (5 waypoints)
 # ---------------------------------------------------------------------------
-
-WAYPOINTS = ["A", "B", "C", "D", "E"]
 
 def bench_patrol(n: int) -> BenchmarkResult:
     result = BenchmarkResult("patrol_route", n, apyrobo_loc=19, ros2_loc=ROS2_LOC["patrol_route"])
@@ -145,13 +184,14 @@ def bench_patrol(n: int) -> BenchmarkResult:
         executor = SkillExecutor(robot)
         t_plan = 0.0
         t_exec = 0.0
-        for wp in WAYPOINTS:
-            t0 = time.perf_counter()
-            plan = agent.plan(f"navigate_to_{wp}", robot)
-            t_plan += (time.perf_counter() - t0) * 1000
-            t0 = time.perf_counter()
-            executor.execute_graph(plan)
-            t_exec += (time.perf_counter() - t0) * 1000
+        ok = True
+        for task, (x, y) in zip(PATROL_TASKS, WAYPOINTS, strict=True):
+            ms, plan = _timed(agent.plan, task, robot)
+            t_plan += ms
+            ms, outcome = _timed(executor.execute_graph, plan)
+            t_exec += ms
+            ok = ok and _done(outcome) and robot.get_position() == (float(x), float(y))
+        result.record(ok)
         result.plan_ms.append(t_plan)
         result.exec_ms.append(t_exec)
     return result
@@ -179,11 +219,11 @@ def bench_fleet(n: int) -> BenchmarkResult:
         time.sleep(0.01)
 
         t0 = time.perf_counter()
-        tasks = ["navigate_to", "pick_object", "navigate_to"]
         with ThreadPoolExecutor(max_workers=3) as pool:
-            futs = [pool.submit(bus.dispatch, t) for t in tasks]
-            _ = [f.result() for f in futs]
+            futs = [pool.submit(bus.dispatch, t) for t in FLEET_TASKS]
+            outcomes = [f.result() for f in futs]
         result.exec_ms.append((time.perf_counter() - t0) * 1000)
+        result.record(all(o.success for o in outcomes))
 
         for coord in coords:
             coord.stop()
@@ -207,19 +247,13 @@ def bench_safety_policy(n: int) -> BenchmarkResult:
         store.add(parser.parse(rule))
     policies = store.get_active_policies()
 
-    actions = [
-        "navigate at 0.3 m/s to kitchen",    # ok
-        "navigate at 2.0 m/s to warehouse",   # speed violation
-        "navigate at 0.4 m/s; 10% battery",   # battery violation
-        "navigate at 0.2 m/s to lobby",       # ok
-        "navigate at 1.5 m/s to dock",        # speed violation
-    ]
+    actions = [action for action, _ in SAFETY_ACTIONS]
 
     for _ in range(n):
         t0 = time.perf_counter()
-        for action in actions:
-            parser.check_compliance(action, policies)
+        found = [bool(parser.check_compliance(action, policies)) for action in actions]
         result.exec_ms.append((time.perf_counter() - t0) * 1000)
+        result.record(found == [violates for _, violates in SAFETY_ACTIONS])
 
         # Recovery: detect violation → substitute safe action
         t0 = time.perf_counter()
@@ -298,6 +332,8 @@ def main() -> None:
 
     results = run_all(args.iterations)
 
+    failed = [r.task_name for r in results if r.completed < r.runs or not r.runs]
+
     if args.json:
         print(json.dumps([r.to_dict() for r in results], indent=2))
     else:
@@ -311,6 +347,10 @@ def main() -> None:
         print("    LOC:      APYROBO lines of code for this task")
         print("    ROS2 LOC: raw ROS 2 equivalent (C++/Python node)")
         print()
+
+    if failed:
+        print(f"Benchmark runs did not complete: {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

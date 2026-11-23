@@ -307,6 +307,17 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The benchmark suite (`benchmarks/benchmark_suite.py`) planned
+  `navigate_to`, `pick_object` and `navigate_to_A` with the rule planner,
+  which reads no target in them, so every "navigate", "patrol" and "fleet"
+  run drove the mock robot to a made-up (0, 0) and the JSON reported
+  `success_rate` 1.0 without checking anything. Tasks now give coordinates
+  (`go to (3, 4)`, `deliver from (1, 1) to (5, 1)`, five distinct patrol
+  waypoints), each run checks the robot ended where the task said (and that
+  the safety check flags exactly the three violating actions),
+  `success_rate` is the share of runs that completed, and the script exits 1
+  if any run did not. `benchmarks/README.md` now names the workflow file at
+  its real path, `benchmarks/.github/workflows/benchmark.yml`.
 - The MuJoCo pick-and-place demo (`demos/mujoco_pickplace/demo.py`) held
   the simulation lock while drawing each frame, so with slow (software)
   rendering the physics thread stalled, `navigate_to_0` timed out after 60 s
