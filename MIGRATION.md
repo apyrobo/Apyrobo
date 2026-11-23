@@ -21,8 +21,11 @@ pip install 'apyrobo[llm]'
 - `Agent(provider="auto")` degrades to rule-based planning and emits an
   `agent.degraded` observability event (`reason: litellm_not_installed`) —
   no crash, same behavior as the existing runtime degraded mode.
-- `Agent(provider="llm")` raises `RuntimeError` with the install hint at
-  planning time.
+- `Agent(provider="llm")` does not raise: at planning time it logs one
+  warning with the install hint (`litellm is required for LLMProvider.
+  Install it with: pip install 'apyrobo[llm]'`), emits `agent.degraded`, and
+  plans with the rule planner instead. Check `agent.planned_by` to see which
+  planner made the plan.
 - `ToolCallingAgent` and `MultiTurnAgent` fall back to their mock providers,
   as they already did.
 
@@ -50,8 +53,9 @@ existing public APIs. Upgrading from v0.4.0 is a drop-in update.
 
 ### REST API `X-API-Key` header required
 
-The new REST gateway (`apyrobo/api/`) requires an `X-API-Key` header on all
-requests. If you call the API directly, add the header:
+The new REST gateway (`apyrobo/api/`) requires an `X-API-Key` header on every
+request except `GET /health` once a key is set. If you call the API directly,
+add the header:
 
 ```python
 # Before (no auth):
@@ -66,12 +70,16 @@ resp = requests.post(
 )
 ```
 
-Configure the key in `apyrobo.yaml`:
+Set the key in the `APYROBO_API_KEY` environment variable of the process that
+serves the app, or pass it to `create_app(api_key=...)`:
 
-```yaml
-api:
-  key: "your-api-key"
+```bash
+export APYROBO_API_KEY="your-api-key"
+uvicorn apyrobo.api.app:app
 ```
+
+The gateway does not read a key from `apyrobo.yaml`. With no key set, it
+enforces no authentication at all, so set one before exposing the port.
 
 ### Auth module — new RBAC classes
 
