@@ -7,6 +7,7 @@ shell's PATH) and the config file location for this operating system. For
 Claude Code and the OpenAI Codex CLI it prints the ``mcp add`` command
 instead, and the client writes its own config. For the Gemini CLI it prints the
 ``settings.json`` entry, with the ``gemini mcp add`` line as the alternative.
+For Zed it prints the ``context_servers`` entry for Zed's settings file.
 
 With ``--ssh user@host`` the client on your laptop starts ``apyrobo mcp`` on
 the robot over ssh instead, so MCP's stdio transport needs no new port or
@@ -43,7 +44,15 @@ FIRST_PYPI_MCP_RELEASE = (4, 2, 0)
 #: installs; ``apyrobo mcp`` refuses to start with one of them without it.
 LLM_PROVIDERS = ("llm", "tool_calling")
 
-CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode", "codex", "gemini")
+CLIENTS = ("claude-desktop", "cursor", "claude-code", "vscode", "codex", "gemini", "zed")
+#: Clients whose docs say they do not support MCP elicitation, which
+#: ``--confirm-moves`` needs: with it every motion command would be refused.
+NO_ELICITATION = {
+    "zed": ("Zed does not support MCP elicitation, so with --confirm-moves every "
+            "move would be refused; Zed already asks before each tool call by "
+            "default (agent.tool_permissions.default \"confirm\"). Leave "
+            "--confirm-moves out"),
+}
 #: Clients set up with a ``<cli> mcp add <name> -- <command>`` shell line.
 ADD_COMMANDS = {"claude-code": "claude", "codex": "codex"}
 LAUNCHERS = ("auto", "uvx", "apyrobo")
@@ -362,6 +371,9 @@ def config_location(client: str, platform: str | None = None) -> str:
         return "run the command in a terminal; Codex writes it to its config.toml for you"
     if client == "gemini":
         return "~/.gemini/settings.json (or .gemini/settings.json in a project)"
+    if client == "zed":
+        # Zed's MCP docs name no path, only the command that opens the file.
+        return "your Zed settings file (in Zed, run 'zed: open settings file')"
     if client == "vscode":
         # VS Code's MCP configuration reference names this user file, under
         # $COPILOT_HOME when that is set, as the place for new setups.
@@ -372,13 +384,17 @@ def config_location(client: str, platform: str | None = None) -> str:
 
 def render(client: str, launch: Launch, name: str = "apyrobo",
            platform: str | None = None) -> str:
-    """The text to paste: JSON for desktop clients and Gemini, a command for Claude Code, Codex."""
+    """The text to paste: JSON for desktop clients, Gemini, Zed; a command for Claude Code/Codex."""
     platform = platform or sys.platform
     if client in ("claude-desktop", "cursor", "gemini"):
         # Gemini CLI's settings.json takes the same command/args entry. Never
         # "trust": true, which skips Gemini's confirmation before every tool call.
         block = {"mcpServers": {name: {"command": launch.command, "args": launch.args}}}
         return json.dumps(block, indent=2)
+    if client == "zed":
+        # Zed's settings take {"context_servers": {name: {command, args, env}}}.
+        entry = {"command": launch.command, "args": launch.args, "env": {}}
+        return json.dumps({"context_servers": {name: entry}}, indent=2)
     if client == "vscode":
         entry = {"type": "stdio", "command": launch.command, "args": launch.args,
                  "tools": ["*"]}
@@ -422,7 +438,12 @@ def hints(client: str, launch: Launch, platform: str | None = None,
                      "its config.toml; 'codex mcp list' shows it.")
     else:
         lines.append(f"Merge this into: {config_location(client, platform)}")
-        lines.append("Keep any other servers already under \"mcpServers\".")
+        key = "context_servers" if client == "zed" else "mcpServers"
+        lines.append(f"Keep any other servers already under \"{key}\".")
+    if client == "zed":
+        lines.append("Zed 0.224 and later asks before each tool call, move_to included, "
+                     "while agent.tool_permissions.default is \"confirm\" (its default); "
+                     "don't set it or \"mcp:" + name + ":move_to\" to \"allow\".")
     if client == "gemini":
         lines.append("Or run instead: " + gemini_add_command(launch, name, platform))
         lines.append("Leave \"trust\" unset (and no --trust): it skips Gemini's "
@@ -598,6 +619,8 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
         if setup and not ssh:
             raise ValueError("--ssh-setup needs --ssh")
         name = _server_name(getattr(args, "name", None), args.client)
+        if flags_in["confirm_moves"] and args.client in NO_ELICITATION:
+            raise ValueError(NO_ELICITATION[args.client])
         flags = server_args(**flags_in, remote=bool(ssh))
         launcher = getattr(args, "launcher", "auto") or "auto"
         if ssh:
@@ -621,7 +644,7 @@ def main(args: argparse.Namespace, stdout: TextIO | None = None,
 
 
 __all__ = [
-    "ADD_COMMANDS", "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "SSH_OPTIONS",
+    "ADD_COMMANDS", "CLIENTS", "GIT_SOURCE", "LAUNCHERS", "Launch", "NO_ELICITATION", "SSH_OPTIONS",
     "check_ssh_target", "config_location", "gemini_add_command", "hints", "launches_uvx", "main",
     "remote_command", "render",
     "resolve_launch", "resolve_ssh_launch", "ros2_hints", "server_args", "ssh_hints",

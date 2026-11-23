@@ -3474,7 +3474,7 @@ def main() -> None:
     )
     p_mcp_config.add_argument("client",
                               choices=["claude-desktop", "cursor", "claude-code", "vscode",
-                                       "codex", "gemini"])
+                                       "codex", "gemini", "zed"])
     p_mcp_config.add_argument("--launcher", default="auto", choices=["auto", "uvx", "apyrobo"],
                               help="Start the server with uvx (from git) or the installed "
                                    "apyrobo (default: uvx if found, else apyrobo)")

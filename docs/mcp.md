@@ -111,6 +111,30 @@ absolute path of `uvx`, and the `gemini mcp add` line on stderr. Don't set
 tool call, `move_to` included. Gemini splits tool names on `_`, so a server
 name must not contain one; `apyrobo mcp config gemini --name` refuses it.
 
+### Zed
+
+Add to your Zed settings file (in Zed, run `zed: open settings file`):
+
+```json
+{
+  "context_servers": {
+    "apyrobo": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/apyrobo/Apyrobo", "apyrobo", "mcp", "--max-speed", "0.5", "--no-go", "2,2,4,4"],
+      "env": {}
+    }
+  }
+}
+```
+
+`apyrobo mcp config zed` prints this entry with the absolute path of `uvx`.
+In Zed 0.224 and later, `agent.tool_permissions.default` is `"confirm"` by
+default, so Zed asks before every tool call, `move_to` included; don't set it,
+or `"mcp:apyrobo:move_to"`, to `"allow"`. Zed does not support MCP
+elicitation, so `--confirm-moves` cannot work there (every move would be
+refused); `apyrobo mcp config zed --confirm-moves` refuses with a one-line
+error instead of printing a config that cannot move.
+
 ### Claude Desktop
 
 Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
@@ -174,7 +198,7 @@ apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
 
 prints the block above with the absolute path of `uvx` on this machine (GUI
 clients don't read your shell's `PATH`) and says where the config file is on
-your OS. Use `cursor`, `vscode`, `claude-code`, `codex` or `gemini` instead of
+your OS. Use `cursor`, `vscode`, `claude-code`, `codex`, `gemini` or `zed` instead of
 `claude-desktop` for those clients, and `--launcher apyrobo` to start the installed `apyrobo` rather
 than `uvx` (the same install you ran it from, so a venv works without
 activating it; without uvx on `PATH` that is the default). It takes the same `--robot`, `--policy`, `--policy-file`,
