@@ -307,6 +307,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The MuJoCo pick-and-place demo (`demos/mujoco_pickplace/demo.py`) held
+  the simulation lock while drawing each frame, so with slow (software)
+  rendering the physics thread stalled, `navigate_to_0` timed out after 60 s
+  and the demo ended "NOT delivered". It now draws outside the lock and
+  delivers. On Linux with no display it stopped with a MuJoCo `FatalError`
+  traceback although its README said no display was needed; it now prints
+  the `MUJOCO_GL=egl` / `MUJOCO_GL=osmesa` setting to use, and the README
+  says so.
 - A failed skill graph's `TaskResult.error` now says why, not only which
   skill: `Skill 'go_home' failed: No handler registered for 'go_home'`
   (or the precondition, timeout or exception text) instead of

@@ -33,6 +33,27 @@ TASK = "deliver package from (0.85, 0.42) to (-1.0, -0.8)"
 WIDTH, HEIGHT = 960, 540
 
 
+HEADLESS_HINT = (
+    "MuJoCo could not create an OpenGL context to render the video. On a machine "
+    "without a display, pick a headless backend before running the demo:\n"
+    "  MUJOCO_GL=egl python demos/mujoco_pickplace/demo.py     (GPU or Mesa EGL)\n"
+    "  MUJOCO_GL=osmesa python demos/mujoco_pickplace/demo.py  (software, needs libosmesa)"
+)
+
+
+def grab_frame(adapter, renderer):
+    """Render one frame of the live sim.
+
+    Only the scene update reads the simulation, so only it holds the
+    adapter's lock. ``render()`` draws from the renderer's own copy of the
+    scene; holding the lock through it (slow with software rendering) would
+    stall the physics thread and the robot's moves would time out.
+    """
+    with adapter._lock:
+        renderer.update_scene(adapter._data, camera="overview")
+    return renderer.render()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", default=str(pathlib.Path(__file__).parent / "demo.mp4"))
@@ -71,7 +92,12 @@ def main() -> int:
     worker = threading.Thread(target=run_task)
 
     print(f"③ Executing while recording {args.out} …")
-    renderer = mujoco.Renderer(adapter._model, height=HEIGHT, width=WIDTH)
+    try:
+        renderer = mujoco.Renderer(adapter._model, height=HEIGHT, width=WIDTH)
+    except mujoco.FatalError:
+        adapter.shutdown()
+        print(HEADLESS_HINT, file=sys.stderr)
+        return 1
     ffmpeg = subprocess.Popen(
         [
             "ffmpeg", "-y", "-loglevel", "error",
@@ -91,9 +117,7 @@ def main() -> int:
     try:
         while True:
             t0 = time.monotonic()
-            with adapter._lock:
-                renderer.update_scene(adapter._data, camera="overview")
-                frame = renderer.render()
+            frame = grab_frame(adapter, renderer)
             ffmpeg.stdin.write(frame.tobytes())
             frames += 1
             if not worker.is_alive():

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Re-render demo.mp4 / demo.gif for the MuJoCo pick-and-place demo.
-# Runs anywhere MuJoCo does (macOS/Linux, no display needed — offscreen).
+# Runs anywhere MuJoCo does (macOS/Linux, offscreen; with no display set MUJOCO_GL=egl or osmesa).
 #
 # Requirements: pip install 'apyrobo[mujoco]'; ffmpeg on PATH.
 set -euo pipefail
