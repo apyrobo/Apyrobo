@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import abc
 import contextlib
+import errno
 import json
 import logging
 import queue
@@ -531,6 +532,14 @@ except ImportError:  # pragma: no cover
     _WEBSOCKETS_AVAILABLE = False
 
 
+class ServerStartError(RuntimeError):
+    """An adapter could not start listening (for example, its port is taken).
+
+    The message is one sentence meant for the user; ``apyrobo serve`` prints it
+    and exits 1.
+    """
+
+
 class WebSocketOrchestrationAdapter(OrchestrationAdapter):
     """WebSocket-based orchestration adapter.
 
@@ -568,6 +577,7 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
         self._stop_event: Any = None    # asyncio.Event created inside the loop
         self._thread: threading.Thread | None = None
         self._started = threading.Event()
+        self._start_error: BaseException | None = None
 
     # ------------------------------------------------------------------
     # Async internals (run inside background thread)
@@ -625,8 +635,13 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
         self._loop = loop
         try:
             loop.run_until_complete(self._serve())
-        except Exception:
-            logger.exception("WebSocketOrchestrationAdapter: server loop failed")
+        except Exception as exc:
+            if self._started.is_set():
+                logger.exception("WebSocketOrchestrationAdapter: server loop failed")
+            else:
+                # Never listened (port taken, bad host): startup() reports it.
+                self._start_error = exc
+                self._started.set()
         finally:
             try:
                 loop.run_until_complete(loop.shutdown_asyncgens())
@@ -650,6 +665,21 @@ class WebSocketOrchestrationAdapter(OrchestrationAdapter):
                 f"WebSocketOrchestrationAdapter: server did not start within 10 s "
                 f"(host={self._host!r}, port={self._port})"
             )
+        if self._start_error is not None:
+            exc = self._start_error
+            self._thread.join(timeout=5)
+            url = f"ws://{self._host}:{self._port}"
+            if isinstance(exc, OSError) and exc.errno in (errno.EADDRINUSE, errno.EACCES):
+                reason = (
+                    f"port {self._port} is already in use"
+                    if exc.errno == errno.EADDRINUSE
+                    else f"no permission to use port {self._port}"
+                )
+                raise ServerStartError(
+                    f"cannot listen on {url}: {reason}; "
+                    f"stop the other server or pick another port with --ws-port"
+                ) from exc
+            raise ServerStartError(f"cannot listen on {url}: {exc}") from exc
         logger.info("WebSocketOrchestrationAdapter ready")
 
     def shutdown(self) -> None:

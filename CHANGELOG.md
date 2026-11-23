@@ -309,6 +309,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo serve --transport websocket` on a port that is already in use now
+  exits 1 at once with one line, `Error: cannot listen on ws://0.0.0.0:<port>:
+  port <port> is already in use; ...`. It used to log a traceback, wait 10 s
+  and end in a second traceback that said only "did not start within 10 s".
 - `demos/fleet_view` no longer moves a robot for a task the planner refuses
   or a plan that does not drive: "patrol the perimeter" sent a robot to a
   random point, and "deliver a package to the dock" drove to the dock

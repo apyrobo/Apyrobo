@@ -1795,6 +1795,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         StdioOrchestrationAdapter,
         WebSocketOrchestrationAdapter,
     )
+    from apyrobo.orchestration.adapter import ServerStartError
 
     robot_uri: str = getattr(args, "robot", "mock://turtlebot4")
     profile_name: str | None = getattr(args, "profile", None)
@@ -1865,7 +1866,11 @@ def cmd_serve(args: argparse.Namespace) -> None:
         execute_tasks=execute_tasks,
         safety_policy=SafetyPolicy(max_speed=max_speed),
     )
-    server.run()
+    try:
+        server.run()
+    except ServerStartError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
