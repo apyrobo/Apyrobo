@@ -16,7 +16,9 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   (`timed_out` in the `--audit-log`). Off by default. It bounds how long a
   move can run when the client stays up but its link to the model drops,
   which the server cannot see. docs/mcp.md says so under "When the client
-  goes away".
+  goes away". `apyrobo mcp config` carries the flag into the config it
+  prints, given on either side of `config`, and refuses a value the server
+  would refuse at start.
 - `apyrobo mcp config gemini` prints the Gemini CLI `settings.json`
   `mcpServers` entry (absolute path of `uvx` or the installed `apyrobo`, the
   same flag checks as the other clients) and, on stderr, the equivalent
