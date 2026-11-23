@@ -309,6 +309,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `demos/fleet_view` no longer moves a robot for a task the planner refuses
+  or a plan that does not drive: "patrol the perimeter" sent a robot to a
+  random point, and "deliver a package to the dock" drove to the dock
+  although the rule planner refused it. The refusal now comes back in
+  `metadata.execution` (as `apyrobo serve --execute` reports it), the page
+  shows it as REFUSED, and the robot stays put. The auto-dispatcher and the
+  page's example tasks give zone coordinates the rule planner reads.
 - `docker compose -f docker/docker-compose-demo.yml up` (the docker/README.md
   demo): the `apyrobo-demo` orchestration server ran `apyrobo serve` on stdio,
   which exits when stdin closes, so the container exited 0 right after start

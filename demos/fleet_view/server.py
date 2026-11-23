@@ -48,8 +48,9 @@ TICK_HZ = 20.0
 TELEMETRY_HZ = 10.0
 WORLD = (100.0, 60.0)  # metres, top-down
 
-# Named zones — mention one in a task ("deliver to the dock") and the
-# assigned robot drives there; otherwise it gets a random waypoint.
+# Named zones drawn on the map. The rule planner reads coordinates, not
+# names, so tasks give the zone's coordinates ("go to the dock at (90, 30)").
+# A task the planner refuses, or one with nowhere to drive, moves no robot.
 ZONES: dict[str, tuple[float, float]] = {
     "dock": (90.0, 30.0),
     "warehouse": (15.0, 12.0),
@@ -60,13 +61,13 @@ ZONES: dict[str, tuple[float, float]] = {
 }
 
 PATROL_TASKS = [
-    "patrol the perimeter",
-    "survey the warehouse shelves",
-    "inspect the charging station",
-    "carry parts to the lab",
-    "deliver a package to the dock",
-    "check the gate for arrivals",
-    "scan the kitchen area",
+    "go to the gate at (85, 8)",
+    "pick up the box at (15, 12)",
+    "go to the charging station at (50, 52)",
+    "deliver from the warehouse (15, 12) to the lab (50, 8)",
+    "deliver from the warehouse (15, 12) to the dock (90, 30)",
+    "go to the kitchen at (15, 48)",
+    "go to (60, 30)",
 ]
 
 
@@ -136,11 +137,17 @@ def build_fleet() -> list[SimRobot]:
 
 class FleetViewServer(OrchestrationServer):
     """Plans via the normal APYROBO pipeline, then acts the plan out by
-    assigning a movement target to the addressed robot."""
+    assigning a movement target to the addressed robot.
+
+    A robot moves only for a plan that drives somewhere the task names. A
+    task the planner refuses (Agent.last_refusal, the same check apyrobo
+    mcp and apyrobo serve apply) comes back with the refusal in
+    ``metadata.execution`` and no robot moves, as ``apyrobo serve
+    --execute`` reports it.
+    """
 
     def __init__(self, adapter, agent, fleet: list[SimRobot]) -> None:
         self.fleet = {sim.robot_id: sim for sim in fleet}
-        self._rng = random.Random(11)
         first = fleet[0]
         super().__init__(
             adapter, agent,
@@ -154,30 +161,57 @@ class FleetViewServer(OrchestrationServer):
 
     def _handle(self, msg: OrchestrationMessage) -> OrchestrationMessage:
         response = super()._handle(msg)
-        if response.metadata.get("status") == "planned":
-            self._execute(msg, response)
+        if response.metadata.get("status") != "planned":
+            return response
+        reason = self._refusal(msg, response)
+        if reason is not None:
+            response.metadata["execution"] = {
+                "status": "failed", "steps_completed": 0, "error": reason,
+            }
+            return response
+        self._execute(msg, response)
         return response
+
+    def _refusal(self, msg: OrchestrationMessage, response: OrchestrationMessage) -> str | None:
+        """Why this plan must not move a robot, or None."""
+        if not response.metadata.get("skills"):
+            return getattr(self.agent, "last_refusal", None) or (
+                "Not planned: the planner returned no steps, so no robot moves."
+            )
+        return None
 
     def _execute(self, msg: OrchestrationMessage, response: OrchestrationMessage) -> None:
         robot_id = (response.robot_uri or "").partition("://")[2]
         sim = self.fleet.get(robot_id)
         if sim is None:
             return
-        sim.target = self._target_for(msg.task)
+        drives = any(
+            "navigate" in s["skill_id"] for s in response.metadata.get("skills", [])
+        )
+        target = self._target_for(msg.task) if drives else None
+        if target is None:
+            # Nothing to drive to (e.g. 'report status'): the robot stays put.
+            return
+        sim.target = target
         sim.task = msg.task
         response.metadata["target"] = list(sim.target)
 
-    def _target_for(self, task: str) -> tuple[float, float]:
+    def _target_for(self, task: str) -> tuple[float, float] | None:
+        """Where the task drives: its last (x, y), else a named zone, else None.
+
+        The last pair is the end of a delivery ('from (15, 12) to (90, 30)').
+        Never a made-up waypoint.
+        """
+        pairs = re.findall(r"\(?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)?", task)
+        if pairs:
+            x = min(max(float(pairs[-1][0]), 2.0), WORLD[0] - 2.0)
+            y = min(max(float(pairs[-1][1]), 2.0), WORLD[1] - 2.0)
+            return (x, y)
         lowered = task.lower()
         for zone, coords in ZONES.items():
             if zone in lowered:
                 return coords
-        m = re.search(r"\(?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)?", task)
-        if m:
-            x = min(max(float(m.group(1)), 2.0), WORLD[0] - 2.0)
-            y = min(max(float(m.group(2)), 2.0), WORLD[1] - 2.0)
-            return (x, y)
-        return (self._rng.uniform(5, WORLD[0] - 5), self._rng.uniform(5, WORLD[1] - 5))
+        return None
 
 
 # ---------------------------------------------------------------------------

@@ -58,7 +58,7 @@
   <div id="world"><canvas id="canvas"></canvas></div>
   <aside>
     <form id="taskForm">
-      <label for="task">Task (try “deliver to the dock”, “inspect the kitchen”, “go to (20, 40)”)</label>
+      <label for="task">Task (try “go to the dock at (90, 30)”, “deliver from (15, 12) to (50, 8)”, “go to (20, 40)”)</label>
       <input id="task" autocomplete="off" placeholder="natural-language task…" required>
       <label for="robot">Robot</label>
       <select id="robot"></select>
@@ -126,7 +126,11 @@ client.onMessage((msg) => {
     syncRobotSelect();
     return;
   }
-  if (status === "planned") {
+  const refused = msg.metadata?.execution?.status === "failed";
+  if (status === "planned" && refused) {
+    logEvent("error", "REFUSED", `“${msg.task}” — ${msg.metadata.execution.error}`,
+             msg.robot_uri);
+  } else if (status === "planned") {
     const skills = (msg.metadata.skills ?? []).map(s => s.name).join(" → ");
     logEvent("planned", "PLANNED", `“${msg.task}” → ${skills || "(no steps)"}`,
              msg.robot_uri);
