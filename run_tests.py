@@ -3540,13 +3540,15 @@ def test_in06_multi_turn_with_answer():
     assert len(result) > 0
 
 def test_in06_agent_plan_interactive():
-    """Agent.plan_interactive() plans a task the rule fallback can read."""
+    """Agent.plan_interactive() asks the callback for an ambiguous task."""
     agent = Agent(provider="multi_turn")
     robot = Robot.discover("mock://tb4")
+    asked = []
     graph = agent.plan_interactive(
-        "go to (3, 3)", robot,
-        answer_callback=lambda q, opts: "(3, 3)",
+        "go", robot,
+        answer_callback=lambda q, opts: asked.append(q) or "go to (3, 3)",
     )
+    assert asked == ["Where should I go?"]
     assert len(graph) > 0
 
 def test_in06_multi_turn_context_tracking():

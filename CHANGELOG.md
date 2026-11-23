@@ -314,6 +314,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `Agent.plan_interactive(task, robot, answer_callback=...)` now calls the
+  callback when the provider asks a question. Before, `plan()` treated the
+  question as a provider failure and fell back to the rule planner on the
+  original task, so the callback was never called. Without a callback it
+  plans as `plan()` does. `Agent(provider="multi_turn")` over the rule planner
+  now gets the rule planner's checks: a task with no readable target is
+  refused (`last_refusal` says why) instead of driving to a placeholder.
 - The README's "Use an AI Agent" example now runs as shown on the bare
   install: `agent.execute("pick up the object at (5, 3)", robot)` with the
   rule planner completes 2/2 steps on `mock://`. The old task, "go to 5, 3
