@@ -29,7 +29,11 @@ python demos/mujoco_pickplace/demo.py        # writes demo.mp4, exits 0
 ./demos/mujoco_pickplace/record.sh           # re-render mp4 + gif
 ```
 
-No display needed — rendering is offscreen; works on macOS and Linux.
+No window opens — rendering is offscreen; works on macOS and Linux. On a
+Linux machine with no display (a server, CI, a container), MuJoCo needs a
+headless OpenGL backend: prefix the commands with `MUJOCO_GL=egl` (GPU or
+Mesa EGL) or `MUJOCO_GL=osmesa` (software). Without one the demo stops and
+says so.
 
 ## Bring your own scene
 
