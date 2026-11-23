@@ -91,7 +91,7 @@ def main() -> int:
     from apyrobo.skills.agent import Agent, LLMProvider, RuleBasedProvider
 
     agent = Agent(provider="rule")
-    graph = agent.plan("navigate to the dock", robot)
+    graph = agent.plan("go to (2, 1)", robot)
     results.append(check("rule-based planning", len(graph.get_execution_order()) > 0,
                          f"{len(graph.get_execution_order())} skills planned"))
 
@@ -109,7 +109,7 @@ def main() -> int:
             "provider='auto' degrades to rule-based",
             isinstance(auto_agent._provider, RuleBasedProvider),
         ))
-        graph = auto_agent.plan("navigate to the dock", robot)
+        graph = auto_agent.plan("go to (2, 1)", robot)
         results.append(check("degraded agent still plans", len(graph.get_execution_order()) > 0))
 
         try:
