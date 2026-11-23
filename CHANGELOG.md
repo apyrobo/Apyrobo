@@ -307,6 +307,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- CONTRIBUTING.md's Docker setup ran `docker compose -f
+  docker/docker-compose.yml exec apyrobo bash`, which fails with
+  `service "apyrobo" is not running`: that file has no `apyrobo` service. It
+  now uses `docker/docker-compose.ci.yml`, the image CI builds. It also no
+  longer tells contributors to run `ruff format .` (it rewrites hundreds of
+  untouched files), says lint and type checks still report errors on `main`,
+  and its Discord link points somewhere. A test checks the commands name a
+  real compose file and service.
 - The benchmark suite (`benchmarks/benchmark_suite.py`) planned
   `navigate_to`, `pick_object` and `navigate_to_A` with the rule planner,
   which reads no target in them, so every "navigate", "patrol" and "fleet"

@@ -54,26 +54,32 @@ follows the normal PR flow below.
 git clone https://github.com/apyrobo/apyrobo.git
 cd apyrobo
 
-# Option A: Docker (recommended)
-docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml exec apyrobo bash
-
-# Option B: Local (Python only, no ROS 2 / Gazebo)
+# Option A: Local (Python only, no ROS 2 / Gazebo)
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
+# Option B: Docker (Python only, the image CI builds; your checkout is
+# copied in at build time, so rebuild after changing files)
+docker compose -f docker/docker-compose.ci.yml build
+docker compose -f docker/docker-compose.ci.yml run --rm apyrobo bash
+
 # Run tests
 pytest
 
-# Lint
-ruff check .
-ruff format .
-
-# Type check
-mypy apyrobo/
+# Lint and format the files you changed (not the whole tree)
+ruff check path/to/changed_file.py
+ruff format path/to/changed_file.py
 ```
+
+`ruff check .` and `mypy apyrobo/` still report errors that are already on
+`main`, and CI does not fail on lint or type errors yet, so a clean run of
+either over the whole tree is not expected. `ruff format .` would reformat
+hundreds of files you did not touch; keep formatting to your own changes.
+
+For ROS 2 and Gazebo, the Docker profiles in `docker/docker-compose.yml` run
+the simulated stack and its tests: see
+[docs/pilot_quickstart.md](docs/pilot_quickstart.md).
 
 ## Code Style
 
@@ -96,4 +102,5 @@ docs: update architecture diagram
 
 ## Questions?
 
-Join our [Discord](#) or open a GitHub Discussion.
+Join our [Discord](https://discord.gg/n3uX7VmrUr) or
+[open an issue](https://github.com/apyrobo/Apyrobo/issues).
