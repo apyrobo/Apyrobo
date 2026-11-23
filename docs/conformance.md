@@ -16,7 +16,10 @@ pip install 'apyrobo[conformance]'   # adds jsonschema for schema checks
 # A capability adapter, addressed by robot URI (runs in-process):
 apyrobo conformance mock://my-robot
 
-# A live orchestration server over WebSocket:
+# A live orchestration server over WebSocket. ws:// targets also need the
+# websocket extra, and a server must already be listening, for example:
+#   pip install 'apyrobo[conformance,websocket]'
+#   apyrobo serve --transport websocket &     # listens on port 8765
 apyrobo conformance ws://localhost:8765
 
 # Any command that speaks the stdio (NDJSON) wire protocol — spawned for you:
