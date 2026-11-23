@@ -314,6 +314,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The README's "Use an AI Agent" example now runs as shown on the bare
+  install: `agent.execute("pick up the object at (5, 3)", robot)` with the
+  rule planner completes 2/2 steps on `mock://`. The old task, "go to 5, 3
+  then pick up the object", is refused by the rule planner (it would drop
+  the pick-up), so the example failed. The README says why, and its rule
+  planner tasks are now checked by the same test as the docs.
 - `apyrobo serve --transport websocket` on a port that is already in use now
   exits 1 at once with one line, `Error: cannot listen on ws://0.0.0.0:<port>:
   port <port> is already in use; ...`. It used to log a traceback, wait 10 s
