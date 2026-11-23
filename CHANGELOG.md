@@ -307,6 +307,17 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `docker compose -f docker/docker-compose-demo.yml up` (the docker/README.md
+  demo): the `apyrobo-demo` orchestration server ran `apyrobo serve` on stdio,
+  which exits when stdin closes, so the container exited 0 right after start
+  and restart-looped, reinstalling the package each time; the dashboard
+  healthcheck called curl, which python:3.12-slim does not have, so it stayed
+  "unhealthy". The server now runs `--transport websocket --ws-port 8765
+  --execute` on a published port (`node demos/ts_interop/demo.mjs --ws
+  ws://localhost:8765` gets a completed task back), the healthcheck uses
+  python, and docker/README.md says what each service does. Checked by
+  tests/test_docker_demo_compose.py, which runs the compose server command
+  with stdin closed and sends it a task.
 - docs/api_reference.md "Generating Full API Docs" ran pdoc3 flags
   (`pdoc apyrobo --html --output-dir docs/api/`), which pdoc refuses with
   "unrecognized arguments: --html", and `mkdocs build` with no mkdocs.yml in

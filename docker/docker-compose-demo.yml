@@ -1,9 +1,10 @@
 # =============================================================================
-# APYROBO v5.0.0 "Five-Minute Success" — Demo Environment
+# APYROBO demo environment (mock robots, no ROS or Gazebo)
 #
 # Quick start:
 #   docker compose -f docker/docker-compose-demo.yml up
 #   → Dashboard: http://localhost:8000
+#   → Orchestration server (wire protocol over WebSocket): ws://localhost:8765
 # =============================================================================
 
 services:
@@ -18,8 +19,10 @@ services:
       APYROBO_LOG_LEVEL: INFO
       APYROBO_DEMO: "1"
     command: >
-      sh -c "pip install -e /app[dashboard] -q &&
-             apyrobo serve --robot mock://turtlebot4 --provider rule"
+      sh -c "pip install -e /app[websocket] -q &&
+             apyrobo serve --robot mock://turtlebot4 --provider rule --transport websocket --ws-port 8765 --execute"
+    ports:
+      - "8765:8765"
     restart: unless-stopped
 
   dashboard:
@@ -40,7 +43,8 @@ services:
       - apyrobo-demo
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -sf http://localhost:8000/health || exit 1"]
+      # python:3.12-slim has no curl; use the interpreter that is there.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 5
