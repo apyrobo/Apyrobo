@@ -18,9 +18,9 @@ from apyrobo import Robot
 from apyrobo.mcp_server import build_server
 
 ROOT = Path(__file__).resolve().parent.parent
-# README.md is left out until its 'Use an AI Agent' task is changed (another
-# pending change edits README.md).
-DOCS = sorted([*(ROOT / "docs").rglob("*.md"), *(ROOT / "demos").rglob("*.md")])
+DOCS = sorted(
+    [ROOT / "README.md", *(ROOT / "docs").rglob("*.md"), *(ROOT / "demos").rglob("*.md")]
+)
 BLOCK = re.compile(r"```(?:python|bash)\n(.*?)```", re.S)
 TASK = re.compile(
     r"""(?:\bagent\.(?:execute|plan)|\bcoordinator\.execute_task)\(\s*(?:task=)?"""
@@ -88,3 +88,34 @@ def test_the_fleet_example_sends_robots_to_the_named_places():
     assert result.status.value == "completed"
     positions = {robot.get_position() for robot in robots}
     assert {(1.0, 1.0), (5.0, 1.0)} <= positions
+
+
+def test_the_readme_agent_example_is_checked():
+    assert ("README.md", "pick up the object at (5, 3)") in _rule_tasks()
+
+
+def test_the_readme_agent_example_completes_as_shown():
+    from apyrobo import Agent
+
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    section = text.split("### Use an AI Agent", 1)[1].split("###", 1)[0]
+    assert "# → completed: 2/2 steps" in section
+    result = Agent(provider="rule").execute(
+        "pick up the object at (5, 3)", Robot.discover("mock://turtlebot4")
+    )
+    assert (result.status.value, result.steps_completed, result.steps_total) == (
+        "completed", 2, 2,
+    )
+
+
+def test_the_old_readme_agent_task_is_refused_and_moves_nothing():
+    from apyrobo import Agent
+
+    robot = Robot.discover("mock://turtlebot4")
+    start = robot.get_position()
+    result = Agent(provider="rule").execute("go to 5, 3 then pick up the object", robot)
+    assert result.status.value == "failed"
+    assert "Not planned" in (result.error or "")
+    assert robot.get_position() == start
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert '"go to 5, 3 then pick up the object" comes back `failed`' in text.replace("\n", " ")

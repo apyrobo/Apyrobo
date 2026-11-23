@@ -170,12 +170,18 @@ robot = Robot.discover("mock://turtlebot4")
 
 # No API key needed
 agent = Agent(provider="rule")
+result = agent.execute("pick up the object at (5, 3)", robot)
+print(f"{result.status.value}: {result.steps_completed}/{result.steps_total} steps")
+# → completed: 2/2 steps
 
 # LLM-backed — any LiteLLM model string
 agent = Agent(provider="llm", model="claude-sonnet-4-20250514")
-
-result = agent.execute("go to 5, 3 then pick up the object", robot)
+result = agent.execute("pick up the object at (5, 3)", robot)
 ```
+
+The rule planner reads a fixed set of phrasings and refuses a task it would
+only half plan: "go to 5, 3 then pick up the object" comes back `failed` with
+the reason, and the robot does not move. Name the place in the task, as above.
 
 | Provider | Description | Requires |
 |----------|-------------|---------|
