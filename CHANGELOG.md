@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp config zed` prints the `context_servers` entry for Zed's
+  settings file, with the same flags and checks as the other clients. It
+  refuses `--confirm-moves` with one line: Zed does not support MCP
+  elicitation, so every move would be refused, and Zed already asks before
+  each tool call by default. docs/mcp.md has a Zed section.
 - `apyrobo mcp --max-move-seconds N` stops a `move_to`, `rotate` or
   `execute_task` still running after `N` seconds, the way a `stop` request
   does, and reports it as `STOPPED:` with the last known position

@@ -299,3 +299,17 @@ def test_the_gemini_pip_variant_matches_launcher_apyrobo(monkeypatch):
     )
     line = next(x for x in err.splitlines() if x.startswith("Or run instead: "))
     assert shlex.split(match.group(1)) == shlex.split(line[len("Or run instead: "):])
+
+
+def test_the_zed_block_matches_mcp_config(monkeypatch):
+    blocks = [json.loads(b)["context_servers"]["apyrobo"] for b in _fences("json")
+              if '"context_servers"' in b]
+    assert len(blocks) == 1, "expected one Zed context_servers block in docs/mcp.md"
+    documented = blocks[0]
+    out, _ = _printed(["mcp", "config", "zed", "--launcher", "uvx",
+                       *_documented_config_flags()], monkeypatch)
+    printed = json.loads(out)["context_servers"]["apyrobo"]
+    assert documented["command"] == printed["command"] == "uvx"
+    assert documented["env"] == printed["env"] == {}
+    assert _without_uvx_source(documented["args"]) == _without_uvx_source(printed["args"])
+    assert "zed: open settings file" in _doc()
