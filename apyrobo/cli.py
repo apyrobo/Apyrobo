@@ -2416,6 +2416,11 @@ def _init_adapter_package(args: argparse.Namespace) -> None:
     # pyproject.toml or __init__.py, and a '.' or '+' in the scheme (valid in
     # a URI scheme) split the entry-point key or failed to parse.
     doc_description = description.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    # The generated tests, CI and next steps use apyrobo.conformance and the
+    # `apyrobo conformance` command. Neither is in 4.0.0, so a ">=4.0.0" floor
+    # let pip resolve a release where the scaffold's own tests cannot import.
+    # Require at least the release that wrote the scaffold.
+    apyrobo_floor = _scaffold_apyrobo_floor()
 
     (out_dir / "pyproject.toml").write_text(textwrap.dedent(f"""\
         [build-system]
@@ -2427,7 +2432,7 @@ def _init_adapter_package(args: argparse.Namespace) -> None:
         version = "0.1.0"
         description = {json.dumps(description, ensure_ascii=False)}
         requires-python = ">=3.10"
-        dependencies = ["apyrobo>=4.0.0"]
+        dependencies = ["apyrobo>={apyrobo_floor}"]
         {('authors = [{name = ' + json.dumps(author, ensure_ascii=False) + '}]') if author else ""}
 
         # apyrobo resolves {scheme}://<robot> to this class automatically —
@@ -3112,6 +3117,12 @@ def _bind_rectangle_values(argv: list[str]) -> list[str]:
 def _apyrobo_version() -> str:
     from apyrobo.__version__ import __version__
     return __version__
+
+
+def _scaffold_apyrobo_floor() -> str:
+    """The release part of the running apyrobo version ("4.2.0rc1" -> "4.2.0")."""
+    match = re.match(r"\d+(?:\.\d+)*", _apyrobo_version())
+    return match.group(0) if match else "0"
 
 
 def main() -> None:
