@@ -2890,7 +2890,7 @@ def cmd_shell(args: argparse.Namespace) -> None:
     caps = robot.capabilities()
 
     from apyrobo.skills.skill import BUILTIN_SKILLS
-    from apyrobo.skills.executor import SkillGraph
+    from apyrobo.skills.executor import SkillExecutor, SkillGraph
 
     banner = (
         "\n"
@@ -2905,6 +2905,7 @@ def cmd_shell(args: argparse.Namespace) -> None:
         "  Try:\n"
         "    graph = agent.plan('go to (2, 1)', robot)\n"
         "    graph.get_execution_order()\n"
+        "    SkillExecutor(robot).execute_graph(graph).status\n"
         "    robot.move(1.0, 0.0)\n"
         "    robot.capabilities()\n"
         "\n"
@@ -2918,6 +2919,8 @@ def cmd_shell(args: argparse.Namespace) -> None:
         "Robot": Robot,
         "Agent": Agent,
         "SkillGraph": SkillGraph,  # type: ignore[possibly-undefined]
+        "SkillExecutor": SkillExecutor,
+        "skills": BUILTIN_SKILLS,
         "BUILTIN_SKILLS": BUILTIN_SKILLS,
     }
 

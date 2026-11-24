@@ -314,6 +314,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo shell`: the banner listed `skills` but the REPL had no such
+  name, so typing it raised `NameError`. `skills` now holds the built-in
+  skills, and the banner's "Try" lines include running the plan through
+  the safety enforcer: `SkillExecutor(robot).execute_graph(graph).status`.
 - `llms.txt`, the page AI assistants read about APYROBO, had a Python quick
   start whose task the rule planner refuses ("navigate to point A and pick up
   object"), named `nav2://` and `isaac://host:port` as adapter URIs (there is
