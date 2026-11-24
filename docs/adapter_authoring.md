@@ -114,9 +114,19 @@ def get_capabilities(self) -> RobotCapability:
 ```python
 def move(self, x: float, y: float, speed: float | None = None) -> None:
     self._require_connected("move")          # fail fast, never queue
-    effective = min(speed or self._max_speed, self._max_speed)
+    if speed is None:
+        effective = self._max_speed             # no speed: drive at the cap
+    elif not math.isfinite(speed) or speed <= 0:
+        raise ValueError(f"speed must be a positive number of m/s, got {speed!r}")
+    else:
+        effective = min(speed, self._max_speed)
     self._client.goto(x, y, speed=effective)
 ```
+
+Never write `min(speed or self._max_speed, self._max_speed)`: `speed=0` is
+falsy and drives at full speed, a negative speed passes through unclamped, and
+`min(nan, cap)` is `nan`. `apyrobo init <scheme> --adapter` generates the
+check above.
 
 Keep `_require_connected`: a queued `move` executing on reconnect is a
 safety hazard, and the suite checks for it (`FAIL-01`).

@@ -314,6 +314,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- The adapter that `apyrobo init <scheme> --adapter` generates, and the
+  `move()` example in docs/adapter_authoring.md, computed the speed as
+  `min(speed or max_speed, max_speed)`: `speed=0` drove at full speed, a
+  negative speed passed through unclamped, and NaN came out as NaN. Both now
+  drive at the cap when no speed is given, cap a faster one, and raise
+  `ValueError` for 0, negative, NaN or infinite speeds. Adapters already
+  generated keep the old line; the guide says what to change.
 - docs/concepts/nl_safety_policies.md said a `hard` policy blocks execution
   and a `soft` one only warns; `severity` is a stored label, the check
   reports both the same way, and nothing blocks. The page now says so. Its

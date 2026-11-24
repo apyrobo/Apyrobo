@@ -2520,7 +2520,16 @@ def _init_adapter_package(args: argparse.Namespace) -> None:
 
             def move(self, x: float, y: float, speed: float | None = None) -> None:
                 self._require_connected("move")
-                effective = min(speed or self._max_speed, self._max_speed)
+                # No speed = drive at the cap. 0, negative, NaN or inf is a
+                # bug upstream: refuse it rather than drive at full speed.
+                if speed is None:
+                    effective = self._max_speed
+                elif not math.isfinite(speed) or speed <= 0:
+                    raise ValueError(
+                        f"speed must be a positive number of m/s, got {{speed!r}}"
+                    )
+                else:
+                    effective = min(speed, self._max_speed)
                 # TODO: send the motion command to the platform.
                 logger.info("%s: move to (%.2f, %.2f) at %.2f m/s",
                             self.robot_name, x, y, effective)
