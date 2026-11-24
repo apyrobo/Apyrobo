@@ -314,6 +314,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/concepts/nl_safety_policies.md said a `hard` policy blocks execution
+  and a `soft` one only warns; `severity` is a stored label, the check
+  reports both the same way, and nothing blocks. The page now says so. Its
+  runnable example no longer calls an undefined `robot.execute`, and the
+  storage example defines what it uses. docs/adapter_authoring.md now says
+  `unitree://` needs `import apyrobo.core.unitree_adapter` first.
 - `TaskBus.dispatch()` and `broadcast()` reported `success=True` for a task
   the agent refused or planned nothing for (since the rule planner stopped
   guessing targets, any drive with no coordinates), so callers saw a success

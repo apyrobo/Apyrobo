@@ -35,9 +35,9 @@ action = "navigate at 2.0 m/s to warehouse"
 violations = parser.check_compliance(action, policies)
 if violations:
     print("BLOCKED:", violations[0])
-    # → BLOCKED: speed 2.0 m/s exceeds limit 0.5 m/s
+    # → BLOCKED: Policy [...] violated: speed 2.0 m/s exceeds limit 0.5 m/s (never exceed 0.5 m/s near humans)
 else:
-    robot.execute(action)
+    print("OK to run:", action)  # your code sends the action to the robot here
 ```
 
 **CLI equivalent:**
@@ -115,20 +115,23 @@ A rule the regex does not recognise (`keep speed above 0.2 m/s`, `no robots in t
 `NLPolicyStore` is a thin SQLite wrapper. Policies survive restarts.
 
 ```python
-store = NLPolicyStore("~/.apyrobo/policies.db")
-store.add(policy)             # insert or replace
-store.deactivate(policy_id)   # soft-disable without deleting
-store.remove(policy_id)       # hard delete
-store.get_active_policies()   # returns list[NLSafetyPolicy]
-store.get_all_policies()      # includes inactive policies (audit trail)
+from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
+
+store = NLPolicyStore("~/.apyrobo/policies.db")   # ~ is expanded, the folder is created
+policy = NLPolicyParser().parse("never exceed 0.5 m/s near humans")
+store.add(policy)                     # insert or replace
+store.deactivate(policy.policy_id)    # soft-disable without deleting
+store.get_active_policies()           # returns list[NLSafetyPolicy]
+store.get_all_policies()              # includes inactive policies (audit trail)
+store.remove(policy.policy_id)        # hard delete
 ```
 
 Each `NLSafetyPolicy` has:
 - `policy_id` — auto UUID, stable identifier for the audit trail
 - `description` — the original English sentence (non-engineers read this)
-- `constraint_type` — `speed_limit | proximity_limit | battery_reserve | no_go_zone | custom`
+- `constraint_type` — `speed_limit | proximity_limit | battery_reserve | no_go_zone | time_window | load_limit | custom`
 - `parameters` — structured data the compliance checker uses
-- `severity` — `hard` (block execution) or `soft` (warn only)
+- `severity` — `hard` or `soft`, a label stored with the policy (`NLPolicyParser(severity="soft")` sets it). `check_compliance` and `apyrobo policy check` report a violation of either the same way, and nothing blocks on it: stopping is up to your code
 - `active` — deactivate without losing the audit record
 
 ---
