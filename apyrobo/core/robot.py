@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from apyrobo.core.adapters import CapabilityAdapter, get_adapter
+from apyrobo.core.adapters import CapabilityAdapter, check_move_speed, get_adapter
 from apyrobo.core.schemas import AdapterState, RobotCapability
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,13 @@ class Robot:
         return getattr(self._adapter, "default_speed", None)
 
     def move(self, x: float, y: float, speed: float | None = None) -> None:
-        """Command the robot to move to (x, y) at optional *speed* m/s."""
+        """Command the robot to move to (x, y) at optional *speed* m/s.
+
+        *speed* None means the adapter's default. Zero, negative, NaN,
+        infinite and non-number speeds raise ValueError before the adapter
+        is called, whichever adapter it is.
+        """
+        check_move_speed(speed)
         self._adapter.move(x=x, y=y, speed=speed)
 
     def stop(self) -> None:

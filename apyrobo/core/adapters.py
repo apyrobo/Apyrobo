@@ -21,6 +21,7 @@ import abc
 import json
 import logging
 import math
+import numbers
 import time
 from enum import Enum
 from typing import Any, Callable
@@ -46,6 +47,27 @@ _ADAPTER_REGISTRY: dict[str, type["CapabilityAdapter"]] = {}
 #: Name = URI scheme, value = "module:AdapterClass". `apyrobo init --adapter`
 #: scaffolds a package that registers itself here.
 _ENTRY_POINT_GROUP = "apyrobo.adapters"
+
+
+def check_move_speed(speed: float | None) -> None:
+    """Raise ValueError unless *speed* is None or a positive, finite m/s value.
+
+    None means the adapter's default. 0 is refused rather than read as "no
+    speed": adapters that use ``speed or default`` turned 0 into the default,
+    a negative speed could become a reverse drive, and NaN went out as is.
+    Robot.move calls this for every adapter; ros2:// also calls it itself.
+    """
+    if speed is None:
+        return
+    if isinstance(speed, bool) or not isinstance(speed, numbers.Real):
+        raise ValueError(
+            f"speed must be a number in m/s or None, got {speed!r}"
+        )
+    if not math.isfinite(float(speed)) or speed <= 0:
+        raise ValueError(
+            f"speed must be a positive, finite number in m/s, got {speed!r}; "
+            "pass None to drive at the default speed"
+        )
 
 
 def register_adapter(scheme: str):  # noqa: ANN201
