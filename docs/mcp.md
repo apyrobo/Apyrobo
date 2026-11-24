@@ -591,7 +591,14 @@ try one move on `mock://` before you rely on it.
 | Zed | No | Yes, by default (see [Zed](#zed)) | [Zed MCP docs](https://zed.dev/docs/ai/mcp) |
 
 Cursor staff note that a tool call waiting on a question can time out if
-nobody answers for a while; when it does, the robot does not move.
+nobody answers for a while; when it does, the robot does not move. If the
+`tools/call` carries a `progressToken`, the server sends a
+`notifications/progress` every 5 seconds while it waits ("move_to waiting for
+your confirmation for 10 s; the robot has not moved"), which keeps the call
+alive in clients that reset an idle timeout on progress. After a yes, the
+move's own progress continues the same count; after a no, nothing more is
+sent. This is tested on `mock://` with our own stdio client, not with a
+desktop host.
 
 ### Keep an audit log
 

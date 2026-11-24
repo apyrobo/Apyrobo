@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `apyrobo mcp --confirm-moves` sends `notifications/progress` every 5
+  seconds while it waits for the user to answer the confirmation, when the
+  `tools/call` carries a `progressToken`, so clients that time out idle calls
+  keep the question open. After a yes the move's progress continues the same
+  count; the robot still does not move before the answer.
 - docs/mcp.md has a "Where `--confirm-moves` works" table for the seven
   clients `apyrobo mcp config` supports: whether each one supports MCP
   elicitation (Cursor and VS Code yes, Zed no; Claude Desktop, Claude Code,
