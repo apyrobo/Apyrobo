@@ -3,8 +3,8 @@
 APYROBO — Full Pipeline Demo (mock mode, no ROS 2 required).
 
 This is the demo from the roadmap: discover a robot, plan a task in
-natural language, execute it with safety enforcement and live status
-streaming — all in ~10 lines of user code.
+natural language, execute it through a safety policy with live status
+streaming, then watch the policy refuse a task that ends in a restricted area.
 
     python examples/demo_full.py
 """
@@ -36,24 +36,28 @@ agent = Agent(provider="rule")
 def on_event(event):
     print(f"  → [{event.status.value:>10}] {event.skill_id}: {event.message}")
 
-print("Task: 'deliver package from (1, 2) to (5, 5)'")
-print("-" * 50)
-result = agent.execute(
-    task="deliver package from (1, 2) to (5, 5)",
-    robot=robot,
-    on_event=on_event,
-)
-print("-" * 50)
-print(f"Result: {result.status.value}")
-print(f"  Steps: {result.steps_completed}/{result.steps_total}")
-print(f"  Task: {result.task_name}")
-print()
+# Pass safe_robot, not robot: every move then goes through the policy.
+def run(task):
+    print(f"Task: {task!r}")
+    print("-" * 50)
+    result = agent.execute(task=task, robot=safe_robot, on_event=on_event)
+    print("-" * 50)
+    print(f"Result: {result.status.value}")
+    print(f"  Steps: {result.steps_completed}/{result.steps_total}")
+    if result.error:
+        print(f"  Reason: {result.error}")
+    print()
+
+
+run("deliver package from (1, 2) to (5, 5)")
+# (9, 9) is inside the restricted area: the policy refuses the move.
+run("go to (9, 9)")
 
 # ── 4. Show safety log ──────────────────────────────────────
 if safe_robot.violations:
     print(f"Safety violations: {len(safe_robot.violations)}")
     for v in safe_robot.violations:
-        print(f"  ⚠ {v}")
+        print(f"  ⚠ {v.get('message', v)}")
 else:
     print("Safety: No violations ✓")
 
