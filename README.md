@@ -249,19 +249,31 @@ Each line out is a JSON response: `{"task": "...", "metadata": {"status": "plann
 ```python
 from apyrobo import Skill, SkillLibrary, Robot, Agent
 from apyrobo.core.schemas import CapabilityType
+from apyrobo.skills.handlers import skill_handler
 
 skill = Skill(
     skill_id="inspect_shelf",
     name="inspect_shelf",
-    description="Visually inspect a shelf",
+    description="Drive to shelf A3 and inspect it",
     required_capability=CapabilityType.NAVIGATE,
+    parameters={"x": 3.0, "y": 1.0},
 )
 lib = SkillLibrary()
 lib.load_json(skill.to_json())
 
+# A new skill_id needs a handler: without one the task fails with
+# "No handler registered for 'inspect_shelf'" and the robot does not move.
+@skill_handler("inspect_shelf")
+def inspect_shelf(robot, params):
+    robot.move(x=params["x"], y=params["y"])
+    # your camera or scanner code goes here
+    return True
+
 robot = Robot.discover("mock://turtlebot4")
 agent = Agent(provider="rule", library=lib)
 result = agent.execute("inspect shelf A3", robot)
+print(result.status.value, robot.get_position())
+# → completed (3.0, 1.0)
 ```
 
 See the [full quickstart guide](docs/quickstart_5min.md) for safety enforcement, swarm coordination, and LLM setup.
