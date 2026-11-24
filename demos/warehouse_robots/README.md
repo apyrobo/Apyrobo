@@ -12,9 +12,12 @@ pip install apyrobo
 python demo.py
 ```
 
-**What you'll see:** 5 orders processed end-to-end. The picker navigates to each item
-shelf, the packer consolidates items into a box, the hauler delivers to the dock.
-`TaskBus.dispatch()` picks the right robot for each step — no routing code needed.
+**What you'll see:** 5 orders, each step routed and planned. The picker is sent to
+each item's shelf, the packer gets the boxing step, the hauler gets the delivery to
+the dock; every line names the robot that took the step and the skills its agent
+planned. `TaskBus.dispatch()` picks the robot by capability — no routing code needed.
+The bus plans each step; it does not drive the mock robots. A step the agent
+refuses (a drive with no coordinates, say) prints `✗ not planned` with its reason.
 
 **Key APYROBO APIs used:**
 - `TaskBus` — shared coordination bus with capability-aware routing

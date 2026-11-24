@@ -484,18 +484,39 @@ class MultiAgentCoordinator:
                 for s in order
             ]
             elapsed_ms = (time.monotonic() - t0) * 1000
-            result = TaskResult(
-                request_id=request.request_id,
-                agent_id=self.agent_id,
-                robot_uri=robot_uri,
-                success=True,
-                skills_planned=skills_planned,
-                elapsed_ms=elapsed_ms,
-            )
-            logger.info(
-                "MultiAgentCoordinator %r: planned %d skills for %r in %.0fms",
-                self.agent_id, len(skills_planned), request.task, elapsed_ms,
-            )
+            if not skills_planned:
+                # The agent refused the task (for example a drive with no
+                # target) or planned nothing: nothing will run, so it is not
+                # a success. Pass the agent's reason on when it gives one.
+                reason = (
+                    getattr(self._agent, "last_refusal", None)
+                    or "no skills were planned for this task"
+                )
+                result = TaskResult(
+                    request_id=request.request_id,
+                    agent_id=self.agent_id,
+                    robot_uri=robot_uri,
+                    success=False,
+                    error=reason,
+                    elapsed_ms=elapsed_ms,
+                )
+                logger.warning(
+                    "MultiAgentCoordinator %r: task %r not planned: %s",
+                    self.agent_id, request.task, reason,
+                )
+            else:
+                result = TaskResult(
+                    request_id=request.request_id,
+                    agent_id=self.agent_id,
+                    robot_uri=robot_uri,
+                    success=True,
+                    skills_planned=skills_planned,
+                    elapsed_ms=elapsed_ms,
+                )
+                logger.info(
+                    "MultiAgentCoordinator %r: planned %d skills for %r in %.0fms",
+                    self.agent_id, len(skills_planned), request.task, elapsed_ms,
+                )
         except Exception as exc:
             elapsed_ms = (time.monotonic() - t0) * 1000
             result = TaskResult(
