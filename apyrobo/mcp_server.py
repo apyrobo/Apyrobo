@@ -1297,6 +1297,9 @@ class MCPServer:
         # notifications/progress during a motion call, for a request that
         # carries a progressToken. Its own thread: it never touches the stop.
         self.progress_interval = PROGRESS_INTERVAL_S
+        # (call id, progress count) of a call the user just confirmed, so its
+        # move reports carry on from the reports sent while it waited.
+        self._confirmed_progress: tuple[Any, list[int]] | None = None
 
     # -- dispatch ------------------------------------------------------
 
@@ -1672,10 +1675,21 @@ class MCPServer:
         if prompt is None:
             return self._refused_unasked(msg_id, name)
         planned = self.toolbox.last_plan if name == "execute_task" else None
-        answer = self._elicit(msg_id, prompt)
+        # A client that times out idle calls (Cursor: 60 s) would drop the
+        # question while the user reads it; progress keeps the call alive.
+        # The move's own reports continue the same count after a yes.
+        waiting = threading.Event()
+        counter = [0]
+        self._start_progress(params, name, arguments, waiting, counter=counter, confirming=True)
+        try:
+            answer = self._elicit(msg_id, prompt)
+        finally:
+            with self._write_lock:
+                waiting.set()
         action = answer.get("action") if isinstance(answer, dict) else None
         if action == "accept":
             self.toolbox.approved_plan = planned
+            self._confirmed_progress = (msg_id, counter)
             return None
         return _declined(msg_id, name, action)
 
@@ -1754,6 +1768,7 @@ class MCPServer:
         }
 
     def _tools_call(self, msg_id: Any, params: dict[str, Any]) -> dict[str, Any] | None:
+        confirmed, self._confirmed_progress = self._confirmed_progress, None
         name = params.get("name")
         arguments = params.get("arguments") or {}
         if not isinstance(name, str) or not self.toolbox.has_tool(name):
@@ -1810,7 +1825,8 @@ class MCPServer:
         structured: dict[str, Any] | None = None
         timer: threading.Timer | None = None
         if moves:
-            self._start_progress(params, name, arguments, done)
+            counter = confirmed[1] if confirmed is not None and confirmed[0] == msg_id else None
+            self._start_progress(params, name, arguments, done, counter=counter)
             timer = self._start_move_timer()
         try:
             payload = self.toolbox.call(name, arguments)
@@ -1866,8 +1882,15 @@ class MCPServer:
         name: str,
         arguments: dict[str, Any],
         done: threading.Event,
+        counter: list[int] | None = None,
+        confirming: bool = False,
     ) -> None:
-        """Report progress on this motion call if the client asked for it."""
+        """Report progress on this motion call if the client asked for it.
+
+        ``counter`` holds the last progress value sent for this call, so the
+        values keep increasing across the wait for a confirmation and the
+        move. ``confirming`` reports the wait instead of the move.
+        """
         meta = params.get("_meta")
         token = meta.get("progressToken") if isinstance(meta, dict) else None
         if isinstance(token, bool) or not isinstance(token, (str, int)):
@@ -1876,7 +1899,9 @@ class MCPServer:
         if out is None:
             return
         threading.Thread(
-            target=self._report_progress, args=(out, token, name, arguments, done),
+            target=self._report_progress,
+            args=(out, token, name, arguments, done, counter if counter is not None else [0],
+                  confirming),
             name="apyrobo-mcp-progress", daemon=True,
         ).start()
 
@@ -1887,6 +1912,8 @@ class MCPServer:
         name: str,
         arguments: dict[str, Any],
         done: threading.Event,
+        counter: list[int],
+        confirming: bool = False,
     ) -> None:
         """Send notifications/progress until the motion call returns.
 
@@ -1894,21 +1921,28 @@ class MCPServer:
         nothing else. The client losing stdout is noticed by the stdin side.
         """
         started = time.monotonic()
-        count = 0
         while not done.wait(self.progress_interval):
-            count += 1
-            message = self._progress_message(name, arguments, time.monotonic() - started)
-            notification = {
-                "jsonrpc": "2.0",
-                "method": "notifications/progress",
-                "params": {"progressToken": token, "progress": count, "message": message},
-            }
-            line = json.dumps(notification, separators=(",", ":")) + "\n"
+            elapsed = time.monotonic() - started
+            if confirming:
+                message = (
+                    f"{name} waiting for your confirmation for {elapsed:.0f} s; "
+                    "the robot has not moved"
+                )
+            else:
+                message = self._progress_message(name, arguments, elapsed)
             try:
                 with self._write_lock:
                     if done.is_set():
                         return
-                    out.write(line)
+                    counter[0] += 1
+                    notification = {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/progress",
+                        "params": {
+                            "progressToken": token, "progress": counter[0], "message": message,
+                        },
+                    }
+                    out.write(json.dumps(notification, separators=(",", ":")) + "\n")
                     out.flush()
             except (OSError, ValueError) as exc:
                 logger.warning("MCP: could not send a progress notification: %s", exc)
