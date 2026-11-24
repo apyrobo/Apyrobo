@@ -42,6 +42,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
+import numbers
 import os
 import subprocess
 import threading
@@ -235,6 +236,27 @@ def nav2_speed_limit_value(speed: float | None, controller_max: float | None) ->
     if controller_max is not None and speed >= controller_max:
         return 0.0
     return float(speed)
+
+
+def check_move_speed(speed: float | None) -> None:
+    """Raise ValueError unless *speed* is None or a positive, finite m/s value.
+
+    None means the adapter's default. 0 is refused rather than read as "no
+    speed": on the /cmd_vel fallback ``speed or default`` turned 0 into the
+    default, a negative speed was published as a reverse drive, and NaN went
+    out as is.
+    """
+    if speed is None:
+        return
+    if isinstance(speed, bool) or not isinstance(speed, numbers.Real):
+        raise ValueError(
+            f"speed must be a number in m/s or None, got {speed!r}"
+        )
+    if not math.isfinite(float(speed)) or speed <= 0:
+        raise ValueError(
+            f"speed must be a positive, finite number in m/s, got {speed!r}; "
+            "pass None to drive at the default speed"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -888,12 +910,16 @@ if _HAS_ROS2:
             This is a blocking call: it returns once the goal is reached and
             raises Ros2NavigationError when it is not (goal rejected, aborted
             or never answered by Nav2, navigation timed out, or cancelled by
-            stop()/emergency_stop() before it finished). For the
+            stop()/emergency_stop() before it finished). A *speed* of 0,
+            below 0, NaN or infinite raises ValueError before anything is
+            sent: on /cmd_vel a negative speed drove the robot backwards and
+            NaN was published as is. For the
             executor/agent, the blocking behavior is intentional: skills
             execute sequentially.
             """
             if self._state_machine == RobotState.E_STOPPED:
                 raise RuntimeError("Robot is E_STOPPED; call reset_estop() before moving")
+            check_move_speed(speed)
             self._state_machine = RobotState.NAVIGATING
             if self._has_nav2:
                 self._move_nav2(x, y, speed)
