@@ -310,6 +310,7 @@ class OrchestrationServer:
                 graph, refusal = self._rule_plan(robot, robot_uri, msg.task)
             else:
                 graph = self.agent.plan(msg.task, robot)
+                refusal = self._agent_refusal(graph)
             order = graph.get_execution_order()
             skills = [
                 {"skill_id": s.skill_id, "name": s.name}
@@ -319,6 +320,10 @@ class OrchestrationServer:
                 "status": "planned", "skills": skills, "count": len(skills),
             }
             if refusal is not None:
+                # Why nothing was planned, as an extra metadata key (spec 1.0
+                # §1 has clients tolerate it); status stays "planned".
+                metadata["reason"] = refusal
+            if refusal is not None and self.execute_tasks:
                 metadata["execution"] = {
                     "status": "failed", "steps_completed": 0, "error": refusal,
                 }
@@ -338,6 +343,22 @@ class OrchestrationServer:
                 metadata={"status": "error", "error": str(exc)},
                 source="orchestration_server",
             )
+
+    def _agent_refusal(self, graph: Any) -> str | None:
+        """Why the agent planned nothing for this task, or None.
+
+        Agent.plan returns an empty graph for a task the rule planner cannot
+        plan as written and puts the reason in ``last_refusal``; without
+        this the response said "planned" with no skills and the reason went
+        only to the server's log.
+        """
+        if len(graph):
+            return None
+        reason = getattr(self.agent, "last_refusal", None)
+        if not isinstance(reason, str) or not reason:
+            return None
+        # Agent's wording names the Python API; a serve client has a flag.
+        return reason.replace('use Agent(provider="llm")', "use an LLM provider (--provider llm)")
 
     def _rule_planned(self) -> bool:
         from apyrobo.skills.agent import RuleBasedProvider

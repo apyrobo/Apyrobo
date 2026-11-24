@@ -314,6 +314,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo serve` (and `OrchestrationServer`) answered a task the rule
+  planner refuses, such as the README's own example "navigate to dock", with
+  `"status": "planned"` and no skills, and the reason went only to the
+  server's log. The response now carries it in `metadata.reason` (status
+  stays `"planned"` with `"count": 0`, as spec 1.0 allows). The README
+  example uses a task that plans and says what a refused one returns.
 - docs/concepts/multi_agent_coordination.md "Integration with safety
   policies" checked one task and then dispatched another (`navigate_to`,
   which the rule planner refuses for having no target), so nothing it
