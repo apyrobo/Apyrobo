@@ -314,6 +314,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `apyrobo serve --execute` listed the step the rule planner refused to
+  run (`"count": 1`, "Navigate To") for a task like "navigate to dock",
+  while plan-only mode listed none. A refused task now lists no skills in
+  both modes, as the README says; `metadata.reason` and
+  `execution.error` still say why and nothing moves.
 - `apyrobo serve` (and `OrchestrationServer`) answered a task the rule
   planner refuses, such as the README's own example "navigate to dock", with
   `"status": "planned"` and no skills, and the reason went only to the
