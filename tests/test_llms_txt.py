@@ -50,3 +50,49 @@ def test_every_relative_link_resolves():
     assert links
     missing = [link for link in links if not (ROOT / link).exists()]
     assert not missing, f"llms.txt links to missing files {missing}"
+
+
+def _section(title: str) -> str:
+    text = _text()
+    start = text.index(title)
+    end = text.find("\n## ", start + len(title))
+    return text[start:] if end == -1 else text[start:end]
+
+
+def test_the_quick_start_runs_and_moves_the_robot():
+    section = _section("## Quick start")
+    block = re.search(r"```python\n(.*?)```", section, re.S).group(1)
+    scope: dict = {}
+    exec(compile(block, "llms.txt", "exec"), scope)
+    assert scope["result"].status.value == "completed"
+    assert len(scope["plan"].skills) >= 1
+    assert scope["robot"].get_position() != (0.0, 0.0)
+
+
+def test_every_adapter_scheme_it_names_is_registered():
+    import importlib
+
+    from apyrobo.core.adapters import _ADAPTER_REGISTRY
+
+    section = _section("### Hardware adapter pattern")
+    for module in re.findall(r"`import (apyrobo[\w.]+)`", section):
+        importlib.import_module(module)
+    schemes = re.findall(r"`(\w+)://", section)
+    assert schemes
+    missing = [s for s in schemes if s not in _ADAPTER_REGISTRY]
+    assert not missing, f"llms.txt names adapter schemes with no adapter: {missing}"
+
+
+def test_it_names_every_client_mcp_config_supports():
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "-m", "apyrobo.cli", "mcp", "config", "--help"],
+        capture_output=True, text=True, timeout=60, check=True,
+    ).stdout
+    choices = re.search(r"\{(claude-desktop,[a-z,-]+)\}", out).group(1).split(",")
+    assert "claude-desktop" in choices
+    text = _text()
+    missing = [c for c in choices if f"`{c}`" not in text]
+    assert not missing, f"llms.txt does not name mcp config clients {missing}"
