@@ -42,7 +42,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
-import numbers
 import os
 import subprocess
 import threading
@@ -50,7 +49,11 @@ import time
 from enum import Enum
 from typing import Any
 
-from apyrobo.core.adapters import CapabilityAdapter, register_adapter
+from apyrobo.core.adapters import (  # noqa: F401  (check_move_speed re-exported)
+    CapabilityAdapter,
+    check_move_speed,
+    register_adapter,
+)
 from apyrobo.core.health import ConnectionHealth
 from apyrobo.core.schemas import (
     Capability,
@@ -236,27 +239,6 @@ def nav2_speed_limit_value(speed: float | None, controller_max: float | None) ->
     if controller_max is not None and speed >= controller_max:
         return 0.0
     return float(speed)
-
-
-def check_move_speed(speed: float | None) -> None:
-    """Raise ValueError unless *speed* is None or a positive, finite m/s value.
-
-    None means the adapter's default. 0 is refused rather than read as "no
-    speed": on the /cmd_vel fallback ``speed or default`` turned 0 into the
-    default, a negative speed was published as a reverse drive, and NaN went
-    out as is.
-    """
-    if speed is None:
-        return
-    if isinstance(speed, bool) or not isinstance(speed, numbers.Real):
-        raise ValueError(
-            f"speed must be a number in m/s or None, got {speed!r}"
-        )
-    if not math.isfinite(float(speed)) or speed <= 0:
-        raise ValueError(
-            f"speed must be a positive, finite number in m/s, got {speed!r}; "
-            "pass None to drive at the default speed"
-        )
 
 
 # ---------------------------------------------------------------------------
