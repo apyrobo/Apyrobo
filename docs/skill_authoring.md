@@ -198,7 +198,8 @@ them in the same file or import them. `scan_area` has a `robot_idle` state
 precondition, and a fresh executor has no state yet: in the Step 4 graph
 `navigate_to` sets it, so a test that runs `scan_area` on its own sets it first.
 Without that the skill fails with
-`State precondition 'robot_idle' not met: expected robot_idle=True, got None`.
+`State precondition 'robot_idle' not met: expected robot_idle=True, got None. Nothing has set 'robot_idle' on this executor yet: run a skill that sets it first, or call executor.state.set('robot_idle', True)`.
+The executor never assumes a state it was not given.
 
 ```python
 import pytest
