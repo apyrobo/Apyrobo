@@ -43,3 +43,11 @@ def test_wisevision_row_uses_the_current_repository_name() -> None:
     assert len(rows) == 1
     assert "https://github.com/wise-vision/ros2_mcp)" in rows[0]
     assert "ROS2_MCP_READONLY=1" in rows[0]
+
+
+def test_rde_mcp_ros_2_row_links_repo_and_pypi() -> None:
+    rows = [r for r in _table_rows() if "rde-mcp-ros-2" in r.split(" | ", 1)[0]]
+    assert len(rows) == 1
+    assert "https://github.com/ranch-hand-robotics/rde-mcp-ros-2)" in rows[0]
+    assert "https://pypi.org/project/rde-mcp-ros-2/)" in rows[0]
+    assert rows[0].rstrip().endswith("| MIT |")
