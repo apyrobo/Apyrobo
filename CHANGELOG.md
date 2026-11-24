@@ -314,6 +314,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `examples/demo_full.py` built a `SafetyEnforcer` and then ran its agent on
+  the raw robot, so no move went through the policy and its closing "No
+  violations" held for any task. The agent now drives the enforcer, and a
+  second task into the demo's restricted area is refused before the robot
+  moves. tests/test_example_demo_full.py runs it as written.
 - `examples/01_hello_robot.py` printed "Task: 'navigate to position 3, 5
   and pick up the object'" while it ran "deliver package from position 1, 2
   to position 3, 5". It now prints the task it runs. New
