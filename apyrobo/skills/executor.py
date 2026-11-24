@@ -343,10 +343,17 @@ class SkillExecutor:
                 expected = cond.parameters.get("value", True)
                 actual = self._state.get(required_key)
                 if actual != expected:
-                    return False, (
+                    reason = (
                         f"State precondition '{cond.name}' not met: "
                         f"expected {required_key}={expected!r}, got {actual!r}"
                     )
+                    if actual is None:
+                        reason += (
+                            f". Nothing has set {required_key!r} on this executor"
+                            " yet: run a skill that sets it first, or call "
+                            f"executor.state.set({required_key!r}, {expected!r})"
+                        )
+                    return False, reason
             elif cond.check_type == "sensor":
                 ok, reason = self._check_sensor_precondition(cond, world)
                 if not ok:
