@@ -314,6 +314,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `examples/01_hello_robot.py` printed "Task: 'navigate to position 3, 5
+  and pick up the object'" while it ran "deliver package from position 1, 2
+  to position 3, 5". It now prints the task it runs. New
+  tests/test_example_hello_robot.py runs examples 01 and 02 as written.
 - `apyrobo init <scheme> --adapter` no longer declares `apyrobo>=4.0.0`.
   The scaffold's own tests import `apyrobo.conformance` and its CI runs
   `apyrobo conformance`, neither of which is in 4.0.0, so a fresh

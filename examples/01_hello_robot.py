@@ -14,6 +14,11 @@ Run from the repo root:
 
 from apyrobo import Robot, Agent
 
+# The task the rule-based agent runs. It names its places as (x, y) so the
+# rule planner reads them exactly: drive to (1, 2), pick up, drive to (3, 5),
+# place.
+TASK = "deliver package from position 1, 2 to position 3, 5"
+
 
 def main() -> None:
     # ── 1. Discover ──────────────────────────────────────────
@@ -30,9 +35,9 @@ def main() -> None:
     # Swap to provider="llm", model="claude-sonnet-4-20250514" for a real LLM.
     agent = Agent(provider="rule")
 
-    print("Task: 'navigate to position 3, 5 and pick up the object'")
+    print(f"Task: {TASK!r}")
     result = agent.execute(
-        task="deliver package from position 1, 2 to position 3, 5",
+        task=TASK,
         robot=robot,
         on_event=lambda e: print(f"  [{e.status.value:>10}] {e.skill_id}: {e.message}"),
     )
