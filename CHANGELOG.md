@@ -314,6 +314,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `ROS2Adapter.move` (`ros2://`) raises `ValueError` for a speed of 0,
+  below 0, NaN or infinite before anything is sent. Reached through the
+  Python API (`Robot.move`, `navigate_to`) with no policy in between, the
+  `/cmd_vel` fallback published a negative speed as a reverse drive until the
+  navigation timeout, sent NaN as is, and drove at the 0.5 m/s default for 0;
+  on Nav2 such a speed lifted the speed limit. `None` still means the default.
+  `apyrobo mcp` already refused these before the adapter.
 - The adapter that `apyrobo init <scheme> --adapter` generates, and the
   `move()` example in docs/adapter_authoring.md, computed the speed as
   `min(speed or max_speed, max_speed)`: `speed=0` drove at full speed, a
