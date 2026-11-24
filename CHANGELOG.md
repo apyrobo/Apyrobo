@@ -314,6 +314,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/concepts/multi_agent_coordination.md "Integration with safety
+  policies" checked one task and then dispatched another (`navigate_to`,
+  which the rule planner refuses for having no target), so nothing it
+  checked was ever sent. The example now runs on its own, checks each task
+  against a speed limit and dispatches only the one that passes, and says
+  that the check reads task text and does not stop a robot.
 - `apyrobo shell`: the banner listed `skills` but the REPL had no such
   name, so typing it raised `NameError`. `skills` now holds the built-in
   skills, and the banner's "Try" lines include running the plan through

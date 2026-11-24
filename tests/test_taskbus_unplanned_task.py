@@ -98,3 +98,16 @@ def test_concept_doc_example_shows_the_refusal(tmp_path):
     out = _run(script)
     assert "Handled by: picker_bot" in out
     assert "False No target" in out
+
+
+def test_concept_doc_policy_check_sends_only_what_passes(tmp_path):
+    text = (REPO / "docs" / "concepts" / "multi_agent_coordination.md").read_text()
+    section = text.split("## Integration with safety policies", 1)[1]
+    snippet = re.findall(r"```python\n(.*?)```", section, re.S)[0]
+    script = tmp_path / "policy_check.py"
+    script.write_text(snippet)
+    out = _run(script)
+    assert "not sent: Policy" in out
+    assert "speed 2.0 m/s exceeds limit 1.0 m/s" in out
+    assert "True ['Navigate To']" in out
+    assert "No target" not in out

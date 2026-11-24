@@ -124,20 +124,44 @@ Unlike ROS 2 action servers, `TaskBus` requires no message definitions, no seria
 
 ## Integration with safety policies
 
-Tasks dispatched through the bus can be checked against NL safety policies before execution:
+The bus plans tasks; it does not check them against your NL safety policies.
+Check the task text yourself before you dispatch it, and send only what passes:
 
 ```python
+from apyrobo import Agent, MockAdapter, Robot
+from apyrobo.coordination.bus import TaskBus, MultiAgentCoordinator
 from apyrobo.safety.nl_policy import NLPolicyParser, NLPolicyStore
 
-store = NLPolicyStore("~/.apyrobo/policies.db")
+bus = TaskBus(timeout=10.0)
+robot = Robot("mock://hauler_bot", MockAdapter("hauler_bot"))
+coord = MultiAgentCoordinator(
+    Agent(provider="rule"), robot, bus,
+    agent_id="hauler_bot", capabilities=["NAVIGATE"],
+)
+coord.start()
+
+store = NLPolicyStore()  # in memory; pass a path such as "~/.apyrobo/policies.db" to keep them
 parser = NLPolicyParser()
+store.add(parser.parse("never exceed 1.0 m/s"))
 policies = store.get_active_policies()
 
-action = "navigate at 2.0 m/s to dock"
-violations = parser.check_compliance(action, policies)
-if not violations:
-    result = bus.dispatch("navigate_to", required_capability="NAVIGATE")
+for task in ["go to (3, 3) at 2.0 m/s", "go to (3, 3) at 0.5 m/s"]:
+    violations = parser.check_compliance(task, policies)
+    if violations:
+        print("not sent:", violations[0])  # → not sent: Policy [...] violated: speed 2.0 m/s exceeds limit 1.0 m/s ...
+        continue
+    result = bus.dispatch(task, required_capability="NAVIGATE")
+    print(result.success, result.skills_planned)  # → True ['Navigate To']
+
+coord.stop()
 ```
+
+`check_compliance` is a text check: it reads the speeds written in the task and
+compares them with your speed limits. It does not stop a robot, and
+`SafetyEnforcer` does not read the policy store. For a limit applied to every
+motion command, wrap the robot in a `SafetyEnforcer` (see the
+[quickstart](../quickstart_5min.md), Step 4) when you run the plan
+(see [Natural language safety policies](nl_safety_policies.md)).
 
 ---
 
