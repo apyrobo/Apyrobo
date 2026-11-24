@@ -241,8 +241,11 @@ server = OrchestrationServer(adapter, Agent(provider="rule"))
 server.run()
 ```
 
-Each line in is a JSON task: `{"task": "navigate to dock", "robot_uri": "mock://turtlebot4"}`.
-Each line out is a JSON response: `{"task": "...", "metadata": {"status": "planned"}, "source": "orchestration_server"}`.
+Each line in is a JSON task: `{"task": "go to (2, 3)", "robot_uri": "mock://turtlebot4"}`.
+Each line out is a JSON response: `{"task": "go to (2, 3)", "metadata": {"status": "planned", "skills": [{"skill_id": "navigate_to_0", "name": "Navigate To"}], "count": 1}, "source": "orchestration_server", "robot_uri": "mock://turtlebot4"}`.
+A task the rule planner cannot plan as written (`"navigate to dock"` names no
+coordinates) comes back with `"count": 0` and a `"reason"` in `metadata` saying
+why; nothing moves.
 
 ### Custom Skills
 
