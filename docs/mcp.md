@@ -111,6 +111,12 @@ absolute path of `uvx`, and the `gemini mcp add` line on stderr. Don't set
 tool call, `move_to` included. Gemini splits tool names on `_`, so a server
 name must not contain one; `apyrobo mcp config gemini --name` refuses it.
 
+Google moved Google AI Pro and Ultra subscribers and free Gemini Code Assist
+users from Gemini CLI to Antigravity CLI in June 2026
+([announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/));
+Gemini CLI keeps working with paid Gemini API keys. The steps above are for
+Gemini CLI. Antigravity CLI's config is not covered here yet.
+
 ### Zed
 
 Add to your Zed settings file (in Zed, run `zed: open settings file`):
@@ -189,6 +195,14 @@ An older setup with `.vscode/mcp.json` takes the same entry under a top-level
 `"servers"` key, without `"tools"`; VS Code's docs say new setups should use
 the file above. `apyrobo mcp config vscode` prints this block with the
 absolute path of `uvx`.
+
+VS Code asks you before every tool call that is not marked read-only
+(`readOnlyHint`), per its
+[MCP developer guide](https://code.visualstudio.com/api/extension-guides/ai/mcp).
+`apyrobo mcp` marks `move_to`, `rotate`, `execute_task` and `stop` as not
+read-only, so VS Code shows its confirmation dialog before each of them even
+without `--confirm-moves`; `robot_status`, `list_capabilities`, `plan_task`
+and `safety_report` run without a prompt.
 
 ### Let apyrobo print the snippet
 
@@ -559,6 +573,25 @@ lack elicitation get every motion command refused with a readable error,
 because the operator asked for confirmation and the server cannot get it
 from them. `apyrobo mcp config <client> --confirm-moves` puts the flag in
 the generated config.
+
+#### Where `--confirm-moves` works
+
+What each client's own docs, or the best source we could read, say in
+November 2026. "Not confirmed" means no first-party page says so either way;
+try one move on `mock://` before you rely on it.
+
+| Client | MCP elicitation (needed for `--confirm-moves`) | Asks before each tool call without it | Source |
+| --- | --- | --- | --- |
+| Claude Desktop | Not confirmed; reports say not yet, so expect every move to be refused | Not checked | [claude-ai-mcp#153](https://github.com/anthropics/claude-ai-mcp/issues/153) (user report) |
+| Claude Code | Not confirmed; a secondary source says yes, in interactive sessions | Not checked | No first-party page read |
+| Cursor | Yes | Depends on Run Mode and its allowlist; `agent --approve-mcps` skips the prompts | [Cursor MCP docs](https://cursor.com/docs/mcp.md), [CLI MCP docs](https://cursor.com/docs/cli/mcp.md) |
+| VS Code | Yes | Yes, for every tool not marked read-only (see [VS Code](#vs-code)) | [VS Code MCP developer guide](https://code.visualstudio.com/api/extension-guides/ai/mcp) |
+| Codex CLI | Not confirmed; a third-party guide says yes unless `mcp_elicitations` is `false` | Not checked | No first-party page read |
+| Gemini CLI | Not confirmed; its MCP docs don't mention it | Yes, unless the server is trusted (see [Gemini CLI](#gemini-cli)) | [gemini-cli MCP server docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md) |
+| Zed | No | Yes, by default (see [Zed](#zed)) | [Zed MCP docs](https://zed.dev/docs/ai/mcp) |
+
+Cursor staff note that a tool call waiting on a question can time out if
+nobody answers for a while; when it does, the robot does not move.
 
 ### Keep an audit log
 

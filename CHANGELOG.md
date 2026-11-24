@@ -10,6 +10,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- docs/mcp.md has a "Where `--confirm-moves` works" table for the seven
+  clients `apyrobo mcp config` supports: whether each one supports MCP
+  elicitation (Cursor and VS Code yes, Zed no; Claude Desktop, Claude Code,
+  Codex CLI and Gemini CLI not confirmed by a first-party source) and
+  whether it already asks before each tool call. The VS Code section says
+  VS Code prompts before `move_to`, `rotate`, `execute_task` and `stop`,
+  which are not marked read-only, and the Gemini CLI section notes the move
+  of most individual users to Antigravity CLI.
 - `apyrobo mcp config zed` prints the `context_servers` entry for Zed's
   settings file, with the same flags and checks as the other clients. It
   refuses `--confirm-moves` with one line: Zed does not support MCP
