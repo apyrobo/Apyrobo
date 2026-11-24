@@ -314,6 +314,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- README "Connecting to a Robot" told a first-robot user to run
+  `docker-compose up apyrobo-api` "which includes ROS 2". From the repo root
+  that fails (the compose file is in `docker/`), and `apyrobo-api` is the
+  REST gateway on `python:3.10-slim`, with no ROS 2. It now points to
+  docs/first-real-robot.md and shows the pilot quickstart's Gazebo + Nav2
+  commands; a test checks every README compose line names a real file,
+  profile and service.
 - `apyrobo serve --execute` listed the step the rule planner refused to
   run (`"count": 1`, "Navigate To") for a task like "navigate to dock",
   while plan-only mode listed none. A refused task now lists no skills in
