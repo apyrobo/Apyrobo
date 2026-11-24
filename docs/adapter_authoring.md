@@ -229,7 +229,7 @@ Conformance check IDs in parentheses.
 | `GazeboAdapter` | `gazebo://` | Sim API | `apyrobo/core/adapters.py` |
 | `MQTTAdapter` | `mqtt://` | MQTT topics | `apyrobo/core/adapters.py` |
 | `HTTPAdapter` | `http://` | REST API | `apyrobo/core/adapters.py` |
-| `UnitreeAdapter` | `unitree://` | Vendor SDK | [`apyrobo/core/unitree_adapter.py`](../apyrobo/core/unitree_adapter.py) |
+| `UnitreeAdapter` | `unitree://`, after `import apyrobo.core.unitree_adapter` | Vendor SDK (`pip install unitree-sdk2py`) | [`apyrobo/core/unitree_adapter.py`](../apyrobo/core/unitree_adapter.py) |
 | `MuJoCoBridgeAdapter` | `mujoco://` | Live physics engine | [`apyrobo/sim/mujoco_bridge.py`](../apyrobo/sim/mujoco_bridge.py) |
 | `IsaacSimAdapter` | `isaac://` | In-memory stand-in (no Isaac Sim) | [`apyrobo/sim/adapters.py`](../apyrobo/sim/adapters.py) |
 | `IsaacSimAdapter` (SDK) | `isaac_sim://`, after `import apyrobo.core.isaac_adapter` | Isaac SDK or REST API (not tested against Isaac Sim in CI) | [`apyrobo/core/isaac_adapter.py`](../apyrobo/core/isaac_adapter.py) |
