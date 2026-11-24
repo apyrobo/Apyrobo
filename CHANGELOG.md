@@ -327,6 +327,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- A skill whose state precondition nobody has set yet (for example
+  `robot_idle` on a fresh `SkillExecutor`) still fails, but the error now
+  says how to fix it: run a skill that sets it first, or call
+  `executor.state.set('robot_idle', True)`. The executor still never assumes
+  a state it was not given. docs/skill_authoring.md quotes the new error.
 - `Robot.move` refuses a speed of zero, below zero, NaN, infinite or not a
   number with `ValueError` before calling the adapter, for every adapter.
   `gazebo://` and `isaac_sim://` read `speed or default`, so `speed=0`
