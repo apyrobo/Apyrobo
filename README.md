@@ -418,11 +418,21 @@ Write your own: see the [Adapter Authoring Guide](docs/adapter_authoring.md).
 > simulation = `ros2://` against a running Gazebo
 > ([proof in CI](tests/integration/README_gazebo.md)).
 
-For your first real robot, use the Docker image which includes ROS 2:
+For your first real robot, follow
+[From `mock://` to your first real robot](docs/first-real-robot.md):
+`apyrobo mcp` runs on the robot, in a shell where its ROS 2 install is
+sourced. To watch `ros2://` drive Nav2 in Gazebo before you touch hardware,
+the [pilot quickstart](docs/pilot_quickstart.md) runs ROS 2, Gazebo and Nav2
+in Docker:
 
 ```bash
-docker-compose up apyrobo-api
+docker compose -f docker/docker-compose.yml --profile gazebo-nav build
+docker compose -f docker/docker-compose.yml --profile gazebo-nav up -d gazebo-nav-sim
+docker compose -f docker/docker-compose.yml --profile gazebo-nav run --rm gazebo-nav-demo
 ```
+
+The `apyrobo-api` service in that file is the REST gateway
+([deployment.md](docs/deployment.md)); its image has no ROS 2.
 
 ---
 
