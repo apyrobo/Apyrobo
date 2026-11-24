@@ -311,7 +311,9 @@ class OrchestrationServer:
             else:
                 graph = self.agent.plan(msg.task, robot)
                 refusal = self._agent_refusal(graph)
-            order = graph.get_execution_order()
+            # A refused task lists no skills in either mode: in --execute
+            # the rule plan may still hold the step it refused to run.
+            order = [] if refusal is not None else graph.get_execution_order()
             skills = [
                 {"skill_id": s.skill_id, "name": s.name}
                 for s in order

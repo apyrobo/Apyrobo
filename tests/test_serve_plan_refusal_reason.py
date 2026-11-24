@@ -52,6 +52,7 @@ def test_planned_task_has_no_reason() -> None:
 
 def test_execute_mode_refusal_carries_reason_too() -> None:
     meta = _respond("navigate to dock", execute_tasks=True)["metadata"]
+    assert meta["count"] == 0 and meta["skills"] == []
     assert meta["reason"] == meta["execution"]["error"]
     assert meta["execution"]["status"] == "failed"
 
@@ -72,3 +73,20 @@ def test_readme_serve_lines_match_the_server() -> None:
     assert replies[0] == json.loads(line_out)
     assert replies[1]["metadata"]["count"] == 0
     assert "No target" in replies[1]["metadata"]["reason"]
+
+
+def test_readme_refused_line_holds_with_execute_too() -> None:
+    """The README's refused-task sentence has no mode caveat; --execute too."""
+    refused = '{"task": "navigate to dock", "robot_uri": "mock://turtlebot4"}'
+    proc = subprocess.run(
+        [sys.executable, "-m", "apyrobo.cli", "serve",
+         "--robot", "mock://turtlebot4", "--provider", "rule", "--execute"],
+        input=refused + "\n",
+        capture_output=True, text=True, timeout=60,
+    )
+    replies = [json.loads(x) for x in proc.stdout.splitlines() if x.strip()]
+    assert len(replies) == 1, proc.stdout + proc.stderr
+    meta = replies[0]["metadata"]
+    assert meta["count"] == 0 and meta["skills"] == []
+    assert "No target" in meta["reason"]
+    assert meta["execution"]["steps_completed"] == 0
