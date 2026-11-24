@@ -8,7 +8,8 @@ Choosing the right AI-robotics framework depends on your use case. This comparis
 
 If you want a model (through MCP) to drive a robot, these are the projects we
 know of that sit between the model and ROS. Each cell is what the project's own
-README or code states at the commit named, read 18 November 2026; "not stated"
+README or code states at the commit named, read 18 November 2026
+(rde-mcp-ros-2: 24 November 2026); "not stated"
 means we could not find it there. Open an issue if a row has gone stale.
 
 | Project (commit read) | Robot type | ROS version | Limits outside the model | Tested where | Licence |
@@ -19,9 +20,10 @@ means we could not find it there. Open an issue if a row has gone stale.
 | [BotInfo](https://github.com/botinfo-ai/botinfo) (2a5dde5; 0.1.0) | Not an MCP server itself: a policy layer in front of an existing connector | Not stated, apart from third-party benchmark rows on ROS 2 Humble | Owner-listed actions with typed bounds (out of range is "refused (never clamped)"), rate limits, longest continuous motion, optional workspace box, owner confirmation with expiry, "A stop always wins", hash-chained JSONL audit | "simulation and mocks only. Nothing here has run on a real robot" | Apache-2.0 |
 | [Principia Robotica](https://github.com/EngineerAbdullahBinZafar/principia-robotica) (6cd4984; 1.0.0) | Differential drive; quadrotor and swarm in its visualizer | A ROS 2 bridge (`/cmd_vel_raw` to `/cmd_vel`); distro not stated | A control-barrier velocity filter on the bridge path; the same filter is also an MCP tool the model calls; confirmation and audit not stated | Unit tests in its repo; hardware not stated | MIT |
 | [armguard-mcp](https://github.com/Lynn-hh/armguard-mcp) (043187d; PyPI 0.1.1) | Robot arms, "Franka FR3 first" | ROS 2 Jazzy | Server-side YAML policy: joint limits, workspace, keep-out along the tool-tip path ("not link geometry"), speed, step, force, gripper; approval via MCP elicitation "denied by default"; software e-stop; append-only JSONL audit | Simulated FR3, and ROS 2 Jazzy "against real rclpy endpoints and a real MoveIt 2 move_group"; "not been run on a physical robot yet" | Apache-2.0 (alpha) |
+| [rde-mcp-ros-2](https://github.com/ranch-hand-robotics/rde-mcp-ros-2) by Ranch Hand Robotics (a29277e; [PyPI](https://pypi.org/project/rde-mcp-ros-2/) 1.0.1) | Any ROS 2 graph: "30+ tools" for nodes, topics (including publish), services, parameters (including set), actions (including send goal), bags, launch files, lifecycle | "Humble, Iron, Jazzy, or later" | None stated; we found no speed, zone, stop, confirmation, read-only or audit option in its README or server code | CI builds the package and runs `twine check`; the README says "Run tests (when available)" | MIT |
 
 In short: for an arm, look at armguard-mcp. For full access to any topic or
-service, ros-mcp-server or WiseVision's ros2_mcp. For a mobile base where the model
+service, ros-mcp-server, WiseVision's ros2_mcp or rde-mcp-ros-2. For a mobile base where the model
 must stay inside speed limits and zones you set, APYROBO, and you can try those
 limits on `mock://` before connecting the robot.
 
