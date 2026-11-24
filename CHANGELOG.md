@@ -327,6 +327,12 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `Robot.move` refuses a speed of zero, below zero, NaN, infinite or not a
+  number with `ValueError` before calling the adapter, for every adapter.
+  `gazebo://` and `isaac_sim://` read `speed or default`, so `speed=0`
+  drove at the default speed and a negative speed went through; only
+  `ros2://` checked. Behaviour change: code that passed `speed=0` to mean
+  "default" now gets an error; pass `None` instead.
 - README "Connecting to a Robot" told a first-robot user to run
   `docker-compose up apyrobo-api` "which includes ROS 2". From the repo root
   that fails (the compose file is in `docker/`), and `apyrobo-api` is the
