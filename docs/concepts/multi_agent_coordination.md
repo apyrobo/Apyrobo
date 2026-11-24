@@ -38,8 +38,12 @@ result = bus.dispatch("pick_object", required_capability="PICK")
 print(f"Handled by: {result.agent_id}")  # → picker_bot
 
 # Fan out to all agents (e.g., emergency stop)
-results = bus.broadcast("navigate_to")
+results = bus.broadcast("emergency_stop")
 print(f"Responded: {[r.agent_id for r in results]}")
+
+# A task the agent refuses comes back as a failure with its reason
+result = bus.dispatch("navigate_to", required_capability="NAVIGATE")
+print(result.success, result.error)  # → False No target: this task gives no coordinates ...
 
 for coord in coordinators:
     coord.stop()
@@ -60,7 +64,7 @@ bus.dispatch("pick cup", required_capability="PICK")
       └─ if no capability match → route to any least-loaded agent
 ```
 
-Routing is synchronous from the caller's perspective — `dispatch()` blocks until the task completes or the `timeout` elapses. Each `MultiAgentCoordinator` runs a background worker thread that dequeues tasks, calls `agent.plan()`, and returns a `TaskResult`.
+Routing is synchronous from the caller's perspective — `dispatch()` blocks until the task completes or the `timeout` elapses. Each `MultiAgentCoordinator` runs a background worker thread that dequeues tasks, calls `agent.plan()`, and returns a `TaskResult`. The bus plans; it does not run the plan on the robot. A task the agent plans no skills for (for example a drive with no coordinates, which the rule planner refuses) comes back with `success=False` and the agent's reason in `error`.
 
 ---
 

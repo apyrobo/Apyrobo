@@ -314,6 +314,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `TaskBus.dispatch()` and `broadcast()` reported `success=True` for a task
+  the agent refused or planned nothing for (since the rule planner stopped
+  guessing targets, any drive with no coordinates), so callers saw a success
+  with no skills planned. Such a task now comes back `success=False` with the
+  agent's reason in `error`. The warehouse demo (`demos/warehouse_robots`)
+  printed "✓ picked" and "✓ delivered" for drives that were refused, and
+  credited deliveries to the hauler whichever robot took them; it now gives
+  every drive its coordinates, names the robot that took each step and the
+  skills planned, and says the bus plans but does not drive the robots.
 - `Agent.plan_interactive(task, robot, answer_callback=...)` now calls the
   callback when the provider asks a question. Before, `plan()` treated the
   question as a provider failure and fell back to the rule planner on the
