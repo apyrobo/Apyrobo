@@ -314,6 +314,14 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- `llms.txt`, the page AI assistants read about APYROBO, had a Python quick
+  start whose task the rule planner refuses ("navigate to point A and pick up
+  object"), named `nav2://` and `isaac://host:port` as adapter URIs (there is
+  no `nav2` adapter; `isaac://` is the in-memory stand-in) and listed three of
+  the seven `apyrobo mcp config` clients. The quick start now picks up the
+  object at (5, 3), the URIs are ones that resolve (with the import that
+  `unitree://` and `isaac_sim://` need), and all seven clients are named.
+  tests/test_llms_txt.py runs the quick start and checks both lists.
 - `examples/demo_full.py` built a `SafetyEnforcer` and then ran its agent on
   the raw robot, so no move went through the policy and its closing "No
   violations" held for any task. The agent now drives the enforcer, and a

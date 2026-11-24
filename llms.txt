@@ -17,7 +17,7 @@ uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp --max-speed 0.5 --
 so the command above installs from GitHub.
 
 Print a ready-to-paste client config with the absolute path for this machine. The client
-can be `claude-desktop`, `cursor` or `claude-code`:
+can be `claude-desktop`, `cursor`, `claude-code`, `vscode`, `codex`, `gemini` or `zed`:
 
 ```bash
 uvx --from git+https://github.com/apyrobo/Apyrobo apyrobo mcp config claude-desktop --max-speed 0.5 --no-go 2,2,4,4
@@ -63,15 +63,16 @@ from apyrobo import Agent, MockAdapter, Robot, SkillExecutor
 
 robot = Robot("mock://bot", MockAdapter("bot"))          # or any real hardware URI
 agent = Agent(provider="rule")                           # or "openai", "anthropic", etc.
-plan  = agent.plan("navigate to point A and pick up object", robot)
+plan  = agent.plan("pick up the object at (5, 3)", robot)
 result = SkillExecutor(robot).execute_graph(plan)
-print(result.status)  # completed
+print(result.status.value)  # completed
 ```
 
 ## Core concepts
 
 ### Hardware adapter pattern
-URI-based abstraction: `mock://`, `nav2://`, `unitree://go2@host`, `isaac://host:port`.
+URI-based abstraction: `mock://`, `ros2://`, `mqtt://`, `http://`. `unitree://go2@host` and
+`isaac_sim://my_scene` work after `import apyrobo.core.unitree_adapter` / `import apyrobo.core.isaac_adapter`.
 Write once, run on any robot. MockAdapter for CI/testing, real adapters for production.
 
 ### Skill graph engine
