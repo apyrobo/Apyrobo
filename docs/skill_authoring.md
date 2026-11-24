@@ -193,6 +193,13 @@ result = executor.execute_graph(graph, parallel=True)
 
 ## 5. Test Your Skill
 
+These tests use `scan_area` from Step 1 and `CustomExecutor` from Step 3, so put
+them in the same file or import them. `scan_area` has a `robot_idle` state
+precondition, and a fresh executor has no state yet: in the Step 4 graph
+`navigate_to` sets it, so a test that runs `scan_area` on its own sets it first.
+Without that the skill fails with
+`State precondition 'robot_idle' not met: expected robot_idle=True, got None`.
+
 ```python
 import pytest
 from apyrobo import Robot, SkillExecutor, SkillGraph
@@ -201,6 +208,7 @@ from apyrobo.skills.skill import SkillStatus
 def test_scan_area_completes():
     robot = Robot.discover("mock://test_bot")
     executor = CustomExecutor(robot)
+    executor.state.set("robot_idle", True)  # scan_area's precondition
 
     graph = SkillGraph()
     graph.add_skill(scan_area)
@@ -212,6 +220,7 @@ def test_scan_area_completes():
 def test_scan_area_events():
     robot = Robot.discover("mock://test_bot")
     executor = CustomExecutor(robot)
+    executor.state.set("robot_idle", True)  # scan_area's precondition
     events = []
     executor.on_event(lambda e: events.append(e))
 

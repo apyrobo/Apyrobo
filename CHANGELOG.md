@@ -314,6 +314,10 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   if the committed file no longer matches a fresh run.
 
 ### Fixed
+- docs/skill_authoring.md: the Step 5 tests now pass as written. Two of
+  the three failed because `scan_area`'s `robot_idle` state precondition is
+  unset on a fresh executor; the tests set it, and the guide says why and
+  quotes the error. A test runs the block under pytest.
 - `ROS2Adapter.move` (`ros2://`) raises `ValueError` for a speed of 0,
   below 0, NaN or infinite before anything is sent. Reached through the
   Python API (`Robot.move`, `navigate_to`) with no policy in between, the

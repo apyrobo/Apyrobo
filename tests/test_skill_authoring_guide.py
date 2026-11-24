@@ -138,3 +138,50 @@ def test_success_after_failure_leaves_no_stale_reason() -> None:
     result = executor.execute_graph(good)
     assert result.status == TaskStatus.COMPLETED
     assert not result.error
+
+
+def _block_with(text: str) -> str:
+    matches = [b for b in _python_blocks() if text in b]
+    assert len(matches) == 1, f"expected one guide block with {text!r}"
+    return matches[0]
+
+
+def test_guide_tests_pass_as_written(tmp_path: Path) -> None:
+    # Step 5's tests use scan_area (Step 1) and CustomExecutor (Step 3), as
+    # the guide says; written to one file they must all pass under pytest.
+    script = "\n".join(
+        [
+            _block_with('scan_area = Skill('),
+            _block_with("class CustomExecutor(SkillExecutor)"),
+            _block_with("def test_scan_area_completes"),
+        ]
+    )
+    path = tmp_path / "test_guide_step5.py"
+    path.write_text(script)
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+         "-o", "addopts=", str(path)],
+        capture_output=True, text=True, timeout=120, cwd=tmp_path,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "3 passed" in proc.stdout, proc.stdout
+
+
+def test_guide_names_the_error_a_missing_precondition_gives() -> None:
+    robot = Robot.discover("mock://guide_pre")
+    executor = SkillExecutor(robot)
+    skill = Skill(
+        skill_id="scan_area",
+        name="Scan Area",
+        required_capability=CapabilityType.ROTATE,
+        preconditions=[
+            Condition(
+                name="robot_idle",
+                check_type="state",
+                parameters={"key": "robot_idle", "value": True},
+            )
+        ],
+    )
+    ok, reason = executor.check_preconditions(skill, robot)
+    assert not ok
+    assert reason in GUIDE.read_text(), reason
