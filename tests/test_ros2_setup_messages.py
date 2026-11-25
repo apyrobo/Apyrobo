@@ -16,7 +16,9 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 CHECKED = [
+    "README.md",
     "apyrobo/__init__.py",
+    "apyrobo/cli.py",
     "apyrobo/core/ros2_bridge.py",
     "docs/QUICKSTART.md",
     "docs/TURTLEBOT4.md",
