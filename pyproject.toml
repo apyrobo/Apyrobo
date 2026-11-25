@@ -5,12 +5,15 @@ build-backend = "setuptools.build_meta:__legacy__"
 [project]
 name = "apyrobo"
 version = "4.1.0"
-description = "Open-source AI orchestration layer for robotics, built on ROS 2"
+description = "Safety layer between AI agents and robots: an MCP server that clamps speed, refuses moves into no-go zones and can log every motion decision; try it on mock:// with no ROS"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [{ name = "APYROBO Contributors" }]
-keywords = ["robotics", "ros2", "ai", "llm", "swarm", "orchestration"]
+keywords = [
+    "robotics", "ros2", "ai", "llm", "swarm", "orchestration",
+    "mcp", "mcp-server", "model-context-protocol", "robot-safety", "ai-agents", "nav2",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
