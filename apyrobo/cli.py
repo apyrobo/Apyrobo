@@ -2997,7 +2997,10 @@ _TUTORIAL_STEPS = [
             "For your own skill files: apyrobo test-skill my_skill.py"
         ),
         "code": None,  # command-line demo
-        "cli": "apyrobo test-skill navigate_to --robot mock://turtlebot4",
+        "cli": (
+            "apyrobo test-skill navigate_to --robot mock://turtlebot4"
+            " --params '{\"x\": 1.0, \"y\": 2.0}'"
+        ),
     },
 ]
 

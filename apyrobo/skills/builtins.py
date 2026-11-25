@@ -7,6 +7,7 @@ These are auto-registered on import via the @skill_handler decorator.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from apyrobo.skills.handlers import skill_handler
@@ -14,10 +15,35 @@ from apyrobo.skills.handlers import skill_handler
 logger = logging.getLogger(__name__)
 
 
+def _target_coordinate(params: dict[str, Any], key: str) -> float:
+    """Return params[key] as a float, or raise ValueError naming the key."""
+    if params.get(key) is None:
+        raise ValueError(
+            f"navigate_to needs a target: {key!r} is missing "
+            "(pass both x and y; the robot did not move)"
+        )
+    value = params[key]
+    not_a_number = ValueError(
+        f"navigate_to {key!r} must be a finite number, got {value!r} "
+        "(the robot did not move)"
+    )
+    if isinstance(value, bool):
+        raise not_a_number
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise not_a_number from None
+    if not math.isfinite(number):
+        raise not_a_number
+    return number
+
+
 @skill_handler("navigate_to")
 def _navigate_to(robot: Any, params: dict[str, Any]) -> bool:
-    x = float(params.get("x", 0.0))
-    y = float(params.get("y", 0.0))
+    # No default target: a navigate_to without x or y is refused before the
+    # robot moves, instead of driving to a made-up (0, 0).
+    x = _target_coordinate(params, "x")
+    y = _target_coordinate(params, "y")
     speed = params.get("speed")
     speed = float(speed) if speed is not None else None
     robot.move(x=x, y=y, speed=speed)

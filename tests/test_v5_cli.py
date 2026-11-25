@@ -238,7 +238,7 @@ class TestCmdTestSkillCapabilityMismatch:
         cmd_test_skill(args)
 
     def test_passes_for_known_builtin_skill(self, capsys):
-        self._run_test_skill("navigate_to")
+        self._run_test_skill("navigate_to", params='{"x": 1.0, "y": 2.0}')
         out = capsys.readouterr().out
         assert "Passed: 1/1" in out
 
@@ -288,7 +288,7 @@ class TestCmdTestSkillCapabilityMismatch:
         del _DEFAULT_REGISTRY._handlers["bad_skill_xyz"]
 
     def test_repeat_counts_all_runs(self, capsys):
-        self._run_test_skill("navigate_to", repeat=3)
+        self._run_test_skill("navigate_to", params='{"x": 1.0, "y": 2.0}', repeat=3)
         out = capsys.readouterr().out
         assert "Passed: 3/3" in out
         assert "Run 1" in out

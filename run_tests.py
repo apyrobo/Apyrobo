@@ -278,7 +278,7 @@ def test_executor_events():
     events = []
     executor.on_event(lambda e: events.append(e))
     nav = BUILTIN_SKILLS["navigate_to"]
-    executor.execute_skill(nav)
+    executor.execute_skill(nav, {"x": 1.0, "y": 2.0})
     assert len(events) >= 2  # PENDING + RUNNING + COMPLETED
     statuses = [e.status for e in events]
     assert SkillStatus.PENDING in statuses
