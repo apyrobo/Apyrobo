@@ -10,6 +10,13 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- `examples/07_injected_instruction.py`: sends the tool calls an agent would
+  make after obeying an injected "ignore your limits" line to `apyrobo mcp`
+  on `mock://` through the official MCP Python SDK, and prints what the
+  server did: the move into the no-go zone and the same goal as a task are
+  refused with code `collision_zone` and the robot does not move, a 5 m/s
+  move runs at 0.5 m/s, and the audit log has a line per decision. No model
+  is called; it shows the server's side only.
 - docs/mcp.md has a "Refusal codes" table: every `code` a refused
   `move_to`, `rotate`, `plan_task` or `execute_task` can carry, what tripped
   it, which fields of `violation` name the zone or limit, and what an agent
