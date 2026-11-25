@@ -19,7 +19,7 @@ def _make_args(**kwargs) -> SimpleNamespace:
     defaults = {
         "skill": "navigate_to",
         "robot": "mock://turtlebot4",
-        "params": "{}",
+        "params": '{"x": 1.0, "y": 2.0}',
         "repeat": 1,
     }
     defaults.update(kwargs)
@@ -156,8 +156,16 @@ class TestTestSkillParams:
         assert "✅" in out
 
     def test_empty_params_json_is_valid(self):
-        out = _run(_make_args(skill="navigate_to", params="{}"))
+        out = _run(_make_args(skill="stop", params="{}"))
         assert "✅" in out
+
+    def test_navigate_to_without_target_fails_with_reason(self):
+        # navigate_to has no default target: with no x/y the run fails and
+        # says which key is missing, instead of passing after a drive to (0, 0).
+        out = _run(_make_args(skill="navigate_to", params="{}"), expect_exit=1)
+        assert "❌" in out
+        assert "Passed: 0/1" in out
+        assert "'x' is missing" in out
 
 
 # ---------------------------------------------------------------------------

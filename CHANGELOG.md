@@ -1172,7 +1172,15 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   simulated AGV, not hardware.
 
 ### Changed
-
+- Behaviour change: the built-in `navigate_to` skill has no default target.
+  Its declared parameters are now only `speed`; a `navigate_to` without `x`
+  or `y`, or with a value that is not a finite number, is refused with a
+  `ValueError` naming the key, and the robot does not move. Before, it drove
+  to a made-up `(0, 0)` (or `(x, 0)`) and reported success, through
+  `dispatch`, `SkillExecutor.execute_skill` and a `SkillGraph` step alike.
+  `apyrobo test-skill navigate_to` with no `--params` now fails and prints
+  the reason; pass `--params '{"x": 1.0, "y": 2.0}'`. An explicit `(0, 0)`
+  still works.
 - `Agent.plan` and `Agent.execute` with the rule planner (including
   `provider="auto"` without litellm) now refuse a task they cannot read, the
   way `apyrobo mcp` and `apyrobo plan` already did: no made-up target such as

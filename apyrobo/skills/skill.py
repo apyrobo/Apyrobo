@@ -179,7 +179,9 @@ navigate_to = _register_builtin(Skill(
         Condition(name="at_position", description="Robot is within tolerance of target position",
                   parameters={"tolerance_m": 0.3}),
     ],
-    parameters={"x": 0.0, "y": 0.0, "speed": 0.5},
+    # No x/y defaults: the target must come from the caller (the handler
+    # refuses a missing one instead of driving to (0, 0)).
+    parameters={"speed": 0.5},
 ))
 
 rotate = _register_builtin(Skill(

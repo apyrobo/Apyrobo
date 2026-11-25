@@ -138,10 +138,11 @@ class TestBuiltinHandlerDispatch:
         dispatch("navigate_to", robot_mock, {"x": 5.0, "y": 3.0, "speed": 0.8})
         robot_mock.move.assert_called_once_with(x=5.0, y=3.0, speed=0.8)
 
-    def test_navigate_to_default_params(self, robot_mock: MagicMock) -> None:
-        """navigate_to uses defaults for missing params."""
-        dispatch("navigate_to", robot_mock, {})
-        robot_mock.move.assert_called_once_with(x=0.0, y=0.0, speed=None)
+    def test_navigate_to_without_target_refuses(self, robot_mock: MagicMock) -> None:
+        """navigate_to has no default target: missing x/y is refused, no move."""
+        with pytest.raises(ValueError, match="'x' is missing"):
+            dispatch("navigate_to", robot_mock, {})
+        robot_mock.move.assert_not_called()
 
     def test_stop_dispatches_to_stop(self, robot_mock: MagicMock) -> None:
         """@skill_handler('stop') calls robot.stop()."""
