@@ -51,3 +51,50 @@ def test_rde_mcp_ros_2_row_links_repo_and_pypi() -> None:
     assert "https://github.com/ranch-hand-robotics/rde-mcp-ros-2)" in rows[0]
     assert "https://pypi.org/project/rde-mcp-ros-2/)" in rows[0]
     assert rows[0].rstrip().endswith("| MIT |")
+
+
+RAW_CALLS = "Raw topic, service or action calls"
+
+
+def _raw_calls_cells() -> list[tuple[str, str]]:
+    text = DOC.read_text(encoding="utf-8")
+    section = text.split("## Which robot MCP server fits you", 1)[1]
+    section = section.split("\n---", 1)[0]
+    lines = [line for line in section.splitlines() if line.startswith("| ")]
+    header = [c.strip() for c in lines[0].strip("|").split(" | ")]
+    col = header.index(RAW_CALLS)
+    cells = []
+    for row in lines[1:]:
+        parts = [c.strip() for c in row.strip().strip("|").split(" | ")]
+        assert len(parts) == len(header), f"wrong column count: {parts[0]}"
+        cells.append((parts[0], parts[col]))
+    return cells
+
+
+def test_every_row_says_whether_it_exposes_raw_calls() -> None:
+    cells = _raw_calls_cells()
+    assert len(cells) >= 2
+    for project, cell in cells:
+        assert cell.startswith(("Yes", "No", "not checked")), (
+            f"{project}: raw-calls cell must start Yes, No or 'not checked'"
+        )
+
+
+def test_apyrobo_raw_calls_cell_is_no_and_links_the_tool_list() -> None:
+    project, cell = _raw_calls_cells()[0]
+    assert project.startswith("APYROBO")
+    assert cell.startswith("No")
+    assert "(mcp.md#tools)" in cell
+
+
+def test_raw_calls_yes_cells_name_the_tools_and_the_file_read() -> None:
+    for project, cell in _raw_calls_cells()[1:]:
+        if cell.startswith(("Yes", "No")):
+            assert "`" in cell and "(`" in cell, (
+                f"{project}: name the tools and the file they were read from"
+            )
+
+
+def test_raw_calls_note_under_the_table() -> None:
+    text = DOC.read_text(encoding="utf-8")
+    assert "check\nwhether yours has an allowlist" in text
