@@ -10,6 +10,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ## [Unreleased]
 
 ### Added
+- docs/mcp.md has a "Refusal codes" table: every `code` a refused
+  `move_to`, `rotate`, `plan_task` or `execute_task` can carry, what tripped
+  it, which fields of `violation` name the zone or limit, and what an agent
+  can do next. A test reads the codes from the safety enforcer's source, so a
+  new code without a row fails CI.
 - `apyrobo mcp --confirm-moves` sends `notifications/progress` every 5
   seconds while it waits for the user to answer the confirmation, when the
   `tools/call` carries a `progressToken`, so clients that time out idle calls

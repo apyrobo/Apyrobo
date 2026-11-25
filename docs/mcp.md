@@ -490,13 +490,41 @@ a target in a no-go zone, a target outside every allowed area, and a straight
 route that crosses a zone or leaves the allowed areas (from where the robot is,
 then from each earlier target). Any of these gives `can_proceed: false` and a
 reason in the same words `move_to` would refuse with, `risk_level: high`,
-and a `refusal` object with the `code` (`collision_zone`,
-`collision_zone_path`, `outside_allowed_area`, ...) that `execute_task`'s
-structured refusal would carry. It used to say `can_proceed: true` and
+and a `refusal` object with the `code` (see [Refusal codes](#refusal-codes))
+that `execute_task`'s structured refusal would carry. It used to say `can_proceed: true` and
 `risk_level: low` for such a target. On an adapter that
 plans its own route, such as `ros2://` through Nav2, only the target is checked
 here; the route is checked when the move runs. Battery and people nearby are
 checked only when the move runs.
+
+## Refusal codes
+
+A refused `move_to`, `rotate`, `plan_task` or `execute_task` carries one of
+these codes in `code` (`structuredContent` on MCP 2025-06-18 or later; the
+text gives the same reason in words). `violation` holds at least the fields
+named in the third column. Clamping a speed is not a refusal: the move runs and the
+clamp is listed in `safety_interventions`. `apyrobo mcp` gives the
+enforcer no live detections, so `dynamic_collision_zone` and
+`human_proximity` come only from the Python API with a world state attached
+(see [What this does and doesn't guarantee](#what-this-does-and-doesnt-guarantee)).
+
+| `code` | What tripped it | Key fields in `violation` | What an agent can do next |
+| --- | --- | --- | --- |
+| `collision_zone` | The target is inside a no-go zone | `zone`, `requested_position` | Pick a target outside the zone |
+| `dynamic_collision_zone` | The target is inside a zone around an obstacle the robot sees | `zone`, `requested_position` | Pick a target outside the zone |
+| `collision_zone_path` | The straight route from `start` to the target crosses a no-go zone | `zone`, `start`, `requested_position` | Reach the target in shorter moves whose straight lines go around the zone |
+| `outside_allowed_area` | The target is outside every allowed area | `allowed_areas`, `requested_position` | Pick a target inside an allowed area |
+| `allowed_area_path` | The straight route leaves the allowed areas at `left_at` | `allowed_areas`, `left_at`, `start`, `requested_position` | Reach the target in shorter moves that each stay inside the allowed areas |
+| `path_unchecked` | The route could not be checked because the robot's position is unknown | `reason` | Call `robot_status`, and send the move again once it reports a position |
+| `battery_below_minimum` | The battery is below the policy's minimum | `battery_pct`, `min_required` | Stop and ask a person to charge the robot |
+| `battery_insufficient` | The battery cannot cover this trip | `battery_pct`, `distance_m` | Pick a nearer target, or stop and ask a person to charge the robot |
+| `human_proximity` | A detected person is closer to the target than the policy allows | `human_position`, `distance`, `limit` | Stop and ask a person |
+| `invalid_command` | An argument is not a finite number | `command`, `detail` | Send the call again with finite numbers |
+| `safety_violation` | The policy refused but recorded no violation | (empty) | Stop and ask a person; the text says why |
+
+`tests/test_mcp_refusal_code_table.py` checks that this table lists exactly
+the violation types the safety enforcer records, plus `safety_violation`, so a
+new code without a row fails CI.
 
 ## Options
 
@@ -961,9 +989,8 @@ move refused. Desktop hosts (Claude Desktop, Cursor) have not been tried on
 A `move_to` or `rotate` refused by the safety policy also carries
 `structuredContent` for clients on 2025-06-18 or later: `{"status":
 "refused", "code": …, "policy": …, "violation": {…}}`, where `code` is the
-enforcer's violation type (`collision_zone`, `outside_allowed_area`,
-`battery_below_minimum`, …, or `safety_violation` when none was recorded)
-and `violation` holds the zone, areas or limit that tripped. The text is the
+enforcer's violation type (every code is listed under
+[Refusal codes](#refusal-codes)) and `violation` holds the zone, areas or limit that tripped. The text is the
 same sentence as before, so a model reading it sees no change; an agent or a
 test can branch on `code` instead of parsing words. Older protocol versions
 get the text only. A task that `execute_task` stops at a refused step
