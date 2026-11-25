@@ -1184,6 +1184,11 @@ and apyrobo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   simulated AGV, not hardware.
 
 ### Changed
+- The package description (what PyPI shows) now says what apyrobo is: a
+  safety layer between AI agents and robots, an MCP server that clamps speed,
+  refuses moves into no-go zones and can log every motion decision, with
+  mock:// to try it without ROS. Keywords add `mcp`, `mcp-server`,
+  `model-context-protocol`, `robot-safety`, `ai-agents` and `nav2`.
 - Behaviour change: the built-in `navigate_to` skill has no default target.
   Its declared parameters are now only `speed`; a `navigate_to` without `x`
   or `y`, or with a value that is not a finite number, is refused with a
